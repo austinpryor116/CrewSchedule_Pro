@@ -1,4 +1,4 @@
-import { SequenceTrip, PayRates } from "../types";
+import { SequenceTrip, PayRates, VacationPeriod } from "../types";
 
 export const DEFAULT_PAY_RATES: PayRates = {
   hourlyRate: 172.5, // $/hr for a typical airline pilot/flight crew
@@ -409,8 +409,10 @@ SKD CHG - SEE LEG DETAIL
  -3439 5.01 13.33
  17333 EXP TAFB 53.39 MQT 3 MLI 3
  ACT TOTAL 0.00
- 27 1 24 0000 2400
- 28 1 24 0000 2400
+ 27 1 TT 17894 -3812 -3812 4.45
+ 28 1 TT -3813 -4328 6.00 10.45
+ 17894 EXP TAFB 24.15 AVL 2
+ ACT TOTAL 10.45
  29 1 24 0000 2400
  30 1 17270 -3446 -3446
  -4330 5.31
@@ -595,29 +597,307 @@ NONE FOUND
 SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
 NONE FOUND
 ***************************************************************
-DFW E75 CA   CREWED SEQUENCES POSTED FOR DROP  AS OF 20JUL/2211
-22JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB
- 21559   4.23 1209 1702/22 2                                   *
-23JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB
- 05321   8.06 0913 1326/24 1-3      GPT-
-24JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB
- 05255   5.37 0930 1604/24 2                                   *
-25JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB
- 05840  10.37 2129 1419/28 1-2-2-1  EVV-TUL-CRP-
-26JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB
- 05254   4.43 0600 1113/26 2                                   *
-27JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB
- 05254   4.43 0600 1113/27 2                                   *
- 21505   2.35 0821 1126/27 2
- 05754  11.52 2125 1110/30 1-2-2-3  LCH-CRP-LBB-
-30JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB
- 05718   9.57 1214 1342/02 5-2-2-3  BTR-LBB-BRO-
-END
 `;
+
+export const MOCK_VACATIONS: VacationPeriod[] = [
+
+  {
+    id: "vac-aug-01-07",
+    startDate: "2026-08-01",
+    endDate: "2026-08-07",
+    code: "VA",
+    description: "Scheduled Vacation (Aug 01 - Aug 07)",
+  },
+];
+
+// August 2026 Mock Sequences with full duty periods and flight legs
+export const MOCK_AUG_SEQUENCES: SequenceTrip[] = [
+
+  {
+    id: "aug-15156",
+    sequenceNumber: "15156",
+    startDate: "2026-08-06",
+    endDate: "2026-08-09",
+    base: "ORD",
+    equipment: "E75",
+    totalBlockMinutes: 840,
+    totalCreditMinutes: 1200, // 20.00h (4 days guarantee)
+    layoverCities: ["MSP", "DSM", "MSN"],
+    colorTag: "rose",
+    statusTag: "DROP",
+    isDropped: true,
+    dropReason: "DTS Overlap — Touches Vacation Window (Aug 01 - Aug 07)",
+
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0800",
+        releaseTime: "1530",
+        dutyMinutes: 450,
+        legs: [
+          { flightNumber: "AA4210", depAirport: "ORD", arrAirport: "MSP", depTime: "0845", arrTime: "1015", blockMinutes: 90, tailNumber: "N401AA" },
+          { flightNumber: "AA4211", depAirport: "MSP", arrAirport: "ORD", depTime: "1115", arrTime: "1245", blockMinutes: 90, tailNumber: "N401AA" },
+        ],
+        layoverCity: "MSP",
+        layoverHotelInfo: "InterContinental Minneapolis-St. Paul Airport (612-725-0400)",
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0830",
+        releaseTime: "1600",
+        dutyMinutes: 450,
+        legs: [
+          { flightNumber: "AA3314", depAirport: "MSP", arrAirport: "DSM", depTime: "0915", arrTime: "1030", blockMinutes: 75, tailNumber: "N405AA" },
+          { flightNumber: "AA3315", depAirport: "DSM", arrAirport: "ORD", depTime: "1145", arrTime: "1300", blockMinutes: 75, tailNumber: "N405AA" },
+        ],
+        layoverCity: "DSM",
+        layoverHotelInfo: "Des Moines Marriott Downtown (515-245-5500)",
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0900",
+        releaseTime: "1630",
+        dutyMinutes: 450,
+        legs: [
+          { flightNumber: "AA4480", depAirport: "DSM", arrAirport: "MSN", depTime: "0945", arrTime: "1100", blockMinutes: 75, tailNumber: "N412AA" },
+          { flightNumber: "AA4481", depAirport: "MSN", arrAirport: "ORD", depTime: "1215", arrTime: "1330", blockMinutes: 75, tailNumber: "N412AA" },
+        ],
+        layoverCity: "MSN",
+        layoverHotelInfo: "The Edgewater Hotel Madison (608-535-8200)",
+      },
+      {
+        dayIndex: 3,
+        reportTime: "0830",
+        releaseTime: "1330",
+        dutyMinutes: 300,
+        legs: [
+          { flightNumber: "AA4500", depAirport: "MSN", arrAirport: "ORD", depTime: "0915", arrTime: "1030", blockMinutes: 75, tailNumber: "N412AA" },
+        ],
+        layoverCity: "",
+        layoverHotelInfo: "",
+      },
+    ],
+  },
+  {
+    id: "aug-14731",
+    sequenceNumber: "14731",
+    startDate: "2026-08-13",
+    endDate: "2026-08-16",
+    base: "ORD",
+    equipment: "E75",
+    totalBlockMinutes: 735,
+    totalCreditMinutes: 1033, // 17.22h
+    layoverCities: ["FAR", "CMI", "CLE"],
+    colorTag: "cyan",
+    statusTag: "SKD",
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0800",
+        releaseTime: "1600",
+        dutyMinutes: 480,
+        legs: [
+          { flightNumber: "AA4210", depAirport: "ORD", arrAirport: "FAR", depTime: "0845", arrTime: "1100", blockMinutes: 135, tailNumber: "N388AA" },
+        ],
+        layoverCity: "FAR",
+        layoverHotelInfo: "Radisson Blu Hotel Fargo (701-232-7300)",
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0830",
+        releaseTime: "1615",
+        dutyMinutes: 465,
+        legs: [
+          { flightNumber: "AA4211", depAirport: "FAR", arrAirport: "ORD", depTime: "0915", arrTime: "1130", blockMinutes: 135, tailNumber: "N388AA" },
+          { flightNumber: "AA3314", depAirport: "ORD", arrAirport: "CMI", depTime: "1300", arrTime: "1405", blockMinutes: 65, tailNumber: "N388AA" },
+        ],
+        layoverCity: "CMI",
+        layoverHotelInfo: "I Hotel & Conference Center Champaign (217-819-5000)",
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0900",
+        releaseTime: "1630",
+        dutyMinutes: 450,
+        legs: [
+          { flightNumber: "AA3315", depAirport: "CMI", arrAirport: "ORD", depTime: "0945", arrTime: "1050", blockMinutes: 65, tailNumber: "N410AA" },
+          { flightNumber: "AA4480", depAirport: "ORD", arrAirport: "CLE", depTime: "1230", arrTime: "1450", blockMinutes: 140, tailNumber: "N410AA" },
+        ],
+        layoverCity: "CLE",
+        layoverHotelInfo: "Hilton Cleveland Downtown (216-413-5000)",
+      },
+      {
+        dayIndex: 3,
+        reportTime: "0830",
+        releaseTime: "1230",
+        dutyMinutes: 240,
+        legs: [
+          { flightNumber: "AA4481", depAirport: "CLE", arrAirport: "ORD", depTime: "0915", arrTime: "1110", blockMinutes: 115, tailNumber: "N410AA" },
+        ],
+        layoverCity: "",
+        layoverHotelInfo: "",
+      },
+    ],
+  },
+  {
+    id: "aug-14962",
+    sequenceNumber: "14962",
+    startDate: "2026-08-20",
+    endDate: "2026-08-23",
+    base: "ORD",
+    equipment: "E75",
+    totalBlockMinutes: 1115,
+    totalCreditMinutes: 1337, // 22.28h
+    layoverCities: ["RIC", "FSM", "MAF"],
+    colorTag: "indigo",
+    statusTag: "SKD",
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0700",
+        releaseTime: "1645",
+        dutyMinutes: 585,
+        legs: [
+          { flightNumber: "AA3540", depAirport: "ORD", arrAirport: "RIC", depTime: "0745", arrTime: "1040", blockMinutes: 115, tailNumber: "N912AA" },
+          { flightNumber: "AA3541", depAirport: "RIC", arrAirport: "ORD", depTime: "1130", arrTime: "1250", blockMinutes: 140, tailNumber: "N912AA" },
+          { flightNumber: "AA3542", depAirport: "ORD", arrAirport: "RIC", depTime: "1415", arrTime: "1710", blockMinutes: 115, tailNumber: "N912AA" },
+        ],
+        layoverCity: "RIC",
+        layoverHotelInfo: "Hilton Richmond Downtown (804-344-7000)",
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0815",
+        releaseTime: "1630",
+        dutyMinutes: 495,
+        legs: [
+          { flightNumber: "AA3543", depAirport: "RIC", arrAirport: "ORD", depTime: "0900", arrTime: "1025", blockMinutes: 145, tailNumber: "N912AA" },
+          { flightNumber: "AA3890", depAirport: "ORD", arrAirport: "FSM", depTime: "1200", arrTime: "1415", blockMinutes: 135, tailNumber: "N930AA" },
+        ],
+        layoverCity: "FSM",
+        layoverHotelInfo: "Courtyard Fort Smith (479-783-2100)",
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0745",
+        releaseTime: "1645",
+        dutyMinutes: 540,
+        legs: [
+          { flightNumber: "AA3891", depAirport: "FSM", arrAirport: "ORD", depTime: "0830", arrTime: "1040", blockMinutes: 130, tailNumber: "N930AA" },
+          { flightNumber: "AA4120", depAirport: "ORD", arrAirport: "MAF", depTime: "1230", arrTime: "1515", blockMinutes: 165, tailNumber: "N930AA" },
+        ],
+        layoverCity: "MAF",
+        layoverHotelInfo: "DoubleTree by Hilton Midland Plaza (432-683-6131)",
+      },
+      {
+        dayIndex: 3,
+        reportTime: "0800",
+        releaseTime: "1330",
+        dutyMinutes: 330,
+        legs: [
+          { flightNumber: "AA4121", depAirport: "MAF", arrAirport: "ORD", depTime: "0845", arrTime: "1135", blockMinutes: 170, tailNumber: "N930AA" },
+        ],
+        layoverCity: "",
+        layoverHotelInfo: "",
+      },
+    ],
+  },
+  {
+    id: "aug-15101",
+    sequenceNumber: "15101",
+    startDate: "2026-08-27",
+    endDate: "2026-08-30",
+    base: "ORD",
+    equipment: "E75",
+    totalBlockMinutes: 890,
+    totalCreditMinutes: 976, // 16.26h
+    layoverCities: ["SPI", "MLI", "GSO"],
+    colorTag: "emerald",
+    statusTag: "SKD",
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "1300",
+        releaseTime: "1515",
+        dutyMinutes: 135,
+        legs: [
+          { flightNumber: "AA4330", depAirport: "ORD", arrAirport: "SPI", depTime: "1345", arrTime: "1450", blockMinutes: 65, tailNumber: "N375AA" },
+        ],
+        layoverCity: "SPI",
+        layoverHotelInfo: "President Abraham Lincoln Springfield - DoubleTree (217-544-8800)",
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0600",
+        releaseTime: "1230",
+        dutyMinutes: 390,
+        legs: [
+          { flightNumber: "AA4328", depAirport: "SPI", arrAirport: "ORD", depTime: "0645", arrTime: "0755", blockMinutes: 70, tailNumber: "N375AA" },
+          { flightNumber: "AA3710", depAirport: "ORD", arrAirport: "MLI", depTime: "0930", arrTime: "1035", blockMinutes: 65, tailNumber: "N375AA" },
+        ],
+        layoverCity: "MLI",
+        layoverHotelInfo: "Radisson Quad City Plaza Moline (309-764-1000)",
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0715",
+        releaseTime: "1430",
+        dutyMinutes: 435,
+        legs: [
+          { flightNumber: "AA3711", depAirport: "MLI", arrAirport: "ORD", depTime: "0800", arrTime: "0905", blockMinutes: 65, tailNumber: "N420AA" },
+          { flightNumber: "AA3920", depAirport: "ORD", arrAirport: "GSO", depTime: "1100", arrTime: "1350", blockMinutes: 110, tailNumber: "N420AA" },
+        ],
+        layoverCity: "GSO",
+        layoverHotelInfo: "Proximity Hotel Greensboro (336-379-8200)",
+      },
+      {
+        dayIndex: 3,
+        reportTime: "0800",
+        releaseTime: "1200",
+        dutyMinutes: 240,
+        legs: [
+          { flightNumber: "AA3921", depAirport: "GSO", arrAirport: "ORD", depTime: "0845", arrTime: "0955", blockMinutes: 130, tailNumber: "N420AA" },
+        ],
+        layoverCity: "",
+        layoverHotelInfo: "",
+      },
+    ],
+  },
+];
+
+
+export const RAW_HI1_AUG_TEXT = `MONTH ENDING 30AUG26 AS OF 22JUL26/1536 SC-Y
+PRYOR AR 01361 742840 ORD 502-CA E75E
+H 812-399-2574
+V 8123992574
+D EXP 136.29 I EXP 0.00
+GUAR 72.00 FLT TIME 672 HOURS/ 68.44 365 DAY/ 763.19
+PTL TRIP TRD 0 DROP 0
+BID SEL PROJ FOR: E75E 75.76
+BID SEL PROJ 75.76
+  DD ST RMV ADD SEQ FLT FLT SKED STTL ACT GRTR GTTL
+  01 1 VA 0000 2400
+  02 1 VA 0000 2400
+  03 1 VA 0000 2400
+  04 1 VA 0000 2400
+  05 1 VA 0000 2400
+  06 1 15156 -4210 -4210 5.00
+  07 1 -4211 -3314 4.05
+  08 1 -3315 -4480 3.05
+  09 1 -4481 2.00 14.10 5.50 20.00
+  13 1 14731 -4210 -4210 3.05
+  14 1 -4211 -3314 4.05
+  15 1 -3315 -4480 3.05
+  16 1 -4481 2.00 12.15 5.07 17.22
+  20 1 14962 -3540 -3541 4.35
+  21 1 -3543 -3890 5.00
+  22 1 -3891 -4120 5.55
+  23 1 -4121 3.20 18.50 3.39 22.29
+  27 1 15101 -4330 -4330 1.10
+  28 1 -4328 -3710 2.20
+  29 1 -3711 -3920 3.10
+  30 1 -3921 2.10 8.50 7.36 16.26
+END OF DISPLAY
+`;
+
+

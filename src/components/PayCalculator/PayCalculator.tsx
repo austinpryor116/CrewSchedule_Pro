@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { DollarSign, Clock, HelpCircle, TrendingUp, ShieldAlert, Award, FileSpreadsheet } from "lucide-react";
+import { DollarSign, Clock, TrendingUp, Award, FileSpreadsheet } from "lucide-react";
 
 // Rainmaker actual day-by-day pay details matching HI1.pdf
 const RAINMAKER_OVERRIDES: Record<number, {
@@ -30,7 +30,7 @@ const RAINMAKER_OVERRIDES: Record<number, {
   18: { details: "17495\\Add", eqp: "E70", base: "01:12", ot: "", prem: "", other: "", tt: "", otadj: "", blprtc: "", pdm: "11:45", usd: 23.50 },
   19: { details: "17495\\Add", eqp: "E70", base: "06:24", ot: "", prem: "", other: "", tt: "", otadj: "", blprtc: "", pdm: "24:00", usd: 48.00 },
   20: { details: "17495\\Add", eqp: "E75", base: "04:33", ot: "", prem: "", other: "", tt: "", otadj: "", blprtc: "", pdm: "24:00", usd: 48.00 },
-  21: { details: "17495\\Add", eqp: "E75", base: "05:17", ot: "", prem: "", other: "", tt: "", otadj: "", blprtc: "", pdm: "14:22", usd: 28.73 },
+  21: { details: "17495\\RA", eqp: "E75", base: "05:17", ot: "", prem: "", other: "", tt: "", otadj: "", blprtc: "", pdm: "14:22", usd: 28.73 },
   23: { details: "21566\\OT", eqp: "E70", base: "", ot: "03:58", prem: "01:59", other: "", tt: "", otadj: "03:58", blprtc: "", pdm: "05:28", usd: 10.93 },
   24: { details: "17333\\Add", eqp: "E70", base: "05:33", ot: "", prem: "", other: "", tt: "", otadj: "", blprtc: "", pdm: "16:45", usd: 33.50 },
   25: { details: "17333\\Add", eqp: "E70", base: "02:59", ot: "", prem: "", other: "", tt: "", otadj: "", blprtc: "", pdm: "24:00", usd: 48.00 },
@@ -63,11 +63,11 @@ export default function PayCalculator() {
   const rawTotalTafbHours = useCrewStore((state) => state.getTotalTafbHours());
   const blockAndOtStats = getBlockAndOtStats();
 
-  let calcs = getPayCalculations();
+  const calcs = getPayCalculations();
 
   // Detect if HI1 sequences are active
   const isHi1Active = sequences.some((s) => s.sequenceNumber === "21649");
-  let displayTafb = rawTotalTafbHours;
+  const displayTafb = rawTotalTafbHours;
 
   // Monthly vs Annual extrapolation toggle
   const [extrapolatePeriod, setExtrapolatePeriod] = useState<"monthly" | "annual">("monthly");

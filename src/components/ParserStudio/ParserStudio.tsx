@@ -1,70 +1,139 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, ChangeEvent, DragEvent } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { parseRawSchedule, parseN4OpenTime } from "../../lib/parser";
-import { RAW_DEMO_TEXT, RAW_HI1_TEXT, RAW_N4_TEXT } from "../../lib/demoData";
-import { Clipboard, Play, AlertCircle, FileText, CheckCircle2, RotateCcw, HelpCircle, Eye, Calendar } from "lucide-react";
+import { parseRawSchedule, parseN4OpenTime, extractVacationsFromHI1, parseMonthlyHIMetadata } from "../../lib/parser";
+import { readUploadedFileAsText } from "../../lib/pdfExtractor";
+import { RAW_DEMO_TEXT, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT } from "../../lib/demoData";
+import { SequenceTrip, OpenSequence, MonthlyHIMetadata, VacationPeriod } from "../../types";
+import { Clipboard, Play, AlertCircle, FileText, CheckCircle2, RotateCcw, HelpCircle, Upload, ShieldCheck, Calendar, User, Award, Clock, DollarSign, HeartPulse } from "lucide-react";
 
 export default function ParserStudio() {
   const [parseMode, setParseMode] = useState<"roster" | "opentime">("roster");
   const [inputText, setInputText] = useState("");
-  const [parsedOutput, setParsedOutput] = useState<any[]>([]);
+  const [parsedOutput, setParsedOutput] = useState<(SequenceTrip | OpenSequence)[]>([]);
+  const [parsedMetadata, setParsedMetadata] = useState<MonthlyHIMetadata | null>(null);
+  const [parsedVacations, setParsedVacations] = useState<VacationPeriod[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-  const [clearRosterFirst, setClearRosterFirst] = useState(true);
+  const [uploadedFileName, setUploadedFileName] = useState<string>("");
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
-  const addSequences = useCrewStore((state) => state.addSequences);
-  const clearAll = useCrewStore((state) => state.clearAll);
+  const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
   const setOpenSequences = useCrewStore((state) => state.setOpenSequences);
   const setActiveTab = useCrewStore((state) => state.setActiveTab);
 
-  const handleParse = () => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const processTextAndParse = (text: string, fileName: string = "Terminal_Log.txt") => {
+    setInputText(text);
+    setUploadedFileName(fileName);
     setErrorMsg("");
     setSuccessMsg("");
-    if (!inputText.trim()) {
-      setErrorMsg("Please paste some monospace schedule text first.");
-      return;
-    }
 
     try {
       if (parseMode === "roster") {
-        const results = parseRawSchedule(inputText);
+        const metadata = parseMonthlyHIMetadata(text);
+        const vacations = extractVacationsFromHI1(text);
+        const results = parseRawSchedule(text);
+
+        setParsedMetadata(metadata);
+        setParsedVacations(vacations);
+
         if (results.length === 0) {
-          setErrorMsg("Could not parse any sequences. Check the format or try the Demo data.");
+          setErrorMsg("Could not parse any sequences. Ensure text is a valid HI log or terminal sheet.");
           setParsedOutput([]);
         } else {
           setParsedOutput(results);
-          setSuccessMsg(`Successfully parsed ${results.length} active sequence(s)!`);
+          const activeCount = results.filter((s) => !s.isDropped).length;
+          const droppedCount = results.filter((s) => s.isDropped).length;
+          setSuccessMsg(
+            `Parsed ${results.length} total sequences (${activeCount} active, ${droppedCount} dropped/traded) and ${vacations.length} vacation block(s)!`
+          );
         }
       } else {
-        const results = parseN4OpenTime(inputText);
+        const results = parseN4OpenTime(text);
+        setParsedMetadata(null);
+        setParsedVacations([]);
         if (results.length === 0) {
-          setErrorMsg("Could not parse any open sequences. Check the format or try the N4 sample data.");
+          setErrorMsg("Could not parse any open sequences. Ensure format is N4 Open Time.");
           setParsedOutput([]);
         } else {
           setParsedOutput(results);
           setSuccessMsg(`Successfully parsed ${results.length} open sequence(s)!`);
         }
       }
-    } catch (e: any) {
-      setErrorMsg(`Parsing failed: ${e.message || e}`);
+    } catch (e: unknown) {
+      const err = e as Error;
+      setErrorMsg(`Parsing failed: ${err.message || String(e)}`);
       setParsedOutput([]);
     }
   };
 
+  const handleFileUpload = async (file: File) => {
+    setIsExtracting(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+    try {
+      const { text, fileName } = await readUploadedFileAsText(file);
+      processTextAndParse(text, fileName);
+    } catch (e: unknown) {
+      const err = e as Error;
+      setErrorMsg(`File reading failed: ${err.message || String(e)}`);
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const onDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  const handleManualParse = () => {
+    if (!inputText.trim()) {
+      setErrorMsg("Please paste schedule text or upload a PDF / text log file first.");
+      return;
+    }
+    processTextAndParse(inputText, uploadedFileName || "Pasted_Terminal_Text.txt");
+  };
+
   const handleImport = () => {
     if (parsedOutput.length === 0) return;
-    
+
     if (parseMode === "roster") {
-      if (clearRosterFirst) {
-        clearAll();
-      }
-      addSequences(parsedOutput);
-      setSuccessMsg(`Imported ${parsedOutput.length} sequence(s) to your active schedule.`);
+      importMonthlyHISchedule(
+        parsedOutput as SequenceTrip[],
+        parsedVacations,
+        parsedMetadata,
+        uploadedFileName || "Monthly_HI_Schedule.pdf",
+        inputText
+      );
+      setSuccessMsg(`Imported ${parsedOutput.length} sequence(s) and configured Monthly HI schedule metrics & audit trail!`);
     } else {
-      setOpenSequences(parsedOutput);
-      setSuccessMsg(`Imported ${parsedOutput.length} open sequences for Calendar Overlay!`);
+      setOpenSequences(parsedOutput as OpenSequence[]);
+      setSuccessMsg(`Imported ${parsedOutput.length} open sequence(s) for Calendar Overlay!`);
     }
 
     setTimeout(() => {
@@ -72,37 +141,32 @@ export default function ParserStudio() {
     }, 1000);
   };
 
-  const loadDemoText = () => {
-    setInputText(RAW_DEMO_TEXT.trim());
-    setErrorMsg("");
-    setSuccessMsg("");
+  const loadHI1Text = () => {
+    processTextAndParse(RAW_HI1_TEXT.trim(), "HI1_July_2026.pdf");
   };
 
-  const loadHI1Text = () => {
-    setInputText(RAW_HI1_TEXT.trim());
-    setErrorMsg("");
-    setSuccessMsg("");
+  const loadAugText = () => {
+    processTextAndParse(RAW_HI1_AUG_TEXT.trim(), "HI1_August_2026.pdf");
   };
 
   const loadN4Text = () => {
-    setInputText(RAW_N4_TEXT.trim());
-    setErrorMsg("");
-    setSuccessMsg("");
+    setParseMode("opentime");
+    processTextAndParse(RAW_N4_TEXT.trim(), "N4_OpenTime.txt");
   };
 
   const handleClear = () => {
     setInputText("");
+    setUploadedFileName("");
     setParsedOutput([]);
+    setParsedMetadata(null);
+    setParsedVacations([]);
     setErrorMsg("");
     setSuccessMsg("");
   };
 
   const switchMode = (mode: "roster" | "opentime") => {
     setParseMode(mode);
-    setParsedOutput([]);
-    setInputText("");
-    setErrorMsg("");
-    setSuccessMsg("");
+    handleClear();
   };
 
   return (
@@ -111,42 +175,42 @@ export default function ParserStudio() {
       <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Terminal OCR & Log Parser Studio
+            Monthly HI & Schedule Log Parser Studio
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Import raw monospace terminal sheets, roster logs, or N4 Open Time documents to populate scheduling grids.
+            Upload your monthly HI schedule PDF, terminal logs, or N4 Open Time text to parse sequences, credit, vacation pay, and sick leave balances.
           </p>
         </div>
-        <div className="mt-4 md:mt-0 flex gap-3 flex-wrap">
+        <div className="mt-4 md:mt-0 flex gap-2 flex-wrap">
           {parseMode === "roster" ? (
             <>
               <button
-                onClick={loadDemoText}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 rounded-xl transition duration-200 text-sm font-semibold shadow-lg shadow-slate-950/20"
+                onClick={loadHI1Text}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition duration-200 text-xs font-semibold shadow-lg cursor-pointer"
               >
-                <FileText className="w-4 h-4 text-indigo-400" />
-                Load Sample Terminal Text
+                <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                July HI Log (HI1.pdf)
               </button>
               <button
-                onClick={loadHI1Text}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-800 hover:border-slate-700 rounded-xl transition duration-200 text-sm font-semibold shadow-lg shadow-slate-950/20"
+                onClick={loadAugText}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition duration-200 text-xs font-semibold shadow-lg cursor-pointer"
               >
-                <FileText className="w-4 h-4 text-emerald-400" />
-                Load HI1 Roster Log
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                August HI Log (HI2.pdf)
               </button>
             </>
           ) : (
             <button
               onClick={loadN4Text}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 rounded-xl transition duration-200 text-sm font-semibold shadow-lg shadow-slate-950/20"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition duration-200 text-xs font-semibold shadow-lg"
             >
               <FileText className="w-4 h-4 text-amber-400" />
-              Load N4 Open Time Log
+              Load N4 Open Time Sample
             </button>
           )}
           <button
             onClick={handleClear}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-300 border border-slate-800 rounded-xl transition duration-200 text-sm font-semibold"
+            className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-300 border border-slate-800 rounded-xl transition duration-200 text-xs font-semibold"
           >
             <RotateCcw className="w-4 h-4" />
             Clear
@@ -162,7 +226,7 @@ export default function ParserStudio() {
             parseMode === "roster" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
           }`}
         >
-          Parse Roster Schedule
+          Parse Roster Schedule (HI / HI1 / HI2)
         </button>
         <button
           onClick={() => switchMode("opentime")}
@@ -174,16 +238,58 @@ export default function ParserStudio() {
         </button>
       </div>
 
+      {/* Drag and Drop File Upload Area */}
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 ${
+          isDragOver
+            ? "border-indigo-400 bg-indigo-500/10 scale-[1.01]"
+            : "border-slate-800 hover:border-slate-700 bg-slate-900/40 hover:bg-slate-900/60"
+        }`}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.txt,.log"
+          onChange={onFileInputChange}
+          className="hidden"
+        />
+        <div className="flex flex-col items-center justify-center space-y-2">
+          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400">
+            <Upload className="w-6 h-6 animate-bounce" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-200">
+              {uploadedFileName ? `Uploaded: ${uploadedFileName}` : "Drag & Drop your Monthly HI Log (.pdf, .txt)"}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Supports <span className="text-indigo-400 font-semibold">HI1.pdf</span>, <span className="text-indigo-400 font-semibold">HI2.pdf</span>, <span className="text-indigo-400 font-semibold">HSS.pdf</span>, or monospace text logs. Click to browse files.
+            </p>
+          </div>
+          {isExtracting && (
+            <div className="flex items-center gap-2 text-xs text-indigo-400 font-medium pt-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
+              Extracting text and parsing PDF coordinates...
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Parser Workspace */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Input Panel */}
-        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col h-[600px]">
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col h-[650px]">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
               <Clipboard className="w-5 h-5 text-indigo-400" />
-              Raw Monospace Input
+              Raw Monospace Log Text
             </h2>
-            <span className="text-xs text-slate-500 font-mono">Monospace Terminal Output</span>
+            <span className="text-xs text-slate-500 font-mono">
+              {uploadedFileName || "Terminal Monospace Output"}
+            </span>
           </div>
 
           <textarea
@@ -191,7 +297,7 @@ export default function ParserStudio() {
             onChange={(e) => setInputText(e.target.value)}
             placeholder={
               parseMode === "roster"
-                ? "Paste raw active schedule log text here..."
+                ? "Paste raw monthly HI schedule log text or drop your HI PDF file above..."
                 : "Paste raw N4 Open Time log text here..."
             }
             className="w-full flex-grow bg-slate-950/80 border border-slate-800/80 focus:border-indigo-500/80 focus:ring-1 focus:ring-indigo-500/80 rounded-xl p-4 text-slate-300 font-mono text-xs leading-relaxed resize-none focus:outline-none transition duration-150 scrollbar-thin"
@@ -199,26 +305,26 @@ export default function ParserStudio() {
 
           <div className="mt-4 flex items-center justify-between">
             <span className="text-xs text-slate-500">
-              {inputText.length > 0 ? `${inputText.split("\n").length} lines` : "Empty input"}
+              {inputText.length > 0 ? `${inputText.split("\n").length} lines extracted` : "No text input"}
             </span>
             <button
-              onClick={handleParse}
-              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/20 active:scale-95 transition-all text-sm"
+              onClick={handleManualParse}
+              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/20 active:scale-95 transition-all text-sm cursor-pointer"
             >
               <Play className="w-4 h-4 fill-white" />
-              Parse Terminal Output
+              Parse Schedule Log
             </button>
           </div>
         </div>
 
         {/* Output Panel */}
-        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col h-[600px]">
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col h-[650px]">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              Parsed Structured Results
+              Parsed Schedule & Metadata Analysis
             </h2>
-            <span className="text-xs text-slate-500 font-mono">Parsed Records</span>
+            <span className="text-xs text-slate-500 font-mono">Structured Audit</span>
           </div>
 
           <div className="flex-grow bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 overflow-y-auto scrollbar-thin flex flex-col">
@@ -226,7 +332,7 @@ export default function ParserStudio() {
               <div className="flex items-start gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-sm mb-4">
                 <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-bold">Parsing Error</h4>
+                  <h4 className="font-bold">Parsing Issue</h4>
                   <p className="mt-0.5 text-xs text-rose-400/90">{errorMsg}</p>
                 </div>
               </div>
@@ -236,8 +342,71 @@ export default function ParserStudio() {
               <div className="flex items-start gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-sm mb-4">
                 <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-bold">Success</h4>
+                  <h4 className="font-bold">Parsing Success</h4>
                   <p className="mt-0.5 text-xs text-emerald-400/90">{successMsg}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Parsed Monthly HI Header Summary Card */}
+            {parsedMetadata && (
+              <div className="mb-4 p-4 bg-slate-900/95 border border-indigo-500/30 rounded-2xl shadow-xl space-y-3">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        {parsedMetadata.pilotName}
+                        <span className="px-2 py-0.5 bg-indigo-950 text-indigo-400 border border-indigo-900/60 rounded text-[10px] font-mono">
+                          Seniority #{parsedMetadata.seniorityNum}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">
+                        Base: {parsedMetadata.base} | Rank: {parsedMetadata.rank} | Equip: {parsedMetadata.equipment} | Emp #{parsedMetadata.empNum}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-1 border border-emerald-900/50 rounded-lg flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" />
+                      {parsedMetadata.monthYearLabel}
+                    </span>
+                    {parsedMetadata.asOfDateStr && (
+                      <p className="text-[10px] text-slate-500 font-mono mt-1">As of: {parsedMetadata.asOfDateStr}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
+                      <Award className="w-3 h-3 text-indigo-400" /> Guarantee
+                    </div>
+                    <div className="text-slate-100 font-bold text-sm mt-0.5">{parsedMetadata.guaranteeHours.toFixed(2)} hrs</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
+                      <Clock className="w-3 h-3 text-emerald-400" /> Bid Sel Proj
+                    </div>
+                    <div className="text-emerald-400 font-bold text-sm mt-0.5">{parsedMetadata.bidSelProjHours.toFixed(2)} hrs</div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
+                      <DollarSign className="w-3 h-3 text-amber-400" /> Vacation Pay
+                    </div>
+                    <div className="text-amber-400 font-bold text-sm mt-0.5">
+                      {parsedMetadata.vacationDaysCount} days {parsedMetadata.vacationCreditHours > 0 ? `(${parsedMetadata.vacationCreditHours.toFixed(2)}h)` : ""}
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
+                      <HeartPulse className="w-3 h-3 text-rose-400" /> Sick Avail
+                    </div>
+                    <div className="text-slate-100 font-bold text-sm mt-0.5">{parsedMetadata.availSickHours.toFixed(2)} hrs</div>
+                  </div>
                 </div>
               </div>
             )}
@@ -245,55 +414,80 @@ export default function ParserStudio() {
             {parsedOutput.length > 0 ? (
               <div className="space-y-4 flex-grow">
                 {parseMode === "roster" ? (
-                  <div className="grid grid-cols-1 gap-3">
-                    {parsedOutput.map((seq, idx) => (
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {(parsedOutput as SequenceTrip[]).map((seq, idx) => (
                       <div
                         key={seq.id || idx}
-                        className="p-4 bg-slate-900/85 border border-slate-800 rounded-xl hover:border-slate-700/80 transition duration-200"
+                        className={`p-3.5 bg-slate-900/85 border rounded-xl transition duration-200 ${
+                          seq.isDropped
+                            ? "border-rose-900/40 bg-rose-950/10"
+                            : seq.isOvertime
+                            ? "border-amber-900/40 bg-amber-950/10"
+                            : "border-slate-800 hover:border-slate-700/80"
+                        }`}
                       >
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs font-bold text-slate-100 flex items-center gap-2">
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full ${
+                                seq.isDropped ? "bg-rose-500" : seq.isOvertime ? "bg-amber-500" : "bg-indigo-500"
+                              }`}
+                            />
                             Seq {seq.sequenceNumber}
+                            {seq.isDropped && (
+                              <span className="px-2 py-0.5 bg-rose-950 text-rose-400 border border-rose-900/60 rounded text-[10px] font-mono">
+                                {seq.statusTag || "DROPPED"}
+                              </span>
+                            )}
+                            {seq.isOvertime && !seq.isDropped && (
+                              <span className="px-2 py-0.5 bg-amber-950 text-amber-400 border border-amber-900/60 rounded text-[10px] font-mono">
+                                OT / REASSIGNED
+                              </span>
+                            )}
                           </span>
-                          <span className="px-2 py-0.5 bg-indigo-950/80 text-indigo-400 border border-indigo-900/50 rounded font-bold text-xs">
+                          <span className="px-2 py-0.5 bg-indigo-950/80 text-indigo-400 border border-indigo-900/50 rounded font-bold text-[10px]">
                             {seq.base}
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-y-1.5 gap-x-4 text-xs text-slate-400 font-mono">
+                        <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-xs text-slate-400 font-mono">
                           <div>
                             Dates: <span className="text-slate-200 font-bold">{seq.startDate} to {seq.endDate}</span>
-                          </div>
-                          <div>
-                            Block Time: <span className="text-slate-200 font-bold">{(seq.totalBlockMinutes / 60).toFixed(2)} hrs</span>
                           </div>
                           <div>
                             Layovers: <span className="text-slate-200 font-bold">{seq.layoverCities.join(", ") || "None"}</span>
                           </div>
                           <div>
-                            Credit: <span className="text-emerald-400 font-bold font-black">{(seq.totalCreditMinutes / 60).toFixed(2)} hrs</span>
+                            Block: <span className="text-slate-200 font-bold">{(seq.totalBlockMinutes / 60).toFixed(2)} hrs</span>
                           </div>
+                          <div>
+                            Credit: <span className="text-emerald-400 font-bold">{(seq.totalCreditMinutes / 60).toFixed(2)} hrs</span>
+                          </div>
+                          {seq.dropReason && (
+                            <div className="col-span-2 text-[11px] text-rose-400/90 font-sans mt-1 pt-1 border-t border-slate-800/60">
+                              {seq.dropReason}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3">
-                    {parsedOutput.map((seq, idx) => (
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {(parsedOutput as OpenSequence[]).map((seq, idx) => (
                       <div
                         key={seq.id || idx}
-                        className="p-4 bg-slate-900/85 border border-slate-800 rounded-xl hover:border-slate-700/80 transition duration-200"
+                        className="p-3.5 bg-slate-900/85 border border-slate-800 rounded-xl hover:border-slate-700/80 transition duration-200"
                       >
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs font-bold text-slate-100 flex items-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                             Open Seq {seq.sequenceNumber}
                           </span>
-                          <span className="px-2 py-0.5 bg-amber-950/80 text-amber-400 border border-amber-900/50 rounded font-bold text-xs">
+                          <span className="px-2 py-0.5 bg-amber-950/80 text-amber-400 border border-amber-900/50 rounded font-bold text-[10px]">
                             OT
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-y-1.5 gap-x-4 text-xs text-slate-400 font-mono">
+                        <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-xs text-slate-400 font-mono">
                           <div>
                             Start: <span className="text-slate-200 font-bold">{seq.startDate} ({seq.reportTime})</span>
                           </div>
@@ -304,10 +498,7 @@ export default function ParserStudio() {
                             Layovers: <span className="text-slate-200 font-bold">{seq.layoverDescription}</span>
                           </div>
                           <div>
-                            Legs: <span className="text-slate-200 font-bold">{seq.legsDescription}</span>
-                          </div>
-                          <div className="col-span-2 border-t border-slate-800/60 pt-1.5 mt-1.5">
-                            Credit Yield: <span className="text-amber-400 font-bold font-black">{seq.creditHours.toFixed(2)} hrs (unscaled)</span>
+                            Credit: <span className="text-amber-400 font-bold">{seq.creditHours.toFixed(2)} hrs</span>
                           </div>
                         </div>
                       </div>
@@ -315,41 +506,26 @@ export default function ParserStudio() {
                   </div>
                 )}
 
-                {/* Import Controller */}
-                <div className="sticky bottom-0 bg-slate-950 p-4 border border-slate-850 rounded-2xl flex flex-col gap-3 shadow-2xl">
-                  {parseMode === "roster" && (
-                    <div className="flex items-center gap-2 text-xs text-slate-400 font-sans">
-                      <input
-                        type="checkbox"
-                        id="clear-first"
-                        checked={clearRosterFirst}
-                        onChange={(e) => setClearRosterFirst(e.target.checked)}
-                        className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 bg-slate-900 w-4 h-4"
-                      />
-                      <label htmlFor="clear-first" className="cursor-pointer font-bold">
-                        Overwrite and clear active roster before import
-                      </label>
-                    </div>
-                  )}
-
+                {/* Import Action Controller */}
+                <div className="sticky bottom-0 bg-slate-950 p-4 border border-slate-800 rounded-2xl flex flex-col gap-3 shadow-2xl">
                   <button
                     onClick={handleImport}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-indigo-600 hover:from-emerald-600 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-sm font-sans"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-indigo-600 hover:from-emerald-600 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-sm cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     {parseMode === "roster"
-                      ? "Import Parsed Sequences to Main Dashboard"
-                      : "Import Parsed Open Sequences for Calendar Overlay"}
+                      ? "Import Parsed Monthly Schedule & Audit Trail"
+                      : "Import Parsed Open Sequences for Overlay"}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="flex-grow flex flex-col items-center justify-center text-slate-500 text-center py-12 px-6">
                 <HelpCircle className="w-12 h-12 text-slate-700 mb-3 animate-pulse" />
-                <p className="text-sm font-semibold">No parsed records</p>
+                <p className="text-sm font-semibold">No parsed records yet</p>
                 <p className="text-xs text-slate-600 max-w-[280px] mt-1 leading-relaxed">
                   {parseMode === "roster"
-                    ? "Paste or load sample terminal schedules and click Parse."
+                    ? "Drag & drop your monthly HI schedule PDF (HI1.pdf, HI2.pdf) or paste terminal output to analyze."
                     : "Paste or load sample N4 open sequence lists and click Parse."}
                 </p>
               </div>

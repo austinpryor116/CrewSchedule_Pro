@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
-import { SequenceTrip, DutyPeriod } from "../../types";
-import { X, Plane, Clock, Award, Calendar, Home, Plus, ShieldCheck, ShieldAlert, CheckCircle } from "lucide-react";
+import { SequenceTrip, FlightLeg, DutyPeriod } from "../../types";
+import { X, Plane, Clock, Calendar, Home, Plus, ShieldCheck, ShieldAlert, CheckCircle, AlertCircle } from "lucide-react";
 import { checkOpenSequenceConflict } from "../../lib/parser";
 
 export default function SequenceInspector() {
@@ -15,7 +15,7 @@ export default function SequenceInspector() {
   const toggleSimulate = useCrewStore((state) => state.toggleSimulateSequence);
 
   // Find selected trip (could be active roster, simulated, or ghost open time)
-  const seq = useMemo(() => {
+  const seq: SequenceTrip | null = useMemo(() => {
     if (!selectedId) return null;
     const activeSeq = sequences.find((s) => s.id === selectedId);
     if (activeSeq) return activeSeq;
@@ -23,9 +23,9 @@ export default function SequenceInspector() {
     if (openSeq) {
       const converted = convertOpenToTrip(openSeq);
       if (simulatedIds.includes(openSeq.id)) {
-        return { ...converted, isSimulated: true } as any;
+        return { ...converted, isSimulated: true };
       }
-      return { ...converted, isGhost: true } as any;
+      return { ...converted, isGhost: true };
     }
     return null;
   }, [selectedId, sequences, openSequences, simulatedIds]);
@@ -62,18 +62,35 @@ export default function SequenceInspector() {
     return `${clean.substring(0, clean.length - 2)}:${clean.substring(clean.length - 2)}`;
   };
 
+  const isDropped = seq.isDropped || seq.statusTag === "DROP" || seq.statusTag === "DTS DROP";
+
   return (
     <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-2xl flex flex-col h-full animate-fadeIn max-h-[65vh] lg:max-h-[820px] overflow-y-auto scrollbar-thin relative">
       {/* Header section */}
-      <div className="flex justify-between items-start pb-4 border-b border-slate-800/80 mb-6">
+      <div className="flex justify-between items-start pb-4 border-b border-slate-800/80 mb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-black text-slate-100">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-xl font-black ${isDropped ? "line-through text-slate-400" : "text-slate-100"}`}>
               Sequence {seq.sequenceNumber}
             </span>
             <span className="px-2 py-0.5 bg-indigo-950/80 border border-indigo-900/60 text-indigo-400 font-mono text-[10px] rounded-lg">
               {seq.base}
             </span>
+            {isDropped && (
+              <span className="px-2.5 py-0.5 bg-rose-950 border border-rose-500/60 text-rose-300 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
+                DROPPED (DTS)
+              </span>
+            )}
+            {seq.statusTag === "TT" && (
+              <span className="px-2.5 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-300 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
+                TRIP TRADE (TT)
+              </span>
+            )}
+            {seq.statusTag === "RA" && (
+              <span className="px-2.5 py-0.5 bg-rose-500/15 border border-rose-500/30 text-rose-400 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
+                REASSIGNMENT (RA)
+              </span>
+            )}
             {seq.isOvertime && (
               <span className="px-2.5 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-400 font-extrabold text-[10px] rounded-lg shadow-sm">
                 OVERTIME (OT)
@@ -104,14 +121,32 @@ export default function SequenceInspector() {
           ) : null}
           <button
             onClick={() => setSelectedId(null)}
-            className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl border border-slate-800 hover:border-slate-700 transition duration-150 cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition duration-150"
+            title="Close Inspector"
           >
-            <X className="w-4.5 h-4.5" />
+            <X className="w-5 h-5" />
           </button>
         </div>
       </div>
 
+      {/* DTS Dropped Sequence Banner Callout */}
+      {isDropped && (
+        <div className="mb-4 p-3.5 bg-rose-950/40 border border-rose-500/40 rounded-2xl flex items-start gap-3 text-xs text-rose-200 shadow-md animate-fadeIn">
+          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-bold text-rose-300 text-sm">DROPPED SEQUENCE — DTS OVERLAP</div>
+            <div className="text-[11px] text-rose-200/90 mt-1 leading-relaxed">
+              {seq.dropReason || "This sequence touches your scheduled vacation block (Aug 01 - Aug 07) and has been dropped by Crew Schedule under DTS rules."}
+            </div>
+            <div className="mt-1.5 text-[10px] font-mono text-rose-400 font-bold bg-rose-950/60 px-2 py-0.5 rounded border border-rose-900/60 inline-block">
+              Active Status: Inactive / Dropped (0.00h active flight credit)
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Summary figures */}
+
       <div className="grid grid-cols-2 gap-3 mb-6 font-mono text-xs">
         <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-800/40">
           <p className="text-[10px] text-slate-500 font-sans">Total Block Time</p>
@@ -206,9 +241,16 @@ export default function SequenceInspector() {
             >
               {/* Duty Day Header */}
               <div className="flex justify-between items-center pb-2 border-b border-slate-900/60">
-                <span className="text-xs font-extrabold text-slate-300">
-                  Duty Day {dp.dayIndex + 1}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-extrabold text-slate-300">
+                    Duty Day {dp.dayIndex + 1}
+                  </span>
+                  {(dp.isOvertime || dp.legs.some((l: FlightLeg) => l.isOvertime)) && (
+                    <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase">
+                      OVERTIME (OT)
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Time displays */}
@@ -263,7 +305,7 @@ export default function SequenceInspector() {
                   <div className="mt-0.5 font-bold space-y-0.5">
                     <p className="text-slate-400 text-[10px]">
                       <span className="text-[8px] text-indigo-400/80 mr-1 uppercase">S</span>
-                      {Math.floor(dp.legs.reduce((acc: number, l: any) => acc + l.blockMinutes, 0) / 60)}h {dp.legs.reduce((acc: number, l: any) => acc + l.blockMinutes, 0) % 60}m
+                      {Math.floor(dp.legs.reduce((acc: number, l: FlightLeg) => acc + l.blockMinutes, 0) / 60)}h {dp.legs.reduce((acc: number, l: FlightLeg) => acc + l.blockMinutes, 0) % 60}m
                     </p>
                     {dp.actualBlockMinutes !== undefined && (
                       <p className="text-emerald-400 text-[10px]">
@@ -278,7 +320,7 @@ export default function SequenceInspector() {
               {/* Legs list inside day */}
               <div className="space-y-2">
                 {dp.legs.length > 0 ? (
-                  dp.legs.map((leg: any, idx: number) => (
+                  dp.legs.map((leg: FlightLeg, idx: number) => (
                     <div
                       key={leg.flightNumber + idx}
                       className="p-3 bg-slate-950/50 rounded-xl border border-slate-900/80 flex justify-between items-center text-xs font-mono"
@@ -297,6 +339,11 @@ export default function SequenceInspector() {
                             {leg.isDeadhead && (
                               <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-black uppercase">
                                 DH
+                              </span>
+                            )}
+                            {leg.isOvertime && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-black uppercase">
+                                OT
                               </span>
                             )}
                           </div>

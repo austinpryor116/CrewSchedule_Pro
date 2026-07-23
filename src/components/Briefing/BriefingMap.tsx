@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { LiveSigmetAirmet, getAirportCoords } from "../../lib/weatherService";
 
 // Fix for default Leaflet icon paths
 const fixLeafletIcon = () => {
-  // @ts-ignore
-  delete L.Icon.Default.prototype._getIconUrl;
+  delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
     iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
@@ -65,7 +65,104 @@ interface BriefingMapProps {
   showSigmet: boolean;
   showDemoRain: boolean;
   showIfrLow: boolean;
-  filteredAlerts: any[];
+  corridorNm?: number;
+  liveHazards?: LiveSigmetAirmet[];
+  filteredAlerts: Array<{
+    id: number;
+    type: string;
+    subtype?: string;
+    text: string;
+    priority: string;
+    lat: number;
+    lng: number;
+  }>;
+}
+
+function destinationPoint(lat: number, lon: number, brngRad: number, distNm: number): [number, number] {
+  const R = 3440.065; // Earth radius in NM
+  const d = distNm / R;
+  const lat1 = (lat * Math.PI) / 180;
+  const lon1 = (lon * Math.PI) / 180;
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(d) +
+    Math.cos(lat1) * Math.sin(d) * Math.cos(brngRad)
+  );
+  const lon2 = lon1 + Math.atan2(
+    Math.sin(brngRad) * Math.sin(d) * Math.cos(lat1),
+    Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+  );
+
+  return [(lat2 * 180) / Math.PI, (lon2 * 180) / Math.PI];
+}
+
+function initialBearingRad(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaLam = ((lon2 - lon1) * Math.PI) / 180;
+
+  const y = Math.sin(deltaLam) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLam);
+  return Math.atan2(y, x);
+}
+
+function computeCorridorCoords(
+  depLatLng: [number, number],
+  arrLatLng: [number, number],
+  corridorNm: number
+): [number, number][] {
+  const [depLat, depLon] = depLatLng;
+  const [arrLat, arrLon] = arrLatLng;
+
+  const dLat = arrLat - depLat;
+  const dLon = arrLon - depLon;
+  const approxDist = Math.sqrt(dLat * dLat + dLon * dLon);
+
+  // If departure and arrival are identical or extremely close, draw a full circle around the airport
+  if (approxDist < 0.0001) {
+    const circlePoints: [number, number][] = [];
+    const N = 36;
+    for (let i = 0; i < N; i++) {
+      const brng = (i / N) * 2 * Math.PI;
+      circlePoints.push(destinationPoint(depLat, depLon, brng, corridorNm));
+    }
+    return circlePoints;
+  }
+
+  const beta = initialBearingRad(depLat, depLon, arrLat, arrLon);
+  const points: [number, number][] = [];
+  const K = 25; // Steps along segment
+  const N = 24; // Steps around airport semi-circles
+
+  // 1. Right side parallel line from dep to arr
+  for (let i = 0; i <= K; i++) {
+    const t = i / K;
+    const lat_t = depLat + t * (arrLat - depLat);
+    const lon_t = depLon + t * (arrLon - depLon);
+    points.push(destinationPoint(lat_t, lon_t, beta + Math.PI / 2, corridorNm));
+  }
+
+  // 2. Semi-circle cap around Arrival Airport (sweeping from right +90° to left -90°)
+  for (let j = 1; j <= N; j++) {
+    const angle = (beta + Math.PI / 2) - (j / N) * Math.PI;
+    points.push(destinationPoint(arrLat, arrLon, angle, corridorNm));
+  }
+
+  // 3. Left side parallel line from arr back to dep
+  for (let i = K - 1; i >= 0; i--) {
+    const t = i / K;
+    const lat_t = depLat + t * (arrLat - depLat);
+    const lon_t = depLon + t * (arrLon - depLon);
+    points.push(destinationPoint(lat_t, lon_t, beta - Math.PI / 2, corridorNm));
+  }
+
+  // 4. Semi-circle cap around Departure Airport (sweeping from left -90° back to right +90°)
+  for (let j = 1; j < N; j++) {
+    const angle = (beta - Math.PI / 2) - (j / N) * Math.PI;
+    points.push(destinationPoint(depLat, depLon, angle, corridorNm));
+  }
+
+  return points;
 }
 
 export default function BriefingMap({
@@ -75,28 +172,40 @@ export default function BriefingMap({
   showSigmet,
   showDemoRain,
   showIfrLow,
+  corridorNm = 200,
+  liveHazards = [],
   filteredAlerts,
 }: BriefingMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
 
-  // References to active layers for dynamic toggling
   const radarLayerRef = useRef<L.TileLayer | null>(null);
-  const sigmetLayerRef = useRef<L.Polygon | null>(null);
+  const sigmetLayersRef = useRef<L.Polygon[]>([]);
   const routeLayerRef = useRef<L.Polyline | null>(null);
+  const corridorLayerRef = useRef<L.Polygon | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const demoRainLayersRef = useRef<L.Layer[]>([]);
   const alertMarkersRef = useRef<L.Marker[]>([]);
   const ifrLowLayerRef = useRef<L.TileLayer | null>(null);
+
+  const latestBoundsRef = useRef<L.LatLngBounds | null>(null);
 
   useEffect(() => {
     fixLeafletIcon();
 
     if (!mapContainerRef.current) return;
 
-    // Initialize map with a scale allowing full view of the US
-    const defaultCenter: [number, number] = [39.8283, -98.5795]; // Center of US
-    const map = L.map(mapContainerRef.current, {
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+    }
+    const container = mapContainerRef.current as HTMLDivElement & { _leaflet_id?: string | null };
+    if (container._leaflet_id) {
+      container._leaflet_id = null;
+    }
+
+    const defaultCenter: [number, number] = [39.8283, -98.5795];
+    const map = L.map(container, {
       center: defaultCenter,
       zoom: 4,
       minZoom: 2,
@@ -105,7 +214,6 @@ export default function BriefingMap({
     });
     mapRef.current = map;
 
-    // Add scale and custom zoom control
     L.control.zoom({ position: "topright" }).addTo(map);
 
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
@@ -114,12 +222,13 @@ export default function BriefingMap({
       zIndex: 1,
     }).addTo(map);
 
-    // Watch for size changes to invalidate Leaflet size
     const resizeObserver = new ResizeObserver(() => {
-      // Use requestAnimationFrame to defer call until display state has resolved in the browser
       requestAnimationFrame(() => {
         if (mapRef.current) {
           mapRef.current.invalidateSize();
+          if (latestBoundsRef.current) {
+            mapRef.current.fitBounds(latestBoundsRef.current, { padding: [50, 50], animate: false });
+          }
         }
       });
     });
@@ -136,61 +245,98 @@ export default function BriefingMap({
     };
   }, []);
 
-  // Update Route, Markers, and Map bounds on Airport changes
+  // Update Route, Markers, Corridor Buffer, and Map bounds on Airport changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Remove existing markers & route
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = [];
-    if (routeLayerRef.current) {
-      routeLayerRef.current.remove();
-      routeLayerRef.current = null;
+    let isMounted = true;
+
+    async function updateRoute() {
+      const depLatLng = await getAirportCoords(depAirport);
+      const arrLatLng = await getAirportCoords(arrAirport);
+
+      const activeMap = mapRef.current;
+      if (!isMounted || !activeMap) return;
+
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+      if (routeLayerRef.current) {
+        routeLayerRef.current.remove();
+        routeLayerRef.current = null;
+      }
+      if (corridorLayerRef.current) {
+        corridorLayerRef.current.remove();
+        corridorLayerRef.current = null;
+      }
+
+      if (!depLatLng || !arrLatLng) return;
+
+      const createAirportIcon = (code: string, type: "DEP" | "ARR") => {
+        return L.divIcon({
+          className: "custom-airport-icon",
+          html: `
+            <div class="flex flex-col items-center">
+              <span class="px-2 py-0.5 rounded bg-slate-900 border ${type === "DEP" ? "border-emerald-500 text-emerald-400" : "border-cyan-500 text-cyan-400"} text-[10px] font-black tracking-wide shadow-md uppercase whitespace-nowrap">
+                ${type}: ${code}
+              </span>
+              <span class="w-2.5 h-2.5 rounded-full ${type === "DEP" ? "bg-emerald-500 ring-4 ring-emerald-500/20" : "bg-cyan-500 ring-4 ring-cyan-500/20"} border border-slate-950 mt-1 shadow-lg"></span>
+            </div>
+          `,
+          iconSize: [60, 40],
+          iconAnchor: [30, 28],
+        });
+      };
+
+      const depMarker = L.marker(depLatLng, { icon: createAirportIcon(depAirport, "DEP") }).addTo(activeMap);
+      const arrMarker = L.marker(arrLatLng, { icon: createAirportIcon(arrAirport, "ARR") }).addTo(activeMap);
+      markersRef.current = [depMarker, arrMarker];
+
+      let fitPoints: [number, number][] = [depLatLng, arrLatLng];
+
+      // Draw corridor buffer band if enabled
+      if (corridorNm > 0 && corridorNm < 9999) {
+        const corridorCoords = computeCorridorCoords(depLatLng, arrLatLng, corridorNm);
+        if (corridorCoords.length >= 3) {
+          fitPoints = [...fitPoints, ...corridorCoords];
+          const corridorPoly = L.polygon(corridorCoords, {
+            color: "#818cf8",
+            fillColor: "#6366f1",
+            fillOpacity: 0.08,
+            weight: 1.5,
+            dashArray: "6, 6",
+          }).addTo(activeMap);
+          corridorPoly.bindTooltip(`${corridorNm} NM Route Corridor`, { sticky: true });
+          corridorLayerRef.current = corridorPoly;
+        }
+      }
+
+      const route = L.polyline([depLatLng, arrLatLng], {
+        color: "#6366f1",
+        weight: 3.5,
+        opacity: 0.85,
+        dashArray: "10, 8",
+      }).addTo(activeMap);
+      routeLayerRef.current = route;
+
+      const bounds = L.latLngBounds(fitPoints);
+      latestBoundsRef.current = bounds;
+      activeMap.invalidateSize();
+      activeMap.fitBounds(bounds, { padding: [50, 50], animate: false });
     }
 
-    const depLatLng = AIRPORT_COORDS[depAirport.toUpperCase()];
-    const arrLatLng = AIRPORT_COORDS[arrAirport.toUpperCase()];
+    updateRoute();
 
-    if (!depLatLng || !arrLatLng) return;
-
-    // Create custom airport labels
-    const createAirportIcon = (code: string, type: "DEP" | "ARR") => {
-      return L.divIcon({
-        className: "custom-airport-icon",
-        html: `
-          <div class="flex flex-col items-center">
-            <span class="px-2 py-0.5 rounded bg-slate-900 border ${type === "DEP" ? "border-emerald-500 text-emerald-400" : "border-cyan-500 text-cyan-400"} text-[10px] font-black tracking-wide shadow-md uppercase whitespace-nowrap">
-              ${type}: ${code}
-            </span>
-            <span class="w-2.5 h-2.5 rounded-full ${type === "DEP" ? "bg-emerald-500 ring-4 ring-emerald-500/20" : "bg-cyan-500 ring-4 ring-cyan-500/20"} border border-slate-950 mt-1 shadow-lg"></span>
-          </div>
-        `,
-        iconSize: [60, 40],
-        iconAnchor: [30, 28],
-      });
+    return () => {
+      isMounted = false;
+      if (corridorLayerRef.current) {
+        corridorLayerRef.current.remove();
+        corridorLayerRef.current = null;
+      }
     };
+  }, [depAirport, arrAirport, corridorNm]);
 
-    // Add markers
-    const depMarker = L.marker(depLatLng, { icon: createAirportIcon(depAirport, "DEP") }).addTo(map);
-    const arrMarker = L.marker(arrLatLng, { icon: createAirportIcon(arrAirport, "ARR") }).addTo(map);
-    markersRef.current = [depMarker, arrMarker];
-
-    // Draw route line
-    const route = L.polyline([depLatLng, arrLatLng], {
-      color: "#6366f1", // indigo-500
-      weight: 3.5,
-      opacity: 0.85,
-      dashArray: "10, 8",
-    }).addTo(map);
-    routeLayerRef.current = route;
-
-    // Fit bounds to fit route nicely
-    const bounds = L.latLngBounds([depLatLng, arrLatLng]);
-    map.fitBounds(bounds, { padding: [80, 80] });
-  }, [depAirport, arrAirport]);
-
-  // Handle Live Precipitation Radar (Iowa State University IEM NEXRAD WMS Layer)
+  // Live NEXRAD Radar Overlay
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -201,7 +347,6 @@ export default function BriefingMap({
     }
 
     if (showRadar) {
-      // IEM NEXRAD WMS service - 100% reliable, zero CORS issues, instant loading
       const radar = L.tileLayer.wms("https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r.cgi", {
         layers: "nexrad-n0r-900913",
         format: "image/png",
@@ -215,7 +360,7 @@ export default function BriefingMap({
     }
   }, [showRadar]);
 
-  // Handle FAA IFR Low Enroute Charts Overlay
+  // FAA IFR Low Enroute Charts Overlay
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -227,7 +372,7 @@ export default function BriefingMap({
 
     if (showIfrLow) {
       const ifrLow = L.tileLayer("https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/IFR_AreaLow/MapServer/tile/{z}/{y}/{x}.png", {
-        attribution: "FAA Aeronautical Information Services",
+        attribution: "FAA AIS",
         maxZoom: 18,
         opacity: 0.75,
         zIndex: 10,
@@ -236,206 +381,139 @@ export default function BriefingMap({
     }
   }, [showIfrLow]);
 
-  // Handle Convective SIGMET alert polygons
+  // Render SIGMET / AIRMET Polygons
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (sigmetLayerRef.current) {
-      sigmetLayerRef.current.remove();
-      sigmetLayerRef.current = null;
+    let isMounted = true;
+
+    async function drawSigmets() {
+      sigmetLayersRef.current.forEach((l) => l.remove());
+      sigmetLayersRef.current = [];
+
+      const activeMap = mapRef.current;
+      if (!showSigmet || !isMounted || !activeMap) return;
+
+      if (liveHazards && liveHazards.length > 0) {
+        liveHazards.forEach((hazard) => {
+          if (hazard.coords && hazard.coords.length >= 3) {
+            const isConvective = hazard.hazard === "CONVECTIVE";
+            const isTurb = hazard.hazard === "TURBULENCE";
+            const isIce = hazard.hazard === "ICING";
+
+            const color = isConvective ? "#ef4444" : isTurb ? "#f59e0b" : isIce ? "#06b6d4" : "#a855f7";
+            const fillColor = isConvective ? "#dc2626" : isTurb ? "#d97706" : isIce ? "#0891b2" : "#9333ea";
+
+            const poly = L.polygon(hazard.coords, {
+              color,
+              fillColor,
+              fillOpacity: 0.25,
+              weight: 2,
+              dashArray: "4, 4",
+            }).addTo(activeMap);
+
+            poly.bindPopup(`
+              <div class="text-xs p-1 font-sans">
+                <p class="font-bold text-slate-100">${hazard.title}</p>
+                <p class="text-[10px] text-amber-400 font-mono mt-0.5">${hazard.type} • Valid: ${hazard.validUntil}</p>
+                <p class="text-slate-300 mt-1">${hazard.decodedSummary}</p>
+              </div>
+            `);
+
+            sigmetLayersRef.current.push(poly);
+          }
+        });
+      } else {
+        const depLatLng = await getAirportCoords(depAirport);
+        const arrLatLng = await getAirportCoords(arrAirport);
+        if (depLatLng && arrLatLng && isMounted) {
+          const midLat = (depLatLng[0] + arrLatLng[0]) / 2;
+          const midLng = (depLatLng[1] + arrLatLng[1]) / 2;
+          const polygonCoords: [number, number][] = [
+            [midLat + 0.7, midLng - 0.95],
+            [midLat + 0.8, midLng + 0.95],
+            [midLat - 0.7, midLng + 0.95],
+            [midLat - 0.8, midLng - 0.95],
+          ];
+          const sigmet = L.polygon(polygonCoords, {
+            color: "#f43f5e",
+            fillColor: "#be123c",
+            fillOpacity: 0.25,
+            weight: 2,
+            dashArray: "4, 4",
+          }).addTo(activeMap);
+          sigmetLayersRef.current.push(sigmet);
+        }
+      }
     }
 
-    if (showSigmet) {
-      const depLatLng = AIRPORT_COORDS[depAirport.toUpperCase()];
-      const arrLatLng = AIRPORT_COORDS[arrAirport.toUpperCase()];
-
-      if (!depLatLng || !arrLatLng) return;
-
-      const midLat = (depLatLng[0] + arrLatLng[0]) / 2;
-      const midLng = (depLatLng[1] + arrLatLng[1]) / 2;
-
-      // Draw a mock convective SIGMET hazard polygon enclosing all the demo storm cells
-      const polygonCoords: [number, number][] = [
-        [midLat + 0.7, midLng - 0.95],
-        [midLat + 0.8, midLng + 0.95],
-        [midLat - 0.7, midLng + 0.95],
-        [midLat - 0.8, midLng - 0.95],
-      ];
-
-      const sigmet = L.polygon(polygonCoords, {
-        color: "#f43f5e", // rose-500
-        fillColor: "#be123c", // rose-700
-        fillOpacity: 0.25,
-        weight: 2,
-        dashArray: "4, 4",
-      }).addTo(map);
-
-      sigmet.bindPopup(`
-        <div class="text-xs p-1 font-sans">
-          <p class="font-bold text-rose-400">CONVECTIVE SIGMET 42C</p>
-          <p class="text-slate-300 mt-1">Severe turbulence and gusts up to 55kts forecast due to active squall line.</p>
-        </div>
-      `);
-
-      sigmetLayerRef.current = sigmet;
-    }
+    drawSigmets();
 
     return () => {
-      if (sigmetLayerRef.current) {
-        sigmetLayerRef.current.remove();
-        sigmetLayerRef.current = null;
-      }
+      isMounted = false;
+      sigmetLayersRef.current.forEach((l) => l.remove());
+      sigmetLayersRef.current = [];
     };
-  }, [showSigmet, depAirport, arrAirport]);
+  }, [showSigmet, depAirport, arrAirport, liveHazards]);
 
-  // Handle Demo Rain / Storm Overlay
+  // Render Alert & PIREP Markers along route
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Remove existing demo layers
-    demoRainLayersRef.current.forEach((layer) => layer.remove());
-    demoRainLayersRef.current = [];
-
-    if (showDemoRain) {
-      const depLatLng = AIRPORT_COORDS[depAirport.toUpperCase()];
-      const arrLatLng = AIRPORT_COORDS[arrAirport.toUpperCase()];
-
-      if (!depLatLng || !arrLatLng) return;
-
-      const midLat = (depLatLng[0] + arrLatLng[0]) / 2;
-      const midLng = (depLatLng[1] + arrLatLng[1]) / 2;
-
-      // Draw light rain (green) circle - 60km radius
-      const lightRain = L.circle([midLat, midLng], {
-        radius: 60000,
-        color: "#22c55e", // green-500
-        fillColor: "#22c55e",
-        fillOpacity: 0.35,
-        weight: 1,
-      }).addTo(map);
-
-      // Draw moderate rain (yellow) circle offset slightly - 35km radius
-      const modRain = L.circle([midLat + 0.1, midLng + 0.1], {
-        radius: 35000,
-        color: "#eab308", // yellow-500
-        fillColor: "#eab308",
-        fillOpacity: 0.5,
-        weight: 1,
-      }).addTo(map);
-
-      // Draw heavy thunderstorm (red) circle offset - 15km radius
-      const heavyRain = L.circle([midLat + 0.15, midLng + 0.15], {
-        radius: 15000,
-        color: "#ef4444", // red-500
-        fillColor: "#ef4444",
-        fillOpacity: 0.65,
-        weight: 1.5,
-      }).addTo(map);
-
-      demoRainLayersRef.current = [lightRain, modRain, heavyRain];
-    }
-  }, [showDemoRain, depAirport, arrAirport]);
-
-  // Helper to construct custom HTML icons for Alerts/PIREPs
-  const getAlertIcon = (type: string, subtype?: string) => {
-    let color = "bg-amber-500 border-amber-600 text-slate-950";
-    let letter = "!";
-    
-    if (type === "PIREP") {
-      if (subtype === "TURB") {
-        color = "bg-amber-500 border-amber-650 text-slate-950 hover:bg-amber-400";
-        letter = "T";
-      } else if (subtype === "ICE") {
-        color = "bg-sky-500 border-sky-600 text-white hover:bg-sky-400";
-        letter = "I";
-      } else if (subtype === "SMOOTH") {
-        color = "bg-emerald-500 border-emerald-600 text-slate-950 hover:bg-emerald-400";
-        letter = "S";
-      }
-    } else if (type === "SIGMET") {
-      color = "bg-rose-500 border-rose-600 text-white animate-pulse hover:bg-rose-400";
-      letter = "⚠";
-    } else if (type === "AIRMET") {
-      color = "bg-orange-500 border-orange-600 text-slate-950 hover:bg-orange-400";
-      letter = "A";
-    }
-
-    return L.divIcon({
-      html: `
-        <div class="flex items-center justify-center w-6 h-6 rounded-full border shadow-md font-bold text-[10px] ${color}">
-          ${letter}
-        </div>
-      `,
-      className: "custom-pirep-icon",
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
-    });
-  };
-
-  // Handle Alert/PIREP Markers
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    // Clear existing alert markers
-    alertMarkersRef.current.forEach((marker) => marker.remove());
+    alertMarkersRef.current.forEach((m) => m.remove());
     alertMarkersRef.current = [];
 
-    const newMarkers: L.Marker[] = [];
-
     filteredAlerts.forEach((alert) => {
-      const marker = L.marker([alert.lat, alert.lng], {
-        icon: getAlertIcon(alert.type, alert.subtype),
-      }).addTo(map);
+      const isSigmet = alert.type === "SIGMET";
+      const isTurb = alert.subtype === "TURB" || alert.text.includes("turbulence");
+      const isIce = alert.subtype === "ICE" || alert.text.includes("icing");
+      const isConvective = alert.subtype === "CONVECTIVE" || alert.text.includes("CONVECTIVE");
 
+      const bgColor = isSigmet || isConvective
+        ? "bg-rose-500"
+        : isTurb
+        ? "bg-amber-500"
+        : isIce
+        ? "bg-cyan-500"
+        : "bg-indigo-500";
+
+      const icon = L.divIcon({
+        className: "custom-alert-marker",
+        html: `
+          <div class="relative flex items-center justify-center">
+            <span class="absolute w-6 h-6 rounded-full ${bgColor}/30 animate-ping"></span>
+            <span class="w-4 h-4 rounded-full ${bgColor} border-2 border-slate-950 shadow-lg flex items-center justify-center text-[8px] font-black text-slate-950">
+              ${isSigmet ? "⚡" : isTurb ? "〰" : isIce ? "❄" : "!"}
+            </span>
+          </div>
+        `,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+
+      const marker = L.marker([alert.lat, alert.lng], { icon }).addTo(map);
       marker.bindPopup(`
         <div class="text-xs p-1 font-sans max-w-[220px]">
-          <p class="font-bold ${alert.priority === "HIGH" ? "text-rose-400" : "text-amber-400"}">${alert.type} ${alert.subtype || ""}</p>
-          <p class="text-slate-300 mt-1 select-all font-mono">${alert.text}</p>
+          <span class="px-1.5 py-0.5 text-[9px] font-bold rounded ${bgColor} text-slate-950 uppercase">
+            ${alert.type} ${alert.subtype || ""}
+          </span>
+          <p class="text-slate-200 mt-2 font-mono text-[11px] leading-relaxed">${alert.text}</p>
         </div>
       `);
-      newMarkers.push(marker);
+      alertMarkersRef.current.push(marker);
     });
 
-    alertMarkersRef.current = newMarkers;
+    return () => {
+      alertMarkersRef.current.forEach((m) => m.remove());
+      alertMarkersRef.current = [];
+    };
   }, [filteredAlerts]);
 
   return (
-    <div className="w-full h-full relative rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
-      <div ref={mapContainerRef} className="w-full h-full z-10" />
-      <style jsx global>{`
-        .leaflet-container {
-          background-color: #0f172a !important; /* slate-900 */
-        }
-        .leaflet-bar {
-          border: 1px solid rgba(51, 65, 85, 0.5) !important; /* slate-700 */
-          background-color: #0f172a !important;
-          border-radius: 12px !important;
-          overflow: hidden;
-        }
-        .leaflet-bar a {
-          background-color: #0f172a !important;
-          color: #94a3b8 !important;
-          border-bottom: 1px solid rgba(51, 65, 85, 0.5) !important;
-        }
-        .leaflet-bar a:hover {
-          background-color: #1e293b !important;
-          color: #f1f5f9 !important;
-        }
-        .leaflet-popup-content-wrapper {
-          background-color: #0f172a !important;
-          border: 1px solid rgba(51, 65, 85, 0.7) !important;
-          border-radius: 16px !important;
-          color: #f1f5f9 !important;
-        }
-        .leaflet-popup-tip {
-          background-color: #0f172a !important;
-          border-left: 1px solid rgba(51, 65, 85, 0.7) !important;
-          border-bottom: 1px solid rgba(51, 65, 85, 0.7) !important;
-        }
-      `}</style>
+    <div className="relative w-full h-full min-h-[480px] bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+      <div ref={mapContainerRef} className="w-full h-full min-h-[480px] z-0" />
     </div>
   );
 }

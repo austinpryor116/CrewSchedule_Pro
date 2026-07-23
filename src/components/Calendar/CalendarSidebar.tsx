@@ -1,23 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import SequenceInspector from "../SequenceInspector/Inspector";
 import OpenTimeOverlay from "./OpenTimeOverlay";
 import { useCrewStore } from "../../store/useCrewStore";
 
 export default function CalendarSidebar() {
   const selectedSequenceId = useCrewStore((state) => state.selectedSequenceId);
-  const [sidebarTab, setSidebarTab] = useState<"inspect" | "opentime">("inspect");
+  const [activeTabOverride, setActiveTabOverride] = useState<"inspect" | "opentime" | null>(null);
   const openSequences = useCrewStore((state) => state.openSequences);
   const simulatedIds = useCrewStore((state) => state.simulatedSequenceIds);
 
-  useEffect(() => {
-    if (selectedSequenceId === "open-time") {
-      setSidebarTab("opentime");
-    } else if (selectedSequenceId) {
-      setSidebarTab("inspect");
-    }
-  }, [selectedSequenceId]);
+  const sidebarTab = selectedSequenceId === "open-time"
+    ? "opentime"
+    : (activeTabOverride ?? "inspect");
+
+  const setSidebarTab = (tab: "inspect" | "opentime") => setActiveTabOverride(tab);
 
   return (
     <div className="flex flex-col gap-6 h-full font-sans">

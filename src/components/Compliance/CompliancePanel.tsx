@@ -1,7 +1,7 @@
 "use client";
 
 import { useCrewStore } from "../../store/useCrewStore";
-import { ShieldCheck, Calendar, Activity, CheckCircle, AlertTriangle, Info, Clock, Moon } from "lucide-react";
+import { ShieldCheck, Calendar, Activity, Moon } from "lucide-react";
 
 export default function CompliancePanel() {
   const sequences = useCrewStore((state) => state.sequences);

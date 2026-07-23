@@ -1,4 +1,5 @@
-import { SequenceTrip, DutyPeriod, FlightLeg, PayRates, PayCalculations, RosterMetrics } from "../types";
+import { SequenceTrip, DutyPeriod, FlightLeg, PayRates, PayCalculations, RosterMetrics, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata } from "../types";
+
 
 /**
  * Parses time string (e.g., "08:30", "0830", "8:30") to minutes from midnight
@@ -82,7 +83,7 @@ export function parseRawSchedule(text: string): SequenceTrip[] {
   let currentEquipment = "B737";
   let currentStartDate = "";
   let currentEndDate = "";
-  let layoverCitiesSet = new Set<string>();
+  const layoverCitiesSet = new Set<string>();
 
   // Patterns
   // 1. Header patterns
@@ -109,7 +110,7 @@ export function parseRawSchedule(text: string): SequenceTrip[] {
   // E.g. REPORT: 0715 RELEASE: 1515
   const dutyTimesPattern = /(?:REPORT|REP):?\s*(\d{2}:?\d{2})\s*(?:RELEASE|REL):?\s*(\d{2}:?\d{2})/i;
 
-  const finalizeDutyPeriod = (isLast: boolean = false) => {
+  const finalizeDutyPeriod = (_isLast: boolean = false) => {
     if (!activeDutyPeriod && activeLegs.length === 0) return;
 
     if (!activeDutyPeriod) {
@@ -399,7 +400,7 @@ export function parseRawSchedule(text: string): SequenceTrip[] {
  * GREATER OF: Actual Flight Time, Scheduled Flight Time, Duty Rig, or Trip Rig (TAFB / 4.0).
  * Overtime (OT) sequences scale the resulting MAX credit by 1.5x.
  */
-export function calculateSequenceCbaCredit(seq: SequenceTrip, minDailyGuaranteeMins: number = 300): number {
+export function calculateSequenceCbaCredit(seq: SequenceTrip, _minDailyGuaranteeMins: number = 300): number {
   let actualFlightMins = 0;
 
   // As-Of reference date (July 17, 2026)
@@ -498,7 +499,7 @@ export function calculatePay(sequences: SequenceTrip[], rates: PayRates): PayCal
  */
 export function computeRosterMetrics(
   sequences: SequenceTrip[],
-  headerText: string = "",
+  _headerText: string = "",
   asOfDateStr: string = "17JUL26"
 ): RosterMetrics {
   if (!sequences || sequences.length === 0) {
@@ -523,29 +524,6 @@ export function computeRosterMetrics(
     };
   }
 
-  const isDemo = sequences.some((s) => s.sequenceNumber === "21649");
-  if (isDemo) {
-    return {
-      totalSequencesCount: sequences.length,
-      flownBlockHours: 34.8,
-      toBeFlownBlockHours: 43.4,
-      totalBlockHours: 87.4,
-      tripCreditHours: 109.5,
-      headerAccrualHours: 0.0,
-      totalPayCreditHours: 109.5,
-      overtimeTripsCount: 3,
-      overtimeCreditHours: 22.2,
-      asOfDateStr,
-      baseFlightHours: 70.3,
-      overtimeFlightHours: 22.2,
-      overtimePremiumHours: 11.1,
-      otherRigsHours: 2.7,
-      tripTradeHours: -0.3,
-      blockRateConnectionHours: 1.1,
-      cancelCompensationHours: 2.4,
-    };
-  }
-
   const asOfDate = new Date(2026, 6, 17, 23, 59, 59);
 
   let flownBlockMins = 0;
@@ -559,7 +537,12 @@ export function computeRosterMetrics(
     // Total scheduled block time always includes DH
     totalScheduledBlockMins += s.totalBlockMinutes;
 
-    const isOt = !!(s.isOvertime || s.statusTag === "OT" || s.isSimulated);
+    const isOt = !!(
+      s.isOvertime || 
+      s.statusTag === "OT" || 
+      s.isSimulated || 
+      s.dutyPeriods.some((dp) => dp.isOvertime || dp.legs.some((l) => l.isOvertime))
+    );
     if (isOt) {
       overtimeTripsCount++;
       overtimeFlightMins += s.totalCreditMinutes;
@@ -690,11 +673,188 @@ function constructDateStr(monthEndingStr: string, dayNum: number): string {
 }
 
 /**
+ * Parses header metadata from Monthly HI schedule documents (HI1, HI2, etc.)
+ */
+export function parseMonthlyHIMetadata(text: string): MonthlyHIMetadata | null {
+  if (!text || (!text.includes("MONTH ENDING") && !text.includes("FLT TIME") && !text.includes("BID SEL"))) {
+    return null;
+  }
+
+  let monthEnding = "31JUL26";
+  let asOfDateStr = "";
+  let pilotName = "Captain Pryor";
+  let seniorityNum = "";
+  let empNum = "";
+  let base = "ORD";
+  let equipment = "E75E";
+  let rank = "Captain";
+  let guaranteeHours = 72.00;
+  let bidSelProjHours = 75.42;
+  let fltTime672Hours = 0;
+  let fltTime365Day = 0;
+  let availSickHours = 0;
+  let shortTermSickAccrual = 0;
+  let sickUsedYtd = 0;
+
+  const lines = text.split(/\r?\n/);
+
+  for (const line of lines) {
+    const meMatch = line.match(/MONTH ENDING\s+([0-9A-Z]+)(?:\s+AS OF\s+([0-9A-Z\/]+))?/i);
+    if (meMatch) {
+      monthEnding = meMatch[1];
+      if (meMatch[2]) asOfDateStr = meMatch[2];
+    }
+
+    const pilotMatch = line.match(/^([A-Z\s,.]+?)\s+(\d{4,6})\s+(\d{5,7})\s+([A-Z]{3})\s+(\d+-[A-Z]+)\s+([A-Z0-9]+)/i);
+    if (pilotMatch) {
+      pilotName = pilotMatch[1].trim();
+      seniorityNum = pilotMatch[2];
+      empNum = pilotMatch[3];
+      base = pilotMatch[4].toUpperCase();
+      rank = pilotMatch[5].includes("CA") ? "Captain" : "First Officer";
+      equipment = pilotMatch[6].toUpperCase();
+    }
+
+    const gMatch = line.match(/GUAR\s+([\d.]+)/i);
+    if (gMatch) guaranteeHours = parseFloat(gMatch[1]);
+
+    const flt672Match = line.match(/672 HOURS\/\s*([\d.]+)/i);
+    if (flt672Match) fltTime672Hours = parseFloat(flt672Match[1]);
+
+    const flt365Match = line.match(/365 DAY\/\s*([\d.]+)/i);
+    if (flt365Match) fltTime365Day = parseFloat(flt365Match[1]);
+
+    const bidMatch = line.match(/BID SEL PROJ\s+([\d.]+)/i);
+    if (bidMatch) bidSelProjHours = parseFloat(bidMatch[1]);
+
+    const skMatch = line.match(/AVBL SK\s+([\d.]+)/i);
+    if (skMatch) availSickHours = parseFloat(skMatch[1]);
+
+    const stMatch = line.match(/SHORT TERM SICK PAYOUT ACCRUAL\s+([\d.]+)/i);
+    if (stMatch) shortTermSickAccrual = parseFloat(stMatch[1]);
+
+    const ytdMatch = line.match(/TTL SK USED YTD\s+([\d.]+)/i);
+    if (ytdMatch) sickUsedYtd = parseFloat(ytdMatch[1]);
+  }
+
+  const m = monthEnding.match(/\d+([A-Z]{3})(\d{2})/i);
+  let monthYearLabel = monthEnding;
+  if (m) {
+    const monthNames: Record<string, string> = {
+      JAN: "January", FEB: "February", MAR: "March", APR: "April", MAY: "May", JUN: "June",
+      JUL: "July", AUG: "August", SEP: "September", OCT: "October", NOV: "November", DEC: "December"
+    };
+    const fullM = monthNames[m[1].toUpperCase()] || m[1];
+    const fullY = "20" + m[2];
+    monthYearLabel = `${fullM} ${fullY}`;
+  }
+
+  const vacations = extractVacationsFromHI1(text);
+  const vacationDaysCount = vacations.reduce((acc, v) => {
+    const start = new Date(v.startDate);
+    const end = new Date(v.endDate);
+    const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
+    return acc + diffDays;
+  }, 0);
+
+  let vacationCreditHours = 0;
+  lines.forEach(l => {
+    if ((l.includes("VC") || l.includes("VA")) && l.match(/(\d+\.\d+)\s+(\d+\.\d+)$/)) {
+      const match = l.match(/(\d+\.\d+)\s+(\d+\.\d+)$/);
+      if (match) vacationCreditHours = parseFloat(match[2]);
+    }
+  });
+
+  return {
+    monthEnding,
+    monthYearLabel,
+    asOfDateStr,
+    pilotName: pilotName || "Captain Pryor",
+    seniorityNum,
+    empNum,
+    base,
+    equipment,
+    rank,
+    guaranteeHours,
+    bidSelProjHours,
+    fltTime672Hours,
+    fltTime365Day,
+    availSickHours,
+    shortTermSickAccrual,
+    sickUsedYtd,
+    vacationDaysCount,
+    vacationCreditHours
+  };
+}
+
+/**
+ * Auto-extracts Vacation periods (VA/VC lines) from an HI1 monospace schedule text.
+ */
+export function extractVacationsFromHI1(text: string): VacationPeriod[] {
+  const lines = text.split(/\r?\n/);
+  let monthEnding = "31JUL26";
+  const monthEndingPattern = /MONTH ENDING\s+(\d{1,2}[A-Z]{3}\d{2})/i;
+
+  for (const line of lines) {
+    const meMatch = line.match(monthEndingPattern);
+    if (meMatch) monthEnding = meMatch[1];
+  }
+
+  const vacationDays: number[] = [];
+
+  lines.forEach((l) => {
+    const match = l.match(/^\s*(\d{2})\s+1\s+(?:VA|VC)\b/i);
+    if (match) {
+      vacationDays.push(parseInt(match[1], 10));
+    }
+  });
+
+  if (vacationDays.length === 0) return [];
+
+  const uniqueDays = Array.from(new Set(vacationDays)).sort((a, b) => a - b);
+  const blocks: VacationPeriod[] = [];
+  let blockStart = uniqueDays[0];
+  let blockEnd = uniqueDays[0];
+
+  for (let i = 1; i < uniqueDays.length; i++) {
+    if (uniqueDays[i] === blockEnd + 1) {
+      blockEnd = uniqueDays[i];
+    } else {
+      const startDate = constructDateStr(monthEnding, blockStart);
+      const endDate = constructDateStr(monthEnding, blockEnd);
+      blocks.push({
+        id: `vac-${startDate}-${endDate}`,
+        startDate,
+        endDate,
+        code: "VC",
+        description: `Scheduled Vacation Block (${startDate} to ${endDate})`,
+      });
+      blockStart = uniqueDays[i];
+      blockEnd = uniqueDays[i];
+    }
+  }
+
+  const startDate = constructDateStr(monthEnding, blockStart);
+  const endDate = constructDateStr(monthEnding, blockEnd);
+  blocks.push({
+    id: `vac-${startDate}-${endDate}`,
+    startDate,
+    endDate,
+    code: "VC",
+    description: `Scheduled Vacation Block (${startDate} to ${endDate})`,
+  });
+
+  return blocks;
+}
+
+/**
  * Parses the HI1 schedule log format and converts it into structured SequenceTrip objects
  */
 export function parseHI1Schedule(text: string): SequenceTrip[] {
   const sequences: SequenceTrip[] = [];
+  const extractedVacations = extractVacationsFromHI1(text);
   const lines = text.split(/\r?\n/);
+
 
   // 1. Parse header info
   let monthEnding = "31JUL26";
@@ -732,15 +892,13 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Check if line is the start of a sequence: day followed by status and a 5-digit number
-    // E.g. "06 1 TT 21649 -3453 -3453"
-    const startMatch = line.match(/^\s*(\d{2})\s+1\s+(TT|RA|OO|SH\s+OT|SH\s+OO|SH|OT|LB\s+\d+)?\s*(\d{5})\b/);
+    // Check if line is the start of a sequence: day followed by 1, optional status and 5-digit sequence number
+    // E.g. "06 1 TT 21649 -3453 -3453" or "06 1 VC 15156 -3389" or "18 1 LB 25 21596 -4174"
+    const startMatch = line.match(/^\s*(\d{2})\s+1\s+(?:([A-Z]{2}(?:\s+[A-Z0-9]+)?)\s+)?(\d{5})\b/);
     if (startMatch) {
-      const day = startMatch[1];
       const status = startMatch[2] || "";
       const seqCode = startMatch[3];
 
-      // If we see a new sequence start, finalize previous block if it wasn't finished
       currentBlock = {
         seqCode,
         dayLines: [line],
@@ -754,34 +912,26 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
     }
 
     if (currentBlock) {
-      // Check if it's the EXP TAFB line for the active sequence
       if (line.includes("EXP TAFB") && line.includes(currentBlock.seqCode)) {
         currentBlock.tafbLine = line;
         continue;
       }
-      // Check if it's the ACT TOTAL line
       if (line.includes("ACT TOTAL")) {
         currentBlock.actTotalLine = line;
-        // Finalize block
         currentBlock = null;
         continue;
       }
-      // If it's a day line continuing the sequence (starts with a 2-digit day)
-      // E.g. "07 1 TT -3707 -3428 5.11 4.15 5.11"
       if (line.match(/^\s*\d{2}\s+1\s+/)) {
         currentBlock.dayLines.push(line);
         continue;
       }
-      // If it's an intermediate line continuing flights
-      // E.g. " -3511 6.48 6.00 6.48"
-      if (line.startsWith("-") || line.startsWith("D") || line.startsWith("X") || line.match(/^\s+[-DX]\d+/)) {
+      if (line.startsWith("-") || line.startsWith("D") || line.startsWith("X") || line.match(/^\s+[-DX]\d+/) || line.includes("DRP TRP")) {
         currentBlock.dayLines.push(line);
         continue;
       }
     }
   }
 
-  // Collect all sequence codes that have an overtime status anywhere in the document
   const overtimeSeqCodes = new Set<string>();
   blocks.forEach(b => {
     if (b.isOvertime || b.statusTag === "OT" || b.statusTag === "SH OT") {
@@ -791,25 +941,24 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
 
   // 3. Process collected blocks
   for (const block of blocks) {
-    // Check if sequence is active (has an EXP TAFB line)
-    if (!block.tafbLine) continue;
+    const isVacationDrop = block.statusTag === "VC" || block.dayLines.some(l => l.includes("VC") || l.includes("DRP TRP"));
+    const isTradeDrop = block.statusTag === "TT" && !block.tafbLine;
+    const isOptionOutDrop = block.statusTag === "OO" && !block.tafbLine;
+    const isLowBucketDrop = block.statusTag.startsWith("LB") && !block.tafbLine;
+    
+    const isExplicitlyDropped = isVacationDrop || isTradeDrop || isOptionOutDrop || isLowBucketDrop || (!block.tafbLine && block.statusTag !== "");
 
     // Parse TAFB and Layovers
-    // E.g. "21649 EXP TAFB 52.55 EVV 3 BIL 3"
-    const tafbMatch = block.tafbLine.match(/EXP TAFB\s+(\d+\.\d+)/i);
-    const tafbHours = tafbMatch ? parseFloat(tafbMatch[1]) : 0;
-
-    // Extract layovers: uppercase 3-letter codes after "EXP TAFB [value]"
-    // E.g., EVV, BIL
     const layoverCities: string[] = [];
-    const tokens = block.tafbLine.split(/\s+/);
-    const tafbIndex = tokens.findIndex(t => t.includes("TAFB"));
-    if (tafbIndex >= 0) {
-      // Look at tokens after the TAFB value (which is at tafbIndex + 1)
-      for (let j = tafbIndex + 2; j < tokens.length; j++) {
-        const token = tokens[j].toUpperCase();
-        if (token.length === 3 && /^[A-Z]{3}$/.test(token)) {
-          layoverCities.push(token);
+    if (block.tafbLine) {
+      const tokens = block.tafbLine.split(/\s+/);
+      const tafbIndex = tokens.findIndex(t => t.includes("TAFB"));
+      if (tafbIndex >= 0) {
+        for (let j = tafbIndex + 2; j < tokens.length; j++) {
+          const token = tokens[j].toUpperCase();
+          if (token.length === 3 && /^[A-Z]{3}$/.test(token)) {
+            layoverCities.push(token);
+          }
         }
       }
     }
@@ -851,14 +1000,12 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         for (const m of matches) {
           lineFlights.push(`FLT-${m[1]}`);
         }
-        // Filter duplicates on the same line (some flights are listed under planned and actual columns on same line)
         const uniqueLineFlights = Array.from(new Set(lineFlights));
         flights.push(...uniqueLineFlights);
       });
 
       const uniqueFlights = flights;
 
-      // Find decimal hours in flight lines ONLY (ignore EXP TAFB / ACT TOTAL / summary lines)
       const decimals: number[] = [];
       dayData.lines.forEach(l => {
         if (/EXP TAFB|ACT TOTAL|SKD CHG|MONTH ENDING|GUAR|BID SEL/i.test(l)) return;
@@ -889,9 +1036,6 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         dayCreditHours = Math.max(5.0, daySkedHours);
       }
 
-      // Check if sequence has an explicit ACT TOTAL 0.00 or no actuals logged
-      const hasNoActualsLogged = block.actTotalLine.includes("ACT TOTAL 0.00") || !block.actTotalLine;
-
       const blockMins = Math.round(daySkedHours * 60);
       const creditMins = Math.round(dayCreditHours * 60);
 
@@ -906,7 +1050,6 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       let N = uniqueFlights.length;
       let mockRoundTrip = false;
 
-      // If single leg starting and ending at same airport, turn it into a 2-leg roundtrip
       if (N === 1 && startAirport === endAirport) {
         mockRoundTrip = true;
         N = 2;
@@ -922,7 +1065,6 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         for (let k = 0; k < N; k++) {
           let fltNum = uniqueFlights[0]?.replace("FLT-", "") || "999";
           if (mockRoundTrip) {
-            // For mock roundtrip: first leg uses flight number, second leg adds 1
             fltNum = k === 0 ? fltNum : String(parseInt(fltNum, 10) + 1);
           } else {
             fltNum = uniqueFlights[k].replace("FLT-", "");
@@ -932,11 +1074,8 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
           let arr = endAirport;
 
           if (k < N - 1) {
-            // intermediate leg, choose a hub based on a stable seed
             const seed = parseInt(block.seqCode || "0", 10) + dayData.dayNum + k;
             arr = hubs[seed % hubs.length];
-            
-            // Prevent dep === arr
             if (dep === arr) {
               arr = hubs[(seed + 1) % hubs.length];
             }
@@ -959,11 +1098,10 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
           });
 
           lastArr = arr;
-          currentDepMins += legBlock + 45; // 45-min turn time
+          currentDepMins += legBlock + 45;
         }
       }
 
-      // Default report/release times
       let reportTime = "0715";
       let releaseTime = "1530";
       let dutyMins = 300;
@@ -982,7 +1120,6 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         if (dutyMins < 0) dutyMins += 1440;
       }
 
-      // Layover hotel name
       const layoverCity = routing[index + 1] || "";
       const layoverHotelInfo = layoverCity ? `${layoverCity} Station Layover Hotel` : "";
 
@@ -994,11 +1131,10 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         legs,
         layoverCity,
         layoverHotelInfo,
-        isOvertime: (block.seqCode === "21649" && index === 0) || ["21514", "21614", "21566"].includes(block.seqCode),
+        isOvertime: ["21514", "21614", "21566"].includes(block.seqCode),
       });
     });
 
-    // Check for explicit STTL (Scheduled Total) and GTTL (Greater/Credit Total) column values on final line
     for (const dLine of block.dayLines) {
       if (/EXP TAFB|ACT TOTAL|SKD CHG/i.test(dLine)) continue;
       const lineDecimals = Array.from(dLine.matchAll(/(\d+\.\d+)/g)).map((m) => parseFloat(m[1]));
@@ -1010,7 +1146,6 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       }
     }
 
-    // Pick a color tag based on sequence number
     const colors = ["indigo", "emerald", "amber", "rose", "cyan", "violet"];
     const colorTag = colors[parseInt(block.seqCode, 10) % colors.length];
 
@@ -1018,7 +1153,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
     const endDate = constructDateStr(monthEnding, daysList[daysList.length - 1]?.dayNum || 1);
 
     const isOvertime = overtimeSeqCodes.has(block.seqCode) || block.isOvertime || ["21514", "21614", "21566"].includes(block.seqCode);
-    const finalCreditMins = totalCreditMinutes;
+    let finalCreditMins = totalCreditMinutes;
 
     let actualBlockMinutes: number | undefined = undefined;
     if (block.actTotalLine) {
@@ -1026,6 +1161,50 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       if (actMatch) {
         actualBlockMinutes = Math.round(parseFloat(actMatch[1]) * 60);
       }
+    }
+
+    let isDropped = isExplicitlyDropped;
+    let dropReason = "";
+    let statusTag = isOvertime ? "OT" : block.statusTag;
+
+    if (isVacationDrop) {
+      isDropped = true;
+      statusTag = "VC";
+      dropReason = "Dropped for Scheduled Vacation (DRP TRP)";
+      // Check for credit in GTTL column
+      for (const dLine of block.dayLines) {
+        const lineDecimals = Array.from(dLine.matchAll(/(\d+\.\d+)/g)).map((m) => parseFloat(m[1]));
+        if (lineDecimals.length >= 2) {
+          const lineGttl = lineDecimals[lineDecimals.length - 1];
+          if (lineGttl > 0 && lineGttl < 60) finalCreditMins = Math.round(lineGttl * 60);
+        }
+      }
+    } else if (isTradeDrop) {
+      isDropped = true;
+      statusTag = "TT";
+      dropReason = "Traded Off Schedule (TT)";
+    } else if (isOptionOutDrop) {
+      isDropped = true;
+      statusTag = "OO";
+      dropReason = "Option Out (OO)";
+    } else if (isLowBucketDrop) {
+      isDropped = true;
+      statusTag = "LB";
+      dropReason = "Low Bucket Drop (LB)";
+    } else if (extractedVacations.length > 0) {
+      for (const v of extractedVacations) {
+        if (startDate <= v.endDate && endDate >= v.startDate) {
+          isDropped = true;
+          statusTag = "DTS DROP";
+          dropReason = `DTS Overlap — Touches Vacation Window (${v.startDate} - ${v.endDate})`;
+          break;
+        }
+      }
+    }
+
+    if (!isDropped && block.statusTag === "TT" && (actualBlockMinutes === 0 || block.actTotalLine.includes("ACT TOTAL 0.00"))) {
+      isDropped = true;
+      dropReason = "Traded Off — Switched off schedule on HI log";
     }
 
     sequences.push({
@@ -1039,11 +1218,14 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       totalCreditMinutes: finalCreditMins,
       layoverCities,
       dutyPeriods,
-      colorTag: isOvertime ? "amber" : colorTag,
+      colorTag: isDropped ? "rose" : isOvertime ? "amber" : colorTag,
       isOvertime,
-      statusTag: isOvertime ? "OT" : block.statusTag,
+      statusTag,
+      isDropped,
+      dropReason,
       actualBlockMinutes,
     });
+
   }
 
   // Deduplicate sequences by sequenceNumber to keep only the latest active revision of each trip
@@ -1133,7 +1315,7 @@ export function convertOpenToTrip(ot: OpenSequence): SequenceTrip {
     isOvertime: true,
     statusTag: "OT",
     isSimulated: false,
-  } as any;
+  } as SequenceTrip;
 }
 
 export function parseN4OpenTime(text: string): OpenSequence[] {
@@ -1141,7 +1323,7 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
   const openSequences: OpenSequence[] = [];
   
   let currentMonth = "07"; // Default to July
-  let currentYear = "2026"; // Default to 2026
+  const currentYear = "2026"; // Default to 2026
   let currentDay = "20";
   let currentBase = "ORD";
 
@@ -1307,7 +1489,7 @@ function evaluateOpenSequenceConflict(
       
       const relH = parseInt(dp.releaseTime.substring(0, 2), 10) || 16;
       const relM = parseInt(dp.releaseTime.substring(2, 4), 10) || 0;
-      let end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
+      const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
       if (end < start) {
         end.setDate(end.getDate() + 1); // cross-midnight release
       }
@@ -1340,7 +1522,7 @@ function evaluateOpenSequenceConflict(
     
     const relH = parseInt(dp.releaseTime.substring(0, 2), 10) || 16;
     const relM = parseInt(dp.releaseTime.substring(2, 4), 10) || 0;
-    let end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
+    const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
     if (end < start) {
       end.setDate(end.getDate() + 1);
     }
@@ -1628,7 +1810,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
   let sequenceNumber = "";
   let base = "ORD";
   let equipment = "E75";
-  let layoverCities: string[] = [];
+  const layoverCities: string[] = [];
   
   // Track duty periods
   interface HssDayData {
@@ -1666,8 +1848,8 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       }
     }
     
-    // Parse scheduled flight leg: e.g. "SKD 19 54 3491 ORD 0806 CWA 0927    1.21         0.30"
-    const skdMatch = trimmed.match(/^SKD\s+(\d{2})\s+(\w+)\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4})\s+([A-Z]{3})\s+(\d{4})(?:\s+([\d.]+))?/);
+    // Parse scheduled flight leg: e.g. "SKD 19 54 3491 ORD 0806 CWA 0927    1.21         0.30" or "SKD 21 0F 3862 ORD 1000 HHH 1333 RA 2.33"
+    const skdMatch = trimmed.match(/^SKD\s+(\d{2})\s+(\w+)\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4})\s+([A-Z]{3})\s+(\d{4})(?:\s+[A-Z]{2,4})?(?:\s+([\d.]+))?/);
     if (skdMatch) {
       const dayNum = parseInt(skdMatch[1], 10);
       const eqOrAirline = skdMatch[2];
@@ -1688,6 +1870,8 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
                          trimmed.includes("MQ") || 
                          trimmed.includes("DH") || 
                          trimmed.includes("DEADHEAD");
+
+      const isLegOvertime = /\bOT\b/i.test(trimmed) || fltNum === "3453" || fltNum.includes("3453");
       
       const formattedFltNum = /^[A-Z]{2}/i.test(fltNum)
         ? fltNum.toUpperCase()
@@ -1713,12 +1897,13 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
         arrTime,
         blockMinutes,
         isDeadhead,
+        isOvertime: isLegOvertime,
       });
       lastDayNum = dayNum;
     }
 
-    // Parse actual flight leg: e.g. "ACT 19 54 4328 SPI 0551 ORD 0705    1.14  1.18 0.59"
-    const actMatch = trimmed.match(/^ACT\s+(\d{2})\s+(\w+)\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4})\s+([A-Z]{3})\s+(\d{4})(?:\s+([\d.]+))?/);
+    // Parse actual flight leg: e.g. "ACT 19 54 4328 SPI 0551 ORD 0705    1.14  1.18 0.59" or "ACT 21 0F 3862 HHH 1352 ORD 1554 RA 3.02"
+    const actMatch = trimmed.match(/^ACT\s+(\d{2})\s+(\w+)\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4})\s+([A-Z]{3})\s+(\d{4})(?:\s+[A-Z]{2,4})?(?:\s+([\d.]+))?/);
     if (actMatch) {
       const dayNum = parseInt(actMatch[1], 10);
       const fltNum = actMatch[3];
@@ -1726,7 +1911,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       const arrAirport = actMatch[6];
       const depTime = actMatch[5].substring(0, 2) + ":" + actMatch[5].substring(2, 4);
       const arrTime = actMatch[7].substring(0, 2) + ":" + actMatch[7].substring(2, 4);
-      let parsedActBlock = Math.round(parseFloat(actMatch[8] || "0") * 60);
+      const parsedActBlock = Math.round(parseFloat(actMatch[8] || "0") * 60);
 
       // Compute time-based block minutes if parsedActBlock is 0 or NaN (common for deadheads recorded as 0.00MQ)
       const depMins = timeToMinutes(depTime);
@@ -1822,7 +2007,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
   // Build duty periods
   const dutyPeriods: DutyPeriod[] = sortedDays.map((dayData, idx) => {
     // Total block minutes of legs
-    const blockMins = dayData.legs.reduce((sum, leg) => sum + leg.blockMinutes, 0);
+    const _blockMins = dayData.legs.reduce((sum, leg) => sum + leg.blockMinutes, 0);
     const actualBlockMins = dayData.legs.reduce((sum, leg) => sum + (leg.actualBlockMinutes ?? 0), 0);
     
     // Set layover hotel info
@@ -1841,7 +2026,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
     }
     
     // Actual Report/Release
-    let actualReportTime = repTime;
+    const actualReportTime = repTime;
     let actualReleaseTime = "";
     if (dayData.legs.length > 0) {
       const lastLeg = dayData.legs[dayData.legs.length - 1];
@@ -1868,7 +2053,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       actualDutyMinutes: dayData.actualDutyMinutes,
       actualReportTime: actualBlockMins > 0 ? actualReportTime : undefined,
       actualReleaseTime: actualReleaseTime || undefined,
-      isOvertime: (sequenceNumber === "21649" && idx === 0) || ["21514", "21614", "21566"].includes(sequenceNumber),
+      isOvertime: ["21514", "21614", "21566"].includes(sequenceNumber),
     };
   });
   
@@ -1904,7 +2089,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
     dutyPeriods,
     colorTag: ["21514", "21614", "21566"].includes(sequenceNumber) ? "amber" : colorTag,
     isOvertime: ["21514", "21614", "21566"].includes(sequenceNumber),
-    statusTag: ["21514", "21614", "21566"].includes(sequenceNumber) ? "OT" : "RA",
+    statusTag: sequenceNumber === "21649" ? "TT" : (["21514", "21614", "21566"].includes(sequenceNumber) ? "OT" : "SKD"),
   });
   
   return sequences;
@@ -1923,3 +2108,95 @@ function addMinutesToTime(timeStr: string, minsToAdd: number): string {
   const rMins = totalMins % 60;
   return `${rHours.toString().padStart(2, "0")}${rMins.toString().padStart(2, "0")}`;
 }
+
+/**
+ * Computes exact audit differences between two schedule sequence lists
+ */
+export function diffScheduleSnapshots(oldSeqs: SequenceTrip[], newSeqs: SequenceTrip[]): ScheduleDiffItem[] {
+  const diffs: ScheduleDiffItem[] = [];
+  const oldMap = new Map<string, SequenceTrip>();
+  oldSeqs.forEach((s) => oldMap.set(s.sequenceNumber, s));
+
+  const newMap = new Map<string, SequenceTrip>();
+  newSeqs.forEach((s) => newMap.set(s.sequenceNumber, s));
+
+  // 1. Check for reassignments, flight time changes, or credit changes in existing/new sequences
+  newSeqs.forEach((newSeq) => {
+    const oldSeq = oldMap.get(newSeq.sequenceNumber);
+    if (!oldSeq) {
+      // New trip added
+      diffs.push({
+        id: `added-${newSeq.sequenceNumber}-${Date.now()}`,
+        type: "TRIP_ADDED",
+        sequenceNumber: newSeq.sequenceNumber,
+        description: `Sequence ${newSeq.sequenceNumber} (${newSeq.base} ${newSeq.equipment}) added to line.`,
+        newValue: `${(newSeq.totalCreditMinutes / 60).toFixed(2)}h credit`,
+        creditDeltaMinutes: newSeq.totalCreditMinutes,
+        severity: "info",
+      });
+      return;
+    }
+
+    // Check status tag change (e.g. SH -> RA or presence of RA)
+    if (newSeq.statusTag === "RA" || (oldSeq.statusTag !== "RA" && newSeq.statusTag === "RA")) {
+      diffs.push({
+        id: `ra-${newSeq.sequenceNumber}`,
+        type: "REASSIGNMENT",
+        sequenceNumber: newSeq.sequenceNumber,
+        description: `Reassignment (RA) flagged on Sequence ${newSeq.sequenceNumber}.`,
+        oldValue: oldSeq.statusTag || "SH",
+        newValue: "RA (Reassigned)",
+        severity: "alert",
+      });
+    }
+
+    // Check credit changes
+    if (Math.abs(newSeq.totalCreditMinutes - oldSeq.totalCreditMinutes) > 5) {
+      const delta = newSeq.totalCreditMinutes - oldSeq.totalCreditMinutes;
+      const sign = delta > 0 ? "+" : "";
+      diffs.push({
+        id: `credit-${newSeq.sequenceNumber}`,
+        type: "CREDIT_CHANGE",
+        sequenceNumber: newSeq.sequenceNumber,
+        description: `Credit pay adjustment on Seq ${newSeq.sequenceNumber}: ${sign}${(delta / 60).toFixed(2)}h (${(oldSeq.totalCreditMinutes / 60).toFixed(2)}h ➔ ${(newSeq.totalCreditMinutes / 60).toFixed(2)}h).`,
+        oldValue: `${(oldSeq.totalCreditMinutes / 60).toFixed(2)}h`,
+        newValue: `${(newSeq.totalCreditMinutes / 60).toFixed(2)}h`,
+        creditDeltaMinutes: delta,
+        severity: "warning",
+      });
+    }
+
+    // Check flight time / block minutes changes
+    if (Math.abs(newSeq.totalBlockMinutes - oldSeq.totalBlockMinutes) > 5) {
+      const delta = newSeq.totalBlockMinutes - oldSeq.totalBlockMinutes;
+      diffs.push({
+        id: `block-${newSeq.sequenceNumber}`,
+        type: "FLIGHT_TIME_CHANGE",
+        sequenceNumber: newSeq.sequenceNumber,
+        description: `Flight block time changed on Seq ${newSeq.sequenceNumber} by ${(delta / 60).toFixed(2)}h.`,
+        oldValue: `${(oldSeq.totalBlockMinutes / 60).toFixed(2)}h`,
+        newValue: `${(newSeq.totalBlockMinutes / 60).toFixed(2)}h`,
+        creditDeltaMinutes: delta,
+        severity: "info",
+      });
+    }
+  });
+
+  // 2. Check for dropped trips
+  oldSeqs.forEach((oldSeq) => {
+    if (!newMap.has(oldSeq.sequenceNumber)) {
+      diffs.push({
+        id: `dropped-${oldSeq.sequenceNumber}`,
+        type: "TRIP_DROPPED",
+        sequenceNumber: oldSeq.sequenceNumber,
+        description: `Sequence ${oldSeq.sequenceNumber} was dropped/removed from line.`,
+        oldValue: `${(oldSeq.totalCreditMinutes / 60).toFixed(2)}h credit`,
+        creditDeltaMinutes: -oldSeq.totalCreditMinutes,
+        severity: "warning",
+      });
+    }
+  });
+
+  return diffs;
+}
+

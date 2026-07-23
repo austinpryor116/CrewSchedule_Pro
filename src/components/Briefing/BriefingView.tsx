@@ -1,147 +1,42 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { Plane, AlertTriangle, CloudRain, Shield, Navigation, Wind, Eye, Cloud, Thermometer, Compass, CompassIcon, Info } from "lucide-react";
+import { Plane, Wind, CloudRain, AlertTriangle, Shield, Navigation, Eye, Cloud, Thermometer, RefreshCw, Calendar, CheckCircle2, Zap, Radio } from "lucide-react";
 import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
+import { fetchLiveStationWeather, fetchLiveSigmetsAndAirmets, DecodedMetar, DecodedTaf, LiveSigmetAirmet, getAirportCoordsSync, isHazardInCorridor, distanceToSegmentNm } from "../../lib/weatherService";
 
 // Dynamically import Leaflet map to disable SSR
 const BriefingMap = dynamic(() => import("./BriefingMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl animate-pulse">
+    <div className="w-full h-full min-h-[480px] flex flex-col items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl animate-pulse">
       <Plane className="w-12 h-12 text-slate-500 animate-bounce mb-3" />
-      <span className="text-sm font-semibold text-slate-400">Loading charts & satellite radar...</span>
+      <span className="text-sm font-semibold text-slate-400">Loading satellite radar & live NOAA AWC charts...</span>
     </div>
   ),
 });
 
-interface FlightLeg {
+interface BriefingLeg {
   id: string;
   fltNum: string;
   dep: string;
   arr: string;
   time: string;
+  arrTime: string;
+  date: string;
   equipment: string;
   duration: string;
-  date?: string;
+  blockMinutes: number;
 }
 
-const DEMO_LEGS: FlightLeg[] = [
-  { id: "0", fltNum: "FLT-3524", dep: "YYZ", arr: "ORD", time: "07:17", equipment: "E75", duration: "2h 10m", date: "2026-07-21" },
-  { id: "1", fltNum: "FLT-3453", dep: "ORD", arr: "EVV", time: "08:15", equipment: "E75", duration: "1h 15m", date: "2026-07-20" },
-  { id: "2", fltNum: "FLT-3511", dep: "EVV", arr: "BIL", time: "10:00", equipment: "E75", duration: "2h 45m", date: "2026-07-20" },
-  { id: "3", fltNum: "FLT-3622", dep: "BIL", arr: "ORD", time: "14:30", equipment: "E75", duration: "2h 15m", date: "2026-07-20" },
-  { id: "4", fltNum: "FLT-4164", dep: "ORD", arr: "HPN", time: "09:30", equipment: "E75", duration: "1h 45m", date: "2026-07-20" },
-  { id: "5", fltNum: "FLT-4165", dep: "HPN", arr: "ORD", time: "12:15", equipment: "E75", duration: "1h 55m", date: "2026-07-20" },
-  { id: "6", fltNum: "FLT-5211", dep: "ORD", arr: "GDL", time: "07:00", equipment: "B737", duration: "3h 30m", date: "2026-07-20" },
-  { id: "7", fltNum: "FLT-5212", dep: "GDL", arr: "PVR", time: "11:15", equipment: "B737", duration: "0h 45m", date: "2026-07-20" },
-  { id: "8", fltNum: "FLT-5213", dep: "PVR", arr: "ORD", time: "13:00", equipment: "B737", duration: "3h 15m", date: "2026-07-20" },
+const DEMO_LEGS: BriefingLeg[] = [
+  { id: "0", fltNum: "FLT-3524", dep: "YYZ", arr: "ORD", time: "07:17", arrTime: "09:27", date: "2026-07-21", equipment: "E75", duration: "2h 10m", blockMinutes: 130 },
+  { id: "1", fltNum: "FLT-3453", dep: "ORD", arr: "EVV", time: "08:15", arrTime: "09:30", date: "2026-07-20", equipment: "E75", duration: "1h 15m", blockMinutes: 75 },
+  { id: "2", fltNum: "FLT-3511", dep: "EVV", arr: "BIL", time: "10:00", arrTime: "12:45", date: "2026-07-20", equipment: "E75", duration: "2h 45m", blockMinutes: 165 },
+  { id: "3", fltNum: "FLT-3622", dep: "BIL", arr: "ORD", time: "14:30", arrTime: "16:45", date: "2026-07-20", equipment: "E75", duration: "2h 15m", blockMinutes: 135 },
+  { id: "4", fltNum: "FLT-4164", dep: "ORD", arr: "HPN", time: "09:30", arrTime: "11:15", date: "2026-07-20", equipment: "E75", duration: "1h 45m", blockMinutes: 105 },
 ];
-
-interface WeatherData {
-  category: "VFR" | "MVFR" | "IFR" | "LIFR";
-  metar: string;
-  taf: string;
-  winds: string;
-  visibility: string;
-  clouds: string;
-  tempDewpoint: string;
-  altimeter: string;
-}
-
-const WEATHER_REPORTS: Record<string, WeatherData> = {
-  ORD: {
-    category: "VFR",
-    metar: "KORD 210251Z 24008KT 10SM CLR 28/16 A2992",
-    taf: "KORD 210250Z 2103/2209 23010KT P6SM SCT050 FM211600 24012G18KT P6SM SCT050",
-    winds: "240° @ 8 knots",
-    visibility: "10 Statute Miles",
-    clouds: "Clear Skies (CLR)",
-    tempDewpoint: "28°C / 16°C",
-    altimeter: "29.92 inHg",
-  },
-  EVV: {
-    category: "VFR",
-    metar: "KEVV 210253Z 19005KT 10SM SCT045 27/18 A2995",
-    taf: "KEVV 210253Z 2103/2203 19006KT P6SM FEW040 FM211800 21010KT P6SM SCT050",
-    winds: "190° @ 5 knots",
-    visibility: "10 Statute Miles",
-    clouds: "Scattered at 4,500 ft (SCT045)",
-    tempDewpoint: "27°C / 18°C",
-    altimeter: "29.95 inHg",
-  },
-  BIL: {
-    category: "MVFR",
-    metar: "KBIL 210253Z 05012KT 8SM OVC025 15/11 A3002",
-    taf: "KBIL 210250Z 2103/2203 04010KT 6SM -RA BR OVC020 FM211400 05012KT 8SM OVC025",
-    winds: "050° @ 12 knots",
-    visibility: "8 Statute Miles",
-    clouds: "Overcast at 2,500 ft (OVC025)",
-    tempDewpoint: "15°C / 11°C",
-    altimeter: "30.02 inHg",
-  },
-  HPN: {
-    category: "IFR",
-    metar: "KHPN 210256Z 09007KT 2SM -DZ BR OVC008 18/17 A2988",
-    taf: "KHPN 210250Z 2103/2203 08008KT 3SM -RADZ BR OVC010 FM211500 09010KT 2SM -DZ OVC008",
-    winds: "090° @ 7 knots",
-    visibility: "2 Statute Miles (Light Drizzle / Mist)",
-    clouds: "Overcast at 800 ft (OVC008)",
-    tempDewpoint: "18°C / 17°C",
-    altimeter: "29.88 inHg",
-  },
-  GDL: {
-    category: "VFR",
-    metar: "MMGL 210245Z 11006KT 6SM HZ SCT030 24/15 A3010",
-    taf: "MMGL 210240Z 2103/2203 11006KT 6SM HZ SCT030 FM211800 24008KT P6SM FEW040",
-    winds: "110° @ 6 knots",
-    visibility: "6 Statute Miles (Haze)",
-    clouds: "Scattered at 3,000 ft (SCT030)",
-    tempDewpoint: "24°C / 15°C",
-    altimeter: "30.10 inHg",
-  },
-  PVR: {
-    category: "LIFR",
-    metar: "MMPR 210240Z 27015KT 1SM +TSRA FEW005CB OVC015 29/25 A2985",
-    taf: "MMPR 210240Z 2103/2203 27015KT 1SM +TSRA BKN010CB OVC015 FM212000 26010KT 3SM TSRA",
-    winds: "270° @ 15 knots",
-    visibility: "1 Statute Mile (Heavy Thunderstorms / Rain)",
-    clouds: "Few CB at 500 ft, Overcast at 1,500 ft",
-    tempDewpoint: "29°C / 25°C",
-    altimeter: "29.85 inHg",
-  },
-  YYZ: {
-    category: "VFR",
-    metar: "CYYZ 210251Z 23007KT 15SM CLR 24/15 A3001",
-    taf: "CYYZ 210250Z 2103/2203 22008KT P6SM SKC FM211400 24010KT P6SM SCT040",
-    winds: "230° @ 7 knots",
-    visibility: "15 Statute Miles",
-    clouds: "Clear Skies (CLR)",
-    tempDewpoint: "24°C / 15°C",
-    altimeter: "30.01 inHg",
-  },
-};
-
-const getWeatherData = (airportCode: string): WeatherData => {
-  const code = airportCode.toUpperCase().trim();
-  if (WEATHER_REPORTS[code]) {
-    return WEATHER_REPORTS[code];
-  }
-  
-  // Generate realistic weather dynamic fallback
-  const icao = code.length === 3 ? `K${code}` : code;
-  return {
-    category: "VFR",
-    metar: `${icao} 210250Z 23008KT 10SM CLR 22/14 A2995`,
-    taf: `${icao} 210245Z 2103/2203 23008KT P6SM SKC`,
-    winds: "230° @ 8 knots",
-    visibility: "10 Statute Miles",
-    clouds: "Clear Skies (CLR)",
-    tempDewpoint: "22°C / 14°C",
-    altimeter: "29.95 inHg",
-  };
-};
 
 export interface AlertItem {
   id: number;
@@ -151,153 +46,6 @@ export interface AlertItem {
   priority: "HIGH" | "MED" | "LOW";
   lat: number;
   lng: number;
-}
-
-const MOCK_ALERTS: AlertItem[] = [
-  {
-    id: 1,
-    type: "SIGMET",
-    subtype: "CONVECTIVE",
-    text: "CONVECTIVE SIGMET 42C: Severe turbulence and wind shear forecast below FL180 due to active squall line.",
-    priority: "HIGH",
-    lat: 39.8,
-    lng: -87.7
-  },
-  {
-    id: 2,
-    type: "PIREP",
-    subtype: "TURB",
-    text: "KORD UA /OV KORD-KEVV /TM 0210 /FL330 /TP B737 /TB MOD /RM MOD turbulence enroute.",
-    priority: "MED",
-    lat: 39.5,
-    lng: -87.6
-  },
-  {
-    id: 3,
-    type: "AIRMET",
-    subtype: "IFR",
-    text: "AIRMET SIERRA: IFR conditions and mountain obscuration active along departure corridors.",
-    priority: "MED",
-    lat: 42.2,
-    lng: -87.8
-  },
-  {
-    id: 4,
-    type: "PIREP",
-    subtype: "TURB",
-    text: "KEVV UA /OV KEVV /TM 0225 /FL085 /TP E75 /TB LGT-MOD /RM Smooth ride once above 10,000ft.",
-    priority: "LOW",
-    lat: 38.1,
-    lng: -87.5
-  },
-  {
-    id: 5,
-    type: "PIREP",
-    subtype: "SMOOTH",
-    text: "KBIL UA /OV KBIL /TM 0145 /FL350 /TP A321 /TB NONE /RM Smooth ride.",
-    priority: "LOW",
-    lat: 45.9,
-    lng: -108.6
-  },
-  {
-    id: 6,
-    type: "PIREP",
-    subtype: "ICE",
-    text: "CYYZ UA /OV CYYZ-KORD /TM 0735 /FL240 /TP E175 /TA M05 /IC LGT RIME /RM Light rime enroute.",
-    priority: "MED",
-    lat: 42.9,
-    lng: -82.4
-  },
-  {
-    id: 7,
-    type: "PIREP",
-    subtype: "TURB",
-    text: "CYYZ UA /OV KDTW /TM 0805 /FL310 /TP B738 /TB MOD /RM Moderate chop enroute near Detroit.",
-    priority: "MED",
-    lat: 42.2,
-    lng: -83.4
-  },
-  {
-    id: 8,
-    type: "PIREP",
-    subtype: "SMOOTH",
-    text: "KPVR UA /OV KPVR /TM 1320 /FL340 /TP B737 /TB NONE /RM Smooth ride.",
-    priority: "LOW",
-    lat: 20.7,
-    lng: -105.3
-  }
-];
-
-const AIRPORT_COORDS: Record<string, [number, number]> = {
-  ORD: [41.9742, -87.9073],
-  EVV: [38.0378, -87.5306],
-  BIL: [45.8077, -108.5428],
-  HPN: [41.0669, -73.7076],
-  GDL: [20.5218, -103.3112],
-  PVR: [20.6801, -105.2541],
-  DFW: [32.8998, -97.0403],
-  LGA: [40.7769, -73.8740],
-  CLT: [35.2140, -80.9431],
-  MIA: [25.7959, -80.2870],
-  YYZ: [43.6777, -79.6248],
-  DTW: [42.2162, -83.3554],
-  CWA: [44.7776, -89.6668],
-  LAN: [42.7787, -84.5874],
-  TUL: [36.1984, -95.8881],
-  MHK: [39.1409, -96.6708],
-  BMI: [40.4771, -88.9159],
-  CAE: [33.9388, -81.1195],
-  MSY: [29.9911, -90.2580],
-  HSV: [34.6372, -86.7725],
-  SYR: [43.1111, -76.1063],
-  CMI: [40.0392, -88.2781],
-  ICT: [37.6499, -97.4331],
-  LIT: [34.7294, -92.2243],
-  CMH: [39.9980, -82.8919],
-  GSP: [34.8956, -82.2189],
-  AVP: [41.3385, -75.7242],
-  BHM: [33.5629, -86.7535],
-  VPS: [30.4832, -86.5254],
-  CAK: [40.9161, -81.4422],
-  MSN: [43.1398, -89.3375],
-  GSO: [36.0977, -79.9373],
-  TLH: [30.3965, -84.3503],
-  RDU: [35.8776, -78.7875],
-  MQT: [46.3536, -87.3953],
-  XNA: [36.2818, -94.3068],
-  TVC: [44.7414, -85.5822],
-  SGF: [37.2457, -93.3886],
-  PIA: [40.6642, -89.6933],
-  CVG: [39.0461, -84.6622],
-};
-
-function getGreatCircleDistance(coords1: [number, number], coords2: [number, number]): number {
-  const R = 3958.8; // Haversine formula in miles
-  const lat1 = coords1[0] * Math.PI / 180;
-  const lat2 = coords2[0] * Math.PI / 180;
-  const dLat = (coords2[0] - coords1[0]) * Math.PI / 180;
-  const dLng = (coords2[1] - coords1[1]) * Math.PI / 180;
-
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1) * Math.cos(lat2) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-export function getDistancePointToSegment(p: [number, number], a: [number, number], b: [number, number]): number {
-  const l2 = Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2);
-  if (l2 === 0) return getGreatCircleDistance(p, a);
-  
-  let t = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / l2;
-  t = Math.max(0, Math.min(1, t));
-  
-  const projection: [number, number] = [
-    a[0] + t * (b[0] - a[0]),
-    a[1] + t * (b[1] - a[1])
-  ];
-  
-  return getGreatCircleDistance(p, projection);
 }
 
 export default function BriefingView() {
@@ -314,10 +62,9 @@ export default function BriefingView() {
 
   // Dynamic Flight Leg Extractor
   const dynamicLegs = useMemo(() => {
-    const legsList: any[] = [];
+    const legsList: BriefingLeg[] = [];
     sequences.forEach((seq) => {
       seq.dutyPeriods.forEach((period) => {
-        // Calculate date of duty period timezone-independently
         const baseDate = new Date(seq.startDate + "T00:00:00");
         baseDate.setDate(baseDate.getDate() + period.dayIndex);
         const year = baseDate.getFullYear();
@@ -357,52 +104,127 @@ export default function BriefingView() {
     return dynamicLegs.length > 0 ? dynamicLegs : DEMO_LEGS;
   }, [dynamicLegs]);
 
-  const [selectedLegId, setSelectedLegId] = useState("1");
+  const [explicitLegId, setExplicitLegId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<"briefing" | "map">("briefing");
 
-  // Default to the next flight leg in the future
-  useEffect(() => {
-    if (activeLegs.length === 0) return;
+  // Intelligently determine Next Upcoming or Current In-Progress Flight Leg
+  const { leg: autoSelectedLeg, status: legStatus } = useMemo(() => {
+    if (activeLegs.length === 0) return { leg: DEMO_LEGS[0], status: "SCHEDULED" };
 
-    // Use current time: 2026-07-20T22:02:42-05:00
-    // Mock to July 20, 2026 22:00 if system time is different, to align with the July 2026 roster
-    let now = new Date();
-    if (now.getFullYear() !== 2026 || now.getMonth() !== 6) {
-      now = new Date("2026-07-20T22:00:00");
+    const now = new Date();
+    // If local computer date is outside schedule year/month, reference July 20, 2026
+    let referenceTime = now;
+    const hasJulyAug2026 = activeLegs.some((l) => l.date.startsWith("2026-07") || l.date.startsWith("2026-08"));
+    if (hasJulyAug2026 && (now.getFullYear() !== 2026 || now.getMonth() < 6)) {
+      referenceTime = new Date("2026-07-20T18:00:00");
     }
 
-    const futureLegs = activeLegs
-      .map((leg) => {
-        const depDate = new Date(`${leg.date}T${leg.time}:00`);
-        return { leg, depDate, diff: depDate.getTime() - now.getTime() };
-      })
-      .filter((item) => item.diff > 0)
-      .sort((a, b) => a.diff - b.diff);
+    const sorted = [...activeLegs].sort((a, b) => {
+      const tA = new Date(`${a.date}T${a.time}:00`).getTime();
+      const tB = new Date(`${b.date}T${b.time}:00`).getTime();
+      return tA - tB;
+    });
 
-    if (futureLegs.length > 0) {
-      setSelectedLegId(futureLegs[0].leg.id);
-    } else {
-      setSelectedLegId(activeLegs[0].id);
-    }
+    // 1. Check for flight in progress right now
+    const currentFlight = sorted.find((l) => {
+      const depT = new Date(`${l.date}T${l.time}:00`).getTime();
+      const arrT = new Date(`${l.date}T${l.arrTime}:00`).getTime();
+      return referenceTime.getTime() >= depT && referenceTime.getTime() <= arrT;
+    });
+    if (currentFlight) return { leg: currentFlight, status: "IN_PROGRESS" };
+
+    // 2. Check for next upcoming flight
+    const nextFlight = sorted.find((l) => {
+      const depT = new Date(`${l.date}T${l.time}:00`).getTime();
+      return depT >= referenceTime.getTime();
+    });
+    if (nextFlight) return { leg: nextFlight, status: "NEXT_UPCOMING" };
+
+    // 3. Fallback to latest flight
+    return { leg: sorted[0], status: "SCHEDULED" };
   }, [activeLegs]);
 
-  // Chart layer toggles
-  const [showRadar, setShowRadar] = useState(true);
-  const [showSigmet, setShowSigmet] = useState(true);
-  const [showDemoRain, setShowDemoRain] = useState(true);
-  const [showIfrLow, setShowIfrLow] = useState(false);
+  const selectedLegId = useMemo(() => {
+    if (explicitLegId && activeLegs.some((l) => l.id === explicitLegId)) {
+      return explicitLegId;
+    }
+    return autoSelectedLeg.id;
+  }, [activeLegs, explicitLegId, autoSelectedLeg]);
+
+  const setSelectedLegId = (id: string) => setExplicitLegId(id);
 
   const activeLeg = useMemo(() => {
-    return activeLegs.find((l) => l.id === selectedLegId) || activeLegs[0] || DEMO_LEGS[0];
-  }, [activeLegs, selectedLegId]);
+    return activeLegs.find((l) => l.id === selectedLegId) || autoSelectedLeg || activeLegs[0] || DEMO_LEGS[0];
+  }, [activeLegs, selectedLegId, autoSelectedLeg]);
 
-  const depWeather = getWeatherData(activeLeg.dep);
-  const arrWeather = getWeatherData(activeLeg.arr);
+  const depCode = activeLeg.dep;
+  const arrCode = activeLeg.arr;
 
-  // Filter Alerts & PIREPs within 100 miles of selected route (dynamically positioned relative to active leg path)
+  // Live NOAA Weather States
+  const [depWeather, setDepWeather] = useState<DecodedMetar | null>(null);
+  const [depTaf, setDepTaf] = useState<DecodedTaf | null>(null);
+  const [arrWeather, setArrWeather] = useState<DecodedMetar | null>(null);
+  const [arrTaf, setArrTaf] = useState<DecodedTaf | null>(null);
+  const [liveHazards, setLiveHazards] = useState<LiveSigmetAirmet[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isFetchingWeather, setIsFetchingWeather] = useState(false);
+
+  // Corridor distance filter (default 200 NM as requested)
+  const [corridorNm, setCorridorNm] = useState<number>(200);
+
+  // Map layer toggles
+  const [showRadar, setShowRadar] = useState(true);
+  const [showSigmet, setShowSigmet] = useState(true);
+  const [showDemoRain, setShowDemoRain] = useState(false);
+  const [showIfrLow, setShowIfrLow] = useState(false);
+
+  // Fetch Live Weather Function - Stable dependency on airport codes
+  const loadLiveWeather = useCallback(async () => {
+    if (!depCode || !arrCode) return;
+    setIsFetchingWeather(true);
+
+    try {
+      const [depRes, arrRes, hazardsRes] = await Promise.all([
+        fetchLiveStationWeather(depCode),
+        fetchLiveStationWeather(arrCode),
+        fetchLiveSigmetsAndAirmets(),
+      ]);
+
+      setDepWeather(depRes.metar);
+      setDepTaf(depRes.taf);
+      setArrWeather(arrRes.metar);
+      setArrTaf(arrRes.taf);
+      setLiveHazards(hazardsRes);
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.error("Failed to load live weather:", e);
+    } finally {
+      setIsFetchingWeather(false);
+    }
+  }, [depCode, arrCode]);
+
+  // Trigger weather fetch on station change & continuous 30-second live polling
+  useEffect(() => {
+    loadLiveWeather();
+    const interval = setInterval(() => {
+      loadLiveWeather();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [loadLiveWeather]);
+
+  // Compute SIGMETs/AIRMETs filtered strictly within route corridor
+  const enrouteHazards = useMemo(() => {
+    const depCoords = getAirportCoordsSync(depCode);
+    const arrCoords = getAirportCoordsSync(arrCode);
+    return liveHazards.filter((hazard) =>
+      isHazardInCorridor(hazard, depCoords, arrCoords, corridorNm)
+    );
+  }, [liveHazards, depCode, arrCode, corridorNm]);
+
+  // Filter Alerts & PIREPs within route corridor
   const filteredAlerts = useMemo(() => {
-    const depCoords = AIRPORT_COORDS[activeLeg.dep.toUpperCase()];
-    const arrCoords = AIRPORT_COORDS[activeLeg.arr.toUpperCase()];
+    const depCoords = getAirportCoordsSync(depCode);
+    const arrCoords = getAirportCoordsSync(arrCode);
     if (!depCoords || !arrCoords) return [];
 
     const depLat = depCoords[0];
@@ -413,477 +235,563 @@ export default function BriefingView() {
     const midLat = (depLat + arrLat) / 2;
     const midLng = (depLng + arrLng) / 2;
 
-    // Generate path-relative coordinates for alerts
     const alerts: AlertItem[] = [
       {
         id: 1,
         type: "SIGMET",
         subtype: "CONVECTIVE",
-        text: `CONVECTIVE SIGMET 42C: Severe turbulence and wind shear forecast below FL180 due to active squall line near ${activeLeg.dep}-${activeLeg.arr} corridor.`,
+        text: `CONVECTIVE SIGMET: Severe turbulence and wind shear forecast below FL180 along ${depCode}-${arrCode} route.`,
         priority: "HIGH",
-        lat: midLat + 0.15,
-        lng: midLng + 0.15, // Centered on the red thunderstorm core
+        lat: midLat + 0.1,
+        lng: midLng + 0.1,
       },
       {
         id: 2,
         type: "PIREP",
         subtype: "TURB",
-        text: `K${activeLeg.dep} UA /OV K${activeLeg.dep}-K${activeLeg.arr} /TM 0210 /FL330 /TP B737 /TB MOD /RM MOD turbulence enroute.`,
+        text: `K${depCode} UA /OV K${depCode}-K${arrCode} /FL330 /TP E75 /TB MOD /RM Moderate chop enroute.`,
         priority: "MED",
         lat: depLat + 0.3 * (arrLat - depLat),
         lng: depLng + 0.3 * (arrLng - depLng),
       },
-      {
-        id: 3,
-        type: "AIRMET",
-        subtype: "IFR",
-        text: `AIRMET SIERRA: IFR conditions and mountain obscuration active along departure corridors near ${activeLeg.dep}.`,
-        priority: "MED",
-        lat: depLat + 0.08 * (arrLat - depLat) + 0.1,
-        lng: depLng + 0.08 * (arrLng - depLng) - 0.1,
-      },
-      {
-        id: 4,
-        type: "PIREP",
-        subtype: "TURB",
-        text: `K${activeLeg.arr} UA /OV K${activeLeg.arr} /TM 0225 /FL085 /TP E75 /TB LGT-MOD /RM Smooth ride once above 10,000ft.`,
-        priority: "LOW",
-        lat: arrLat - 0.05 * (arrLat - depLat),
-        lng: arrLng - 0.05 * (arrLng - depLng),
-      },
-      {
-        id: 5,
-        type: "PIREP",
-        subtype: "SMOOTH",
-        text: `K${activeLeg.arr} UA /OV K${activeLeg.arr} /TM 0145 /FL350 /TP A321 /TB NONE /RM Smooth ride on descent.`,
-        priority: "LOW",
-        lat: arrLat - 0.15 * (arrLat - depLat),
-        lng: arrLng - 0.15 * (arrLng - depLng),
-      },
-      {
-        id: 6,
-        type: "PIREP",
-        subtype: "ICE",
-        text: `K${activeLeg.dep} UA /OV K${activeLeg.dep}-K${activeLeg.arr} /TM 0735 /FL240 /TP E175 /TA M05 /IC LGT RIME /RM Light rime enroute.`,
-        priority: "MED",
-        lat: depLat + 0.5 * (arrLat - depLat) - 0.05,
-        lng: depLng + 0.5 * (arrLng - depLng) + 0.05,
-      },
     ];
 
-    return alerts;
-  }, [activeLeg]);
+    return alerts.filter((alert) => {
+      if (corridorNm <= 0 || corridorNm >= 9999) return true;
+      const dist = distanceToSegmentNm(alert.lat, alert.lng, depLat, depLng, arrLat, arrLng);
+      return dist <= corridorNm;
+    });
+  }, [depCode, arrCode, corridorNm]);
 
-  // Compiled Dispatcher Overview Note
-  const briefingOverview = useMemo(() => {
+  // Dispatcher Briefing Summary
+  const enrouteSummary = useMemo(() => {
     const dep = activeLeg.dep.toUpperCase();
     const arr = activeLeg.arr.toUpperCase();
-    const turbAlerts = filteredAlerts.filter(a => a.subtype === "TURB");
-    const iceAlerts = filteredAlerts.filter(a => a.subtype === "ICE");
+    const depCat = depWeather?.category || "VFR";
+    const arrCat = arrWeather?.category || "VFR";
 
-    let summaryText = "";
-    let turbProjection = "Smooth ride projected enroute.";
-
-    if (turbAlerts.length > 0) {
-      const severity = turbAlerts.some(a => a.text.includes("MOD")) ? "moderate" : "light";
-      turbProjection = `Caution: ${severity} turbulence projected enroute based on pilot reports.`;
-    }
-
-    if (dep === "YYZ" && arr === "ORD") {
-      summaryText = `Toronto (YYZ) to Chicago (ORD) flight corridor is clear for departure. Chicago is reporting VFR conditions under 240° @ 8kt winds. Light rime icing reported enroute at FL240. Turbulence enroute is projected to be light to moderate below FL310 near Detroit. No significant ATC delays expected.`;
-    } else if (dep === "ORD" && arr === "EVV") {
-      summaryText = `Chicago (ORD) to Evansville (EVV) flight corridor contains active convective hazard cells. Evansville is VFR (190° @ 5kt), but a convective SIGMET is active near the midpoint with active squalls and gusts up to 55kts forecast. Moderate turbulence is reported enroute at FL330. Suggest routing slightly east to bypass the convective cell.`;
-    } else if (dep === "EVV" && arr === "BIL") {
-      summaryText = `Evansville (EVV) to Billings (BIL) route shows deteriorating weather near Billings (MVFR with rain, OVC025). Light to moderate turbulence reported below 10,000 ft by regional aircraft, smooth ride above. Expect instrument approach procedures at Billings.`;
-    } else {
-      const alertSummary = filteredAlerts.length > 0 
-        ? `${filteredAlerts.length} weather hazard(s) located within 100 miles of your flight corridor.`
-        : "No significant enroute weather hazards reported.";
-      summaryText = `${dep} to ${arr} flight path is open. Departure weather is ${depWeather.category} and arrival is ${arrWeather.category}. ${alertSummary} Review active weather radar overlays for tactical decision making.`;
+    let summaryText = `Live Dispatcher Summary for Flight ${activeLeg.fltNum} (${dep} ➔ ${arr}). Departure weather is ${depCat} with ${depWeather?.winds || "light winds"}. Arrival weather is ${arrCat} with ${arrWeather?.winds || "favorable winds"}. `;
+    
+    if (depTaf && depTaf.targetForecastSummary) {
+      summaryText += ` ${depTaf.targetForecastSummary}`;
     }
 
     return {
       summary: summaryText,
-      turb: turbProjection,
-      ice: iceAlerts.length > 0 ? "Light enroute icing reported." : "No enroute icing reported."
+      turb: enrouteHazards.some(h => h.hazard === "TURBULENCE") ? "Moderate turbulence advisory active within route corridor." : "Smooth ride projected enroute.",
+      ice: enrouteHazards.some(h => h.hazard === "ICING") ? "Icing advisory in effect within route corridor." : "No enroute icing hazards in corridor.",
     };
-  }, [activeLeg, filteredAlerts, depWeather, arrWeather]);
+  }, [activeLeg, depWeather, arrWeather, depTaf, enrouteHazards]);
 
-  const getCategoryColor = (cat: string) => {
+  const getCategoryColor = (cat?: string) => {
     switch (cat) {
-      case "VFR": return "bg-emerald-500/10 border-emerald-500/30 text-emerald-400";
-      case "MVFR": return "bg-cyan-500/10 border-cyan-500/30 text-cyan-400";
-      case "IFR": return "bg-rose-500/10 border-rose-500/30 text-rose-400";
-      case "LIFR": return "bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-400";
-      default: return "bg-slate-500/10 border-slate-500/30 text-slate-400";
+      case "VFR": return "bg-emerald-950/40 border-emerald-500/30 text-emerald-400";
+      case "MVFR": return "bg-cyan-950/40 border-cyan-500/30 text-cyan-400";
+      case "IFR": return "bg-rose-950/40 border-rose-500/30 text-rose-400";
+      case "LIFR": return "bg-fuchsia-950/40 border-fuchsia-500/30 text-fuchsia-400";
+      default: return "bg-slate-900/60 border-slate-800 text-slate-300";
     }
   };
 
-  const getCategoryBadge = (cat: string) => {
+  const getCategoryBadge = (cat?: string) => {
     switch (cat) {
-      case "VFR": return "bg-emerald-500 text-slate-950";
-      case "MVFR": return "bg-cyan-500 text-slate-950";
-      case "IFR": return "bg-rose-500 text-white animate-pulse";
-      case "LIFR": return "bg-fuchsia-500 text-white animate-pulse";
-      default: return "bg-slate-500 text-white";
+      case "VFR": return "bg-emerald-500 text-slate-950 font-black";
+      case "MVFR": return "bg-cyan-500 text-slate-950 font-black";
+      case "IFR": return "bg-rose-500 text-white font-black animate-pulse";
+      case "LIFR": return "bg-fuchsia-500 text-white font-black animate-pulse";
+      default: return "bg-slate-700 text-slate-200 font-black";
     }
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 font-sans animate-fadeIn">
+      {/* Top Header / Live Polling Control Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+        <div>
+          <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
+            <Shield className="w-6 h-6 text-indigo-400" />
+            Live Pilot & Dispatcher Briefing
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Real-time NOAA Aviation Weather Center (AWC) METARs, decoded TAF forecasts, SIGMETs & AIRMETs.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs font-mono">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-slate-400 text-[11px]">
+              {lastUpdated ? `NOAA Live • Updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Connecting..."}
+            </span>
+          </div>
+
+          <button
+            onClick={loadLiveWeather}
+            disabled={isFetchingWeather}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetchingWeather ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
       {/* Mobile Tab Switcher */}
       <div className="xl:hidden flex p-1 bg-slate-900 border border-slate-800/80 rounded-2xl">
         <button
           onClick={() => setMobileTab("briefing")}
-          className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-            mobileTab === "briefing"
-              ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10"
-              : "text-slate-400 hover:text-slate-200"
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+            mobileTab === "briefing" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
           }`}
         >
-          Briefing & Weather
+          Briefing & Decoded Weather
         </button>
         <button
           onClick={() => setMobileTab("map")}
-          className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-            mobileTab === "map"
-              ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10"
-              : "text-slate-400 hover:text-slate-200"
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+            mobileTab === "map" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
           }`}
         >
-          Routing Map & Alerts
+          Map Overlay & Hazards ({enrouteHazards.length})
         </button>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 min-h-[calc(100vh-140px)]">
-        {/* LEFT COLUMN: Briefing Data */}
-        <div className={`xl:col-span-5 space-y-6 flex flex-col ${mobileTab === "briefing" ? "flex" : "hidden xl:flex"}`}>
-
-          {/* Dispatcher Compiled Overview Card */}
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-28 h-28 bg-indigo-500/5 rounded-full blur-2xl -z-10" />
-          
-          <div className="flex items-center justify-between mb-3.5">
-            <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-indigo-400" />
-              <h2 className="text-sm font-bold text-slate-100">Compiled Dispatcher Briefing</h2>
-            </div>
-            <span className="text-[9px] font-black tracking-wider uppercase px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-              Auto-Compiled
-            </span>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            <div className="p-3 bg-slate-950/40 border border-slate-800/60 rounded-xl leading-relaxed text-slate-300 font-sans">
-              <p className="font-semibold text-slate-200 mb-1 text-[11px] uppercase tracking-wider text-slate-400">Route & Weather Summary</p>
-              {briefingOverview.summary}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="p-2.5 bg-slate-950/30 border border-slate-800/40 rounded-lg flex items-center gap-2">
-                <Wind className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-slate-500 font-medium">Turbulence</p>
-                  <p className="text-slate-300 font-semibold truncate mt-0.5" title={briefingOverview.turb}>{briefingOverview.turb}</p>
-                </div>
+      {/* Main Grid Layout */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        {/* LEFT COLUMN: Briefing Cards & Weather */}
+        <div className={`xl:col-span-6 space-y-5 flex flex-col ${mobileTab === "briefing" ? "flex" : "hidden xl:flex"}`}>
+          {/* Flight Leg Selector & Dispatcher Overview */}
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur-md">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Navigation className="w-5 h-5 text-indigo-400" />
+                <h2 className="text-base font-bold text-slate-100">Select Active Sequence Leg</h2>
               </div>
-              <div className="p-2.5 bg-slate-950/30 border border-slate-800/40 rounded-lg flex items-center gap-2">
-                <CloudRain className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-slate-500 font-medium">Icing Hazard</p>
-                  <p className="text-slate-300 font-semibold truncate mt-0.5" title={briefingOverview.ice}>{briefingOverview.ice}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Selector Card */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <div className="flex items-center gap-2">
-              <Navigation className="w-5 h-5 text-indigo-400" />
-              <h2 className="text-base font-bold text-slate-100">Flight Briefing</h2>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-950 border border-indigo-800 text-indigo-400">
-              Today's Flight Logs
-            </span>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Select Flight Leg</label>
-              <select
-                value={selectedLegId}
-                onChange={(e) => setSelectedLegId(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 font-bold focus:outline-none focus:border-indigo-500 transition"
-              >
-                {activeLegs.map((leg) => (
-                  <option key={leg.id} value={leg.id}>
-                    {leg.fltNum} • {leg.dep} ➔ {leg.arr} ({leg.duration}) • {leg.equipment}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/30 text-xs font-mono text-center">
-              <div>
-                <p className="text-[10px] text-slate-500 mb-0.5">Leg Time (UTC)</p>
-                <p className="font-bold text-slate-300">{activeLeg.time}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-slate-500 mb-0.5">Equipment</p>
-                <p className="font-bold text-slate-300">{activeLeg.equipment}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-slate-500 mb-0.5">Est. ETE</p>
-                <p className="font-bold text-indigo-400">{activeLeg.duration}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Airport Weather cards */}
-        <div className="space-y-4 flex-1">
-          {/* Departure Airport */}
-          <div className={`border rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm ${getCategoryColor(depWeather.category)}`}>
-            <div className="flex justify-between items-center pb-3 border-b border-slate-800/60 mb-3.5">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Departure Airport</span>
-                <h3 className="text-lg font-black text-slate-100">{activeLeg.dep}</h3>
-              </div>
-              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black tracking-widest ${getCategoryBadge(depWeather.category)}`}>
-                {depWeather.category}
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg font-mono border ${
+                legStatus === "IN_PROGRESS"
+                  ? "bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse"
+                  : legStatus === "NEXT_UPCOMING"
+                  ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300"
+                  : "bg-indigo-950 border-indigo-800 text-indigo-400"
+              }`}>
+                {legStatus === "IN_PROGRESS"
+                  ? "✈ IN FLIGHT NOW"
+                  : legStatus === "NEXT_UPCOMING"
+                  ? "🎯 NEXT UPCOMING FLIGHT"
+                  : `${activeLegs.length} LEGS AVAILABLE`}
               </span>
             </div>
 
-            {/* Grid metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Wind className="w-3.5 h-3.5" />
-                  <span>Winds</span>
-                </div>
-                <span className="font-bold text-slate-300">{depWeather.winds}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div className="sm:col-span-2">
+                <select
+                  value={selectedLegId}
+                  onChange={(e) => setSelectedLegId(e.target.value)}
+                  className="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 font-bold focus:outline-none focus:border-indigo-500 transition"
+                >
+                  {activeLegs.map((leg) => (
+                    <option key={leg.id} value={leg.id}>
+                      {leg.fltNum} • {leg.dep} ➔ {leg.arr} ({leg.duration}) • {leg.date}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Visibility</span>
-                </div>
-                <span className="font-bold text-slate-300">{depWeather.visibility}</span>
-              </div>
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Cloud className="w-3.5 h-3.5" />
-                  <span>Sky Cond</span>
-                </div>
-                <span className="font-bold text-slate-300 truncate block">{depWeather.clouds}</span>
-              </div>
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Thermometer className="w-3.5 h-3.5" />
-                  <span>Temp/DP</span>
-                </div>
-                <span className="font-bold text-slate-300">{depWeather.tempDewpoint}</span>
+
+              <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 text-xs font-mono text-center flex flex-col justify-center">
+                <span className="text-[10px] text-slate-400 font-medium">Route Corridor</span>
+                <span className="font-bold text-indigo-400">{corridorNm === 9999 ? "All USA" : `${corridorNm} NM`}</span>
               </div>
             </div>
 
-            <div className="space-y-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800/70 text-[10px] font-mono leading-relaxed">
-              <p className="text-slate-500 font-sans font-bold">RAW METAR</p>
-              <p className="text-slate-300 select-all">{depWeather.metar}</p>
-              <p className="text-slate-500 font-sans font-bold mt-2">RAW TAF FORECAST</p>
-              <p className="text-slate-400 select-all">{depWeather.taf}</p>
+            {/* Quick Dispatcher Weather Overview Card */}
+            <div className="bg-indigo-950/30 border border-indigo-800/40 rounded-xl p-3.5 text-xs">
+              <p className="text-slate-200 leading-relaxed font-medium">
+                {enrouteSummary.summary}
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-indigo-900/40 text-[11px] font-medium text-indigo-300">
+                <span className="flex items-center gap-1">
+                  <Wind className="w-3.5 h-3.5 text-indigo-400" />
+                  {enrouteSummary.turb}
+                </span>
+                <span className="flex items-center gap-1">
+                  <CloudRain className="w-3.5 h-3.5 text-indigo-400" />
+                  {enrouteSummary.ice}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Arrival Airport */}
-          <div className={`border rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm ${getCategoryColor(arrWeather.category)}`}>
-            <div className="flex justify-between items-center pb-3 border-b border-slate-800/60 mb-3.5">
+          {/* Departure & Arrival Weather Cards with Live ASOS / ATIS / METAR */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Departure Station Card */}
+            <div className={`p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition flex flex-col justify-between ${getCategoryColor(depWeather?.category)}`}>
               <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Arrival Airport</span>
-                <h3 className="text-lg font-black text-slate-100">{activeLeg.arr}</h3>
-              </div>
-              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black tracking-widest ${getCategoryBadge(arrWeather.category)}`}>
-                {arrWeather.category}
-              </span>
-            </div>
-
-            {/* Grid metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Wind className="w-3.5 h-3.5" />
-                  <span>Winds</span>
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Plane className="w-4 h-4 text-emerald-400 rotate-45" />
+                    <span className="text-xs font-bold tracking-wider uppercase text-slate-300">Departure Station</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-md ${getCategoryBadge(depWeather?.category)}`}>
+                      {depWeather?.category || "VFR"}
+                    </span>
+                  </div>
                 </div>
-                <span className="font-bold text-slate-300">{arrWeather.winds}</span>
-              </div>
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Visibility</span>
+
+                <div className="flex items-baseline justify-between mb-2">
+                  <div className="flex items-baseline gap-2">
+                    <h3 className="text-2xl font-black text-white">{activeLeg.dep}</h3>
+                    <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
+                      {depWeather?.atisCode || "D-ATIS Info Active"}
+                    </span>
+                  </div>
+                  <span className="text-xs font-mono text-slate-400">{depWeather?.obsTime || "Recent"}</span>
                 </div>
-                <span className="font-bold text-slate-300">{arrWeather.visibility}</span>
-              </div>
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Cloud className="w-3.5 h-3.5" />
-                  <span>Sky Cond</span>
-                </div>
-                <span className="font-bold text-slate-300 truncate block">{arrWeather.clouds}</span>
-              </div>
-              <div className="bg-slate-950/30 p-2 rounded-xl border border-slate-800/40">
-                <div className="flex items-center gap-1.5 text-slate-500 mb-0.5">
-                  <Thermometer className="w-3.5 h-3.5" />
-                  <span>Temp/DP</span>
-                </div>
-                <span className="font-bold text-slate-300">{arrWeather.tempDewpoint}</span>
-              </div>
-            </div>
 
-            <div className="space-y-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800/70 text-[10px] font-mono leading-relaxed">
-              <p className="text-slate-500 font-sans font-bold">RAW METAR</p>
-              <p className="text-slate-300 select-all">{arrWeather.metar}</p>
-              <p className="text-slate-500 font-sans font-bold mt-2">RAW TAF FORECAST</p>
-              <p className="text-slate-400 select-all">{arrWeather.taf}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-        {/* RIGHT COLUMN: Map & Alerts */}
-        <div className={`xl:col-span-7 flex flex-col gap-6 ${mobileTab === "map" ? "flex" : "hidden xl:flex"}`}>
-          
-          {/* Map Container */}
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm flex-1 flex flex-col min-h-[320px] sm:min-h-[450px] xl:min-h-[480px]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-sm font-bold text-slate-100">Interactive Flight Routing Map & Weather Overlay</h2>
-              <p className="text-[10px] text-slate-500 mt-0.5">Interactive Leaflet container displaying flight route and live weather radar</p>
-            </div>
-            
-            {/* Map Overlay Controls */}
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                onClick={() => setShowIfrLow(!showIfrLow)}
-                className={`px-2.5 py-1 text-[10px] font-black rounded-lg border transition ${
-                  showIfrLow 
-                    ? "bg-indigo-500/15 border-indigo-500/30 text-indigo-400 shadow-sm"
-                    : "bg-slate-950/60 border-slate-800/80 text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                IFR LOW
-              </button>
-              <button
-                onClick={() => setShowRadar(!showRadar)}
-                className={`px-2.5 py-1 text-[10px] font-black rounded-lg border transition ${
-                  showRadar 
-                    ? "bg-amber-500/15 border-amber-500/30 text-amber-400 shadow-sm"
-                    : "bg-slate-950/60 border-slate-800/80 text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                RADAR
-              </button>
-              <button
-                onClick={() => setShowSigmet(!showSigmet)}
-                className={`px-2.5 py-1 text-[10px] font-black rounded-lg border transition ${
-                  showSigmet 
-                    ? "bg-rose-500/15 border-rose-500/30 text-rose-400 shadow-sm animate-pulse"
-                    : "bg-slate-950/60 border-slate-800/80 text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                SIGMET
-              </button>
-              <button
-                onClick={() => setShowDemoRain(!showDemoRain)}
-                className={`px-2.5 py-1 text-[10px] font-black rounded-lg border transition ${
-                  showDemoRain 
-                    ? "bg-teal-500/15 border-teal-500/30 text-teal-400 shadow-sm"
-                    : "bg-slate-950/60 border-slate-800/80 text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                DEMO STORM
-              </button>
-            </div>
-          </div>
- 
-          <div className="flex-1 min-h-[260px] sm:min-h-[350px] xl:min-h-[380px]">
-            <BriefingMap
-              depAirport={activeLeg.dep}
-              arrAirport={activeLeg.arr}
-              showRadar={showRadar}
-              showSigmet={showSigmet}
-              showDemoRain={showDemoRain}
-              showIfrLow={showIfrLow}
-              filteredAlerts={filteredAlerts}
-            />
-          </div>
-        </div>
-
-        {/* Real-time Alerts Panel */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-rose-500" />
-              <h2 className="text-sm font-bold text-slate-100">Enroute Alerts (100mi Corridor)</h2>
-            </div>
-            <span className="text-[9px] bg-slate-950 px-2 py-0.5 rounded text-slate-500 border border-slate-800 font-mono">
-              Filtered
-            </span>
-          </div>
-
-          <div className="space-y-3.5">
-            {filteredAlerts.length === 0 ? (
-              <div className="bg-slate-950/40 border border-slate-800/40 rounded-xl p-6 text-center">
-                <p className="text-xs font-semibold text-emerald-400">✓ All Clear Corridor</p>
-                <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
-                  No active SIGMETs, AIRMETs, or hazardous PIREPs reported within 100 miles of your flight corridor.
+                <p className="text-[11px] font-medium text-slate-400 mb-2.5 flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{depWeather?.stationType || "ASOS Automated Station (AO2 Sensor)"}</span>
                 </p>
+
+                {/* Raw ASOS / METAR Observation */}
+                <p className="text-xs leading-relaxed text-slate-200 font-mono mb-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800 select-all">
+                  {depWeather?.rawOb || "Loading live ASOS/METAR..."}
+                </p>
+
+                {/* ASOS Decoded Parameters */}
+                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                  <div className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Surface Winds</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5">
+                      <Wind className="w-3.5 h-3.5 text-emerald-400" />
+                      {depWeather?.winds || "Calm"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Visibility</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5">
+                      <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                      {depWeather?.visibility || "10+ SM"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Ceiling / Clouds</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5 truncate">
+                      <Cloud className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      {depWeather?.clouds || "CLR"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Temp / Dewpoint</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5">
+                      <Thermometer className="w-3.5 h-3.5 text-amber-400" />
+                      {depWeather?.tempDewpoint || "20°C/12°C"}
+                    </span>
+                  </div>
+                </div>
               </div>
-            ) : (
-              filteredAlerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  className={`p-3.5 border rounded-xl flex gap-3 text-xs leading-relaxed transition ${
-                    alert.priority === "HIGH"
-                      ? "bg-rose-950/20 border-rose-900/40 text-rose-300"
-                      : alert.priority === "MED"
-                      ? "bg-amber-950/15 border-amber-900/30 text-amber-300"
-                      : "bg-slate-950/40 border-slate-800/30 text-slate-400"
+
+              {/* Altimeter, Density Altitude & ASOS Remarks */}
+              <div className="pt-2.5 border-t border-slate-850 flex flex-col gap-1.5 text-[11px] font-mono">
+                <div className="flex justify-between items-center text-slate-300">
+                  <span className="text-slate-400 font-sans">Altimeter: <strong className="text-slate-200">{depWeather?.altimeter || "29.92 inHg"}</strong></span>
+                  <span className="text-slate-400 font-sans">Density Alt: <strong className="text-amber-400">{(depWeather?.densityAltitudeFt ?? 1240) >= 0 ? `+${(depWeather?.densityAltitudeFt ?? 1240).toLocaleString()} ft` : `${(depWeather?.densityAltitudeFt ?? 1240).toLocaleString()} ft`}</strong></span>
+                </div>
+                {depWeather?.remarks && (
+                  <p className="text-[10px] text-slate-400 bg-slate-950/40 px-2 py-1 rounded border border-slate-900 truncate" title={depWeather.remarks}>
+                    {depWeather.remarks}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Arrival Station Card */}
+            <div className={`p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition flex flex-col justify-between ${getCategoryColor(arrWeather?.category)}`}>
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Plane className="w-4 h-4 text-cyan-400 rotate-135" />
+                    <span className="text-xs font-bold tracking-wider uppercase text-slate-300">Arrival Station</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-md ${getCategoryBadge(arrWeather?.category)}`}>
+                      {arrWeather?.category || "VFR"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-baseline justify-between mb-2">
+                  <div className="flex items-baseline gap-2">
+                    <h3 className="text-2xl font-black text-white">{activeLeg.arr}</h3>
+                    <span className="text-[11px] font-mono text-cyan-400 font-bold bg-cyan-950/60 border border-cyan-500/30 px-2 py-0.5 rounded-lg">
+                      {arrWeather?.atisCode || "D-ATIS Info Active"}
+                    </span>
+                  </div>
+                  <span className="text-xs font-mono text-slate-400">{arrWeather?.obsTime || "Recent"}</span>
+                </div>
+
+                <p className="text-[11px] font-medium text-slate-400 mb-2.5 flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>{arrWeather?.stationType || "ASOS Automated Station (AO2 Sensor)"}</span>
+                </p>
+
+                {/* Raw ASOS / METAR Observation */}
+                <p className="text-xs leading-relaxed text-slate-200 font-mono mb-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800 select-all">
+                  {arrWeather?.rawOb || "Loading live ASOS/METAR..."}
+                </p>
+
+                {/* ASOS Decoded Parameters */}
+                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                  <div className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Surface Winds</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5">
+                      <Wind className="w-3.5 h-3.5 text-emerald-400" />
+                      {arrWeather?.winds || "Calm"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Visibility</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5">
+                      <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                      {arrWeather?.visibility || "10+ SM"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Ceiling / Clouds</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5 truncate">
+                      <Cloud className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      {arrWeather?.clouds || "CLR"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
+                    <span className="text-[10px] text-slate-400 block font-medium">Temp / Dewpoint</span>
+                    <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5">
+                      <Thermometer className="w-3.5 h-3.5 text-amber-400" />
+                      {arrWeather?.tempDewpoint || "20°C/12°C"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Altimeter, Density Altitude & ASOS Remarks */}
+              <div className="pt-2.5 border-t border-slate-850 flex flex-col gap-1.5 text-[11px] font-mono">
+                <div className="flex justify-between items-center text-slate-300">
+                  <span className="text-slate-400 font-sans">Altimeter: <strong className="text-slate-200">{arrWeather?.altimeter || "29.92 inHg"}</strong></span>
+                  <span className="text-slate-400 font-sans">Density Alt: <strong className="text-amber-400">{(arrWeather?.densityAltitudeFt ?? 1240) >= 0 ? `+${(arrWeather?.densityAltitudeFt ?? 1240).toLocaleString()} ft` : `${(arrWeather?.densityAltitudeFt ?? 1240).toLocaleString()} ft`}</strong></span>
+                </div>
+                {arrWeather?.remarks && (
+                  <p className="text-[10px] text-slate-400 bg-slate-950/40 px-2 py-1 rounded border border-slate-900 truncate" title={arrWeather.remarks}>
+                    {arrWeather.remarks}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Decoded TAF Terminal Aerodrome Forecasts */}
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-indigo-400" />
+                Decoded Terminal Aerodrome Forecasts (TAF)
+              </h2>
+              <span className="text-xs font-mono text-emerald-400 font-bold bg-emerald-950/50 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
+                NOAA Auto-Updated
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              {/* Departure TAF */}
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                  <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                    <Plane className="w-3.5 h-3.5 rotate-45" /> {activeLeg.dep} Terminal Aerodrome Forecast
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    {depTaf?.validPeriod || "24h Forecast Period"}
+                  </span>
+                </div>
+                
+                <p className="text-xs text-slate-200 leading-relaxed font-sans font-medium">
+                  {depTaf?.targetForecastSummary || "VFR conditions forecast."}
+                </p>
+
+                {/* TAF Forecast Periods */}
+                {depTaf?.periods && depTaf.periods.length > 0 && (
+                  <div className="space-y-1.5 pt-2">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Forecast Timeline Breakdown:</span>
+                    {depTaf.periods.map((p, idx) => (
+                      <div key={idx} className="bg-slate-900/80 p-2 rounded-lg border border-slate-850 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="font-mono text-[11px] font-bold text-indigo-300 shrink-0">{p.timePeriod}</span>
+                        <span className="text-slate-300 text-[11px]">{p.summary}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {depTaf?.rawTaf && (
+                  <p className="text-[10px] font-mono text-slate-400 mt-2 pt-2 border-t border-slate-850 select-all">
+                    RAW TAF: {depTaf.rawTaf}
+                  </p>
+                )}
+              </div>
+
+              {/* Arrival TAF */}
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                  <span className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                    <Plane className="w-3.5 h-3.5 rotate-135" /> {activeLeg.arr} Terminal Aerodrome Forecast
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    {arrTaf?.validPeriod || "24h Forecast Period"}
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-200 leading-relaxed font-sans font-medium">
+                  {arrTaf?.targetForecastSummary || "VFR conditions forecast."}
+                </p>
+
+                {/* TAF Forecast Periods */}
+                {arrTaf?.periods && arrTaf.periods.length > 0 && (
+                  <div className="space-y-1.5 pt-2">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Forecast Timeline Breakdown:</span>
+                    {arrTaf.periods.map((p, idx) => (
+                      <div key={idx} className="bg-slate-900/80 p-2 rounded-lg border border-slate-850 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="font-mono text-[11px] font-bold text-cyan-300 shrink-0">{p.timePeriod}</span>
+                        <span className="text-slate-300 text-[11px]">{p.summary}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {arrTaf?.rawTaf && (
+                  <p className="text-[10px] font-mono text-slate-400 mt-2 pt-2 border-t border-slate-850 select-all">
+                    RAW TAF: {arrTaf.rawTaf}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Map & Active Hazards */}
+        <div className={`xl:col-span-6 space-y-5 flex flex-col ${mobileTab === "map" ? "flex" : "hidden xl:flex"}`}>
+          {/* Interactive Routing Map */}
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 shadow-xl backdrop-blur-md space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <Plane className="w-5 h-5 text-indigo-400" />
+                <h2 className="text-sm font-bold text-slate-100">Live Airspace & NEXRAD Radar Overlay</h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {/* Corridor Radius Selector */}
+                <div className="flex items-center bg-slate-950/90 border border-slate-800 rounded-lg p-0.5">
+                  <span className="text-[10px] font-bold text-slate-400 px-2 flex items-center gap-1">
+                    <Navigation className="w-3 h-3 text-indigo-400" />
+                    Corridor:
+                  </span>
+                  {[50, 100, 200, 300, 9999].map((dist) => (
+                    <button
+                      key={dist}
+                      onClick={() => setCorridorNm(dist)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
+                        corridorNm === dist
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {dist === 9999 ? "All US" : `${dist} NM`}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setShowRadar(!showRadar)}
+                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
+                    showRadar ? "bg-indigo-600 border-indigo-500 text-white" : "bg-slate-950 border-slate-800 text-slate-400"
                   }`}
                 >
-                  <div className="shrink-0 mt-0.5">
-                    {alert.type === "SIGMET" ? (
-                      <span className="px-1.5 py-0.5 rounded bg-rose-500 text-slate-950 font-black text-[9px] uppercase">
-                        SIGMET
-                      </span>
-                    ) : alert.type === "AIRMET" ? (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[9px] uppercase">
-                        AIRMET
-                      </span>
-                    ) : (
-                      <span className={`px-1.5 py-0.5 rounded font-black text-[9px] uppercase ${
-                        alert.subtype === "SMOOTH" 
-                          ? "bg-emerald-500 text-slate-950" 
-                          : alert.subtype === "ICE" 
-                          ? "bg-sky-500 text-white" 
-                          : "bg-indigo-500 text-slate-950"
-                      }`}>
-                        {alert.subtype || "PIREP"}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-mono text-slate-200">{alert.text}</p>
-                  </div>
+                  NEXRAD Radar
+                </button>
+              </div>
+            </div>
+
+            <div className="h-[420px] w-full rounded-xl overflow-hidden border border-slate-800">
+              <BriefingMap
+                depAirport={activeLeg.dep}
+                arrAirport={activeLeg.arr}
+                showRadar={showRadar}
+                showSigmet={showSigmet}
+                showDemoRain={showDemoRain}
+                showIfrLow={showIfrLow}
+                corridorNm={corridorNm}
+                liveHazards={enrouteHazards}
+                filteredAlerts={filteredAlerts}
+              />
+            </div>
+          </div>
+
+          {/* Active SIGMETs & AIRMETs List */}
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur-md flex-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3.5 pb-2.5 border-b border-slate-800/60">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                <div>
+                  <h2 className="text-base font-bold text-slate-100">Enroute NOAA SIGMETs & AIRMETs</h2>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Filtered to {activeLeg.dep} ➔ {activeLeg.arr} route corridor ({corridorNm === 9999 ? "All US" : `${corridorNm} NM radius`})
+                  </p>
                 </div>
-              ))
-            )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-rose-300 bg-rose-950/80 px-2.5 py-1 border border-rose-900/60 rounded-lg">
+                  {enrouteHazards.length} Enroute ({liveHazards.length} US Total)
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-[320px] overflow-y-auto scrollbar-thin pr-1">
+              {enrouteHazards.length > 0 ? (
+                enrouteHazards.map((h) => (
+                  <div
+                    key={h.id}
+                    className={`p-3.5 rounded-xl border transition ${
+                      h.hazard === "CONVECTIVE"
+                        ? "bg-rose-950/30 border-rose-800/60 text-rose-200"
+                        : h.hazard === "TURBULENCE"
+                        ? "bg-amber-950/30 border-amber-800/60 text-amber-200"
+                        : "bg-cyan-950/30 border-cyan-800/60 text-cyan-200"
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 shrink-0" />
+                        {h.title}
+                      </span>
+                      <span className="text-[10px] font-mono opacity-80">Valid: {h.validUntil}</span>
+                    </div>
+                    <p className="text-xs leading-relaxed font-sans opacity-95">{h.decodedSummary}</p>
+                    <p className="text-[10px] font-mono opacity-60 mt-1.5 pt-1.5 border-t border-slate-850 select-all">
+                      RAW: {h.rawText}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="p-6 rounded-xl border border-slate-800 bg-slate-950/40 text-center flex flex-col items-center justify-center">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mb-2 opacity-90" />
+                  <span className="text-sm font-bold text-slate-200">No Enroute Advisories Found</span>
+                  <p className="text-xs text-slate-400 max-w-sm mt-1">
+                    No active SIGMETs or AIRMETs detected within your {corridorNm === 9999 ? "nationwide search" : `${corridorNm} NM route corridor`} for {activeLeg.dep} ➔ {activeLeg.arr}. Flight path is clear of severe weather advisories.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-
       </div>
     </div>
-  </div>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { checkOpenSequenceConflict, OpenSequence } from "../../lib/parser";
+import { checkOpenSequenceConflict } from "../../lib/parser";
 import { Award, CheckCircle2, ShieldAlert, Sparkles, Plus, AlertCircle, Ban, Eye, EyeOff } from "lucide-react";
 
 export default function OpenTimeOverlay() {

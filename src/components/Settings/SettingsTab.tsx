@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { Settings, Clock, Plus, Trash2, RotateCcw, ShieldCheck, Plane, Check, Building2, HelpCircle, Award } from "lucide-react";
+import { Settings, Clock, Plus, Trash2, RotateCcw, ShieldCheck, Check, Building2, Award } from "lucide-react";
 
 export default function SettingsTab() {
   const stationTurnLimits = useCrewStore((state) => state.stationTurnLimits);

@@ -10,6 +10,7 @@ export interface FlightLeg {
   actualDepTime?: string;
   actualArrTime?: string;
   isDeadhead?: boolean;
+  isOvertime?: boolean;
 }
 
 export interface DutyPeriod {
@@ -27,6 +28,35 @@ export interface DutyPeriod {
   isOvertime?: boolean;
 }
 
+export interface VacationPeriod {
+  id: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+  code: string;      // e.g. "VA"
+  description: string;
+}
+
+export interface MonthlyHIMetadata {
+  monthEnding: string; // e.g. "31JUL26"
+  monthYearLabel: string; // e.g. "July 2026"
+  asOfDateStr: string; // e.g. "17JUL26/2151"
+  pilotName: string;
+  seniorityNum: string;
+  empNum: string;
+  base: string;
+  equipment: string;
+  rank: string;
+  guaranteeHours: number;
+  bidSelProjHours: number;
+  fltTime672Hours: number;
+  fltTime365Day: number;
+  availSickHours: number;
+  shortTermSickAccrual: number;
+  sickUsedYtd: number;
+  vacationDaysCount: number;
+  vacationCreditHours: number;
+}
+
 export interface SequenceTrip {
   id: string; // Unique ID (e.g., UUID or custom string)
   sequenceNumber: string; // Sequence ID from text, e.g. "S8341"
@@ -40,9 +70,24 @@ export interface SequenceTrip {
   dutyPeriods: DutyPeriod[];
   colorTag: string; // Tailwind color class suffix (e.g. "indigo", "emerald", "amber")
   isOvertime?: boolean;
-  statusTag?: string; // e.g. "OT", "TT", "RA"
+  statusTag?: string; // e.g. "OT", "TT", "RA", "DROP", "DTS"
+  isDropped?: boolean;
+  dropReason?: string;
   isSimulated?: boolean;
   actualBlockMinutes?: number;
+  isGhost?: boolean;
+  hasConflict?: boolean;
+  conflictReason?: string;
+}
+
+
+export interface DaySegment {
+  seq: SequenceTrip;
+  dayIndexInSeq: number;
+  totalSeqDays: number;
+  isRealStart?: boolean;
+  isRealEnd?: boolean;
+  slot?: number;
 }
 
 export interface PayRates {
@@ -110,4 +155,55 @@ export interface RosterMetrics {
   blockRateConnectionHours: number;
   cancelCompensationHours: number;
 }
+
+export interface ScheduleDiffItem {
+  id: string;
+  type: "REASSIGNMENT" | "FLIGHT_TIME_CHANGE" | "TRIP_ADDED" | "TRIP_DROPPED" | "CREDIT_CHANGE";
+  sequenceNumber: string;
+  description: string;
+  oldValue?: string;
+  newValue?: string;
+  creditDeltaMinutes?: number;
+  severity: "info" | "warning" | "alert";
+}
+
+export interface ScheduleSnapshot {
+  id: string;
+  asOfDateStr: string; // e.g. "22JUL26/1534"
+  uploadedAt: string; // ISO date
+  sourceFileName: string;
+  monthLabel: string; // e.g. "JUL26" or "AUG26"
+  sequences: SequenceTrip[];
+  rawText: string;
+  diffs: ScheduleDiffItem[];
+  projectedCreditHours: number;
+  flownBlockHours: number;
+}
+
+export interface LogbookEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  flightNumber: string;
+  tailNumber: string;
+  aircraftType: string;
+  depAirport: string;
+  arrAirport: string;
+  outTime: string; // HHMM
+  inTime: string; // HHMM
+  blockMinutes: number;
+  nightMinutes: number;
+  instrumentMinutes: number;
+  crossCountryMinutes: number;
+  picMinutes: number;
+  sicMinutes: number;
+  dualReceivedMinutes: number;
+  landingsDay: number;
+  landingsNight: number;
+  approaches: number;
+  remarks: string;
+  isAutoFilled: boolean;
+  sourceSequenceNumber?: string;
+  createdAt: string;
+}
+
 
