@@ -4,6 +4,17 @@
  * Decodes raw weather strings into clear plain-English aviation briefings.
  */
 
+export interface AtisDetails {
+  code: string;
+  letter: string;
+  type: string;
+  datisText: string;
+  time?: string;
+  approachesInUse?: string;
+  runwaysInUse?: string;
+  notams?: string[];
+}
+
 export interface DecodedMetar {
   icao: string;
   name: string;
@@ -16,10 +27,95 @@ export interface DecodedMetar {
   tempDewpoint: string;
   altimeter: string;
   decodedSummary: string;
+  weatherPhenomena?: string; // Decoded METAR/ASOS present weather e.g. "Mist", "Thunderstorm & Rain"
   atisCode?: string;
   stationType?: string;
   remarks?: string;
   densityAltitudeFt?: number;
+  datisText?: string;
+  atisData?: AtisDetails;
+}
+
+export const METAR_WX_CODES: Record<string, string> = {
+  BR: "Mist",
+  FG: "Fog",
+  HZ: "Haze",
+  FU: "Smoke",
+  VA: "Volcanic Ash",
+  DU: "Widespread Dust",
+  SA: "Sand",
+  PY: "Spray",
+  DZ: "Drizzle",
+  RA: "Rain",
+  SN: "Snow",
+  SG: "Snow Grains",
+  IC: "Ice Crystals",
+  PL: "Ice Pellets",
+  GR: "Hail",
+  GS: "Small Hail / Snow Pellets",
+  UP: "Unknown Precipitation",
+  TS: "Thunderstorm",
+  SH: "Showers",
+  FZ: "Freezing",
+  MI: "Shallow",
+  PR: "Partial",
+  BC: "Patches",
+  DR: "Low Drifting",
+  BL: "Blowing",
+  SQ: "Squalls",
+  FC: "Funnel Cloud / Tornado",
+  SS: "Sandstorm",
+  DS: "Duststorm",
+};
+
+/**
+ * Decodes raw METAR present weather codes (e.g. BR, FG, HZ, -RA, +TSRA, FZRA) into clear text.
+ */
+export function decodeWeatherPhenomena(rawOb: string, metarWxString?: string): string {
+  const source = metarWxString || rawOb;
+  if (!source) return "None Reported";
+
+  const body = source.split("RMK")[0];
+  const decodedMatches: string[] = [];
+
+  // 1. Direct check for common compound METAR codes
+  if (/\b\+?TSRA\b/i.test(body)) decodedMatches.push("Heavy Thunderstorm & Rain");
+  else if (/\b-TSRA\b/i.test(body)) decodedMatches.push("Light Thunderstorm & Rain");
+  else if (/\bTSRA\b/i.test(body)) decodedMatches.push("Thunderstorm & Rain");
+  else if (/\bTS\b/i.test(body)) decodedMatches.push("Thunderstorm");
+
+  if (/\bFZRA\b/i.test(body)) decodedMatches.push("Freezing Rain");
+  if (/\bFZFG\b/i.test(body)) decodedMatches.push("Freezing Fog");
+  if (/\bFZDZ\b/i.test(body)) decodedMatches.push("Freezing Drizzle");
+
+  // 2. Tokenize and decode individual weather phenomena codes (e.g. BR, FG, HZ, RA, SN, DZ, PL, etc.)
+  const tokens = body.split(/\s+/);
+  tokens.forEach((t) => {
+    const clean = t.toUpperCase().replace(/^[-+]/, "").trim();
+    if (!clean) return;
+
+    // Skip location or cloud/altimeter tokens
+    if (/^(K[A-Z]{3}|C[A-Z]{3}|\d{6}Z|\d{2,3}\d{2,3}KT|\d+SM|\d+\/\d+|A\d{4}|CLR|SKC|FEW\d{3}|SCT\d{3}|BKN\d{3}|OVC\d{3}|AUTO)$/.test(clean)) {
+      return;
+    }
+
+    let prefix = "";
+    if (t.startsWith("-")) prefix = "Light ";
+    else if (t.startsWith("+")) prefix = "Heavy ";
+
+    // Extract two-letter METAR codes
+    for (let i = 0; i < clean.length; i += 2) {
+      const code = clean.substring(i, i + 2);
+      if (METAR_WX_CODES[code]) {
+        const decoded = `${prefix}${METAR_WX_CODES[code]}`.trim();
+        if (!decodedMatches.includes(decoded) && !decodedMatches.some((m) => m.toLowerCase().includes(METAR_WX_CODES[code].toLowerCase()))) {
+          decodedMatches.push(decoded);
+        }
+      }
+    }
+  });
+
+  return decodedMatches.length > 0 ? decodedMatches.join(", ") : "None Reported";
 }
 
 export interface TafPeriod {
@@ -47,6 +143,22 @@ export interface LiveSigmetAirmet {
   validUntil: string;
   coords: [number, number][]; // [lat, lon]
   decodedSummary: string;
+}
+
+/**
+ * Parses operational details (approaches, runways, NOTAMs) from raw D-ATIS text stream.
+ */
+export function parseDatisDetails(datisText: string): { approachesInUse?: string; runwaysInUse?: string; notams?: string[] } {
+  if (!datisText) return {};
+  const approachesMatch = datisText.match(/(?:APPROACH|APCH|APCHS)\s+IN\s+USE[^\.]*/i) || datisText.match(/ARR\s+EXP[^\.]*/i) || datisText.match(/EXPC\s+(?:ILS|RNAV|VISUAL)[^\.]*/i);
+  const runwaysMatch = datisText.match(/(?:DEPG|DEPARTING|DEPS EXP|LDG|LANDING)\s+[^\.]*/i) || datisText.match(/RWY\s+\d+[LCR]?[^\.]*/i);
+  const notamMatches = datisText.match(/NOTAM[^\.]*|RWY\s+\d+[^\.]*CLSD|TWY\s+[A-Z0-9]+\s+CLSD/gi);
+
+  return {
+    approachesInUse: approachesMatch ? approachesMatch[0].trim() : undefined,
+    runwaysInUse: runwaysMatch ? runwaysMatch[0].trim() : undefined,
+    notams: notamMatches ? Array.from(new Set(notamMatches.map(n => n.trim()))) : undefined,
+  };
 }
 
 /// Expanded static airport dictionary for instant zero-latency mapping
@@ -249,7 +361,7 @@ export async function getAirportCoords(stationCode: string): Promise<[number, nu
 /**
  * Decodes raw METAR JSON object from NOAA AWC API.
  */
-export function decodeMetarData(metar: any): DecodedMetar {
+export function decodeMetarData(metar: any, datisText?: string, atisLetter?: string, atisRawObj?: any): DecodedMetar {
   const icao = metar.icaoId || metar.station_id || "KORD";
   const name = metar.name || `${icao} Airport`;
   const category = (metar.fltCat || metar.flight_category || "VFR") as "VFR" | "MVFR" | "IFR" | "LIFR";
@@ -290,7 +402,35 @@ export function decodeMetarData(metar: any): DecodedMetar {
   const stationHash = icao.split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
   const letterIdx = (reportDate.getUTCHours() + Math.floor(reportDate.getUTCMinutes() / 30) + stationHash) % 26;
   const utcTimeStr = `${String(reportDate.getUTCHours()).padStart(2, "0")}${String(reportDate.getUTCMinutes()).padStart(2, "0")}Z`;
-  const atisCode = `D-ATIS Info ${atisLetters[letterIdx]} (${utcTimeStr})`;
+
+  let chosenLetter = atisLetter ? atisLetter.toUpperCase() : atisLetters[letterIdx];
+  let atisCodeStr = `D-ATIS Info ${chosenLetter} (${utcTimeStr})`;
+
+  let atisDataObj: AtisDetails | undefined = undefined;
+  if (atisRawObj) {
+    const parsed = parseDatisDetails(atisRawObj.datisText || datisText || "");
+    atisDataObj = {
+      code: atisRawObj.code || chosenLetter.substring(0, 1),
+      letter: atisRawObj.letter || chosenLetter,
+      type: atisRawObj.type || "combined",
+      datisText: atisRawObj.datisText || datisText || "",
+      time: atisRawObj.time || utcTimeStr,
+      ...parsed,
+    };
+    atisCodeStr = `D-ATIS Info ${atisDataObj.letter} (${atisDataObj.time}Z)`;
+  } else if (datisText) {
+    const parsed = parseDatisDetails(datisText);
+    atisDataObj = {
+      code: chosenLetter.substring(0, 1),
+      letter: chosenLetter,
+      type: "combined",
+      datisText: datisText,
+      time: utcTimeStr,
+      ...parsed,
+    };
+  }
+
+  const weatherPhenomena = decodeWeatherPhenomena(rawOb, metar.wxString || metar.presentWeather);
 
   const stationType = rawOb.includes("AO1")
     ? "ASOS Automated Station (AO1 Sensor)"
@@ -308,7 +448,8 @@ export function decodeMetarData(metar: any): DecodedMetar {
   const pressureAlt = (29.92 - altimInHg) * 1000;
   const densityAltitudeFt = Math.round(pressureAlt + 120 * tempDiff);
 
-  const decodedSummary = `${category} conditions at ${name}. Winds ${winds}, Visibility ${visib}, Ceiling/Clouds: ${clouds}, Temp: ${tempDewpoint}, Altimeter: ${altimeter}.`;
+  const wxSummaryPart = weatherPhenomena && weatherPhenomena !== "None Reported" ? `, Weather: ${weatherPhenomena}` : "";
+  const decodedSummary = `${category} conditions at ${name}. Winds ${winds}, Visibility ${visib}${wxSummaryPart}, Ceiling/Clouds: ${clouds}, Temp: ${tempDewpoint}, Altimeter: ${altimeter}.`;
 
   return {
     icao,
@@ -321,11 +462,14 @@ export function decodeMetarData(metar: any): DecodedMetar {
     clouds,
     tempDewpoint,
     altimeter,
+    weatherPhenomena,
     decodedSummary,
-    atisCode,
+    atisCode: atisCodeStr,
     stationType,
     remarks,
     densityAltitudeFt,
+    datisText,
+    atisData: atisDataObj,
   };
 }
 
@@ -393,6 +537,19 @@ export function decodeTafData(taf: any, flightTime?: string): DecodedTaf {
 export async function fetchLiveStationWeather(stationCode: string): Promise<{ metar: DecodedMetar; taf: DecodedTaf }> {
   const icao = toIcao(stationCode);
   try {
+    const proxyRes = await fetch(`/api/weather/live?station=${encodeURIComponent(stationCode)}`).catch(() => null);
+    if (proxyRes && proxyRes.ok) {
+      const json = await proxyRes.json();
+      if (json.success) {
+        const decodedMetar = json.metar ? decodeMetarData(json.metar, json.datisText, json.atisLetter, json.atis) : getFallbackMetar(icao);
+        const decodedTaf = json.taf ? decodeTafData(json.taf) : getFallbackTaf(icao);
+        if (json.datisText) {
+          decodedMetar.datisText = json.datisText;
+        }
+        return { metar: decodedMetar, taf: decodedTaf };
+      }
+    }
+
     const metarUrl = `https://aviationweather.gov/api/data/metar?ids=${icao}&format=json`;
     const tafUrl = `https://aviationweather.gov/api/data/taf?ids=${icao}&format=json`;
 
@@ -532,13 +689,9 @@ export async function fetchLiveSigmetsAndAirmets(): Promise<LiveSigmetAirmet[]> 
       });
     }
 
-    if (results.length === 0) {
-      return getFallbackSigmets();
-    }
-
     return results;
   } catch (e) {
-    return getFallbackSigmets();
+    return [];
   }
 }
 

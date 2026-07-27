@@ -236,11 +236,28 @@ export async function GET(request: NextRequest) {
               }
             }, true);
 
-            // Notify parent frame of active URL
+            // Notify parent frame of active URL and live page text content
             if (window.parent && window.parent !== window) {
               try {
                 window.parent.postMessage({ type: 'PROXY_URL_CHANGE', url: '${parsedUrl.toString()}' }, '*');
               } catch(err) {}
+
+              function sendPageText() {
+                try {
+                  var text = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+                  if (text && text.trim().length > 0) {
+                    window.parent.postMessage({ type: 'PROXY_PAGE_TEXT', url: '${parsedUrl.toString()}', text: text }, '*');
+                  }
+                } catch(err) {}
+              }
+
+              if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', sendPageText);
+              } else {
+                sendPageText();
+              }
+              window.addEventListener('load', sendPageText);
+              window.addEventListener('scroll', sendPageText);
             }
           })();
         </script>

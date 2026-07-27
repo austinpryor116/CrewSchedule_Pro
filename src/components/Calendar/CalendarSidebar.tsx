@@ -20,24 +20,24 @@ export default function CalendarSidebar() {
   return (
     <div className="flex flex-col gap-6 h-full font-sans">
       {/* Sidebar Switcher */}
-      <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-slate-850 text-xs font-semibold shrink-0">
+      <div className="flex bg-[#151c2c] p-1.5 rounded-2xl border border-slate-700/80 text-xs font-semibold shrink-0 shadow-lg">
         <button
           onClick={() => setSidebarTab("inspect")}
-          className={`flex-1 py-2.5 rounded-xl transition duration-150 ${
-            sidebarTab === "inspect" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+          className={`flex-1 py-2.5 rounded-xl transition duration-150 cursor-pointer ${
+            sidebarTab === "inspect" ? "bg-sky-600 text-white shadow-md shadow-sky-600/30 font-bold" : "text-slate-300 hover:text-white"
           }`}
         >
           Trip Inspector
         </button>
         <button
           onClick={() => setSidebarTab("opentime")}
-          className={`flex-1 py-2.5 rounded-xl transition duration-150 flex items-center justify-center gap-1.5 ${
-            sidebarTab === "opentime" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+          className={`flex-1 py-2.5 rounded-xl transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer ${
+            sidebarTab === "opentime" ? "bg-sky-600 text-white shadow-md shadow-sky-600/30 font-bold" : "text-slate-300 hover:text-white"
           }`}
         >
           Open Time Overlay
           {openSequences.length > 0 && (
-            <span className={`w-2 h-2 rounded-full ${simulatedIds.length > 0 ? "bg-amber-500 animate-ping" : "bg-emerald-500"}`} />
+            <span className={`w-2 h-2 rounded-full ${simulatedIds.length > 0 ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
           )}
         </button>
       </div>

@@ -41,7 +41,7 @@ const DEMO_LEGS: BriefingLeg[] = [
 export interface AlertItem {
   id: number;
   type: "SIGMET" | "AIRMET" | "PIREP";
-  subtype?: "TURB" | "ICE" | "SMOOTH" | "CONVECTIVE" | "IFR";
+  subtype?: "TURB" | "ICE" | "SMOOTH" | "CONVECTIVE" | "IFR" | "TURBULENCE" | "ICING";
   text: string;
   priority: "HIGH" | "MED" | "LOW";
   lat: number;
@@ -221,47 +221,38 @@ export default function BriefingView() {
     );
   }, [liveHazards, depCode, arrCode, corridorNm]);
 
-  // Filter Alerts & PIREPs within route corridor
+  // Filter Alerts & PIREPs within route corridor based on real live NOAA advisories
   const filteredAlerts = useMemo(() => {
     const depCoords = getAirportCoordsSync(depCode);
     const arrCoords = getAirportCoordsSync(arrCode);
-    if (!depCoords || !arrCoords) return [];
+    if (!depCoords || !arrCoords || enrouteHazards.length === 0) return [];
 
     const depLat = depCoords[0];
     const depLng = depCoords[1];
     const arrLat = arrCoords[0];
     const arrLng = arrCoords[1];
 
-    const midLat = (depLat + arrLat) / 2;
-    const midLng = (depLng + arrLng) / 2;
+    const alerts: AlertItem[] = [];
 
-    const alerts: AlertItem[] = [
-      {
-        id: 1,
-        type: "SIGMET",
-        subtype: "CONVECTIVE",
-        text: `CONVECTIVE SIGMET: Severe turbulence and wind shear forecast below FL180 along ${depCode}-${arrCode} route.`,
-        priority: "HIGH",
-        lat: midLat + 0.1,
-        lng: midLng + 0.1,
-      },
-      {
-        id: 2,
-        type: "PIREP",
-        subtype: "TURB",
-        text: `K${depCode} UA /OV K${depCode}-K${arrCode} /FL330 /TP E75 /TB MOD /RM Moderate chop enroute.`,
-        priority: "MED",
-        lat: depLat + 0.3 * (arrLat - depLat),
-        lng: depLng + 0.3 * (arrLng - depLng),
-      },
-    ];
+    enrouteHazards.forEach((hazard, idx) => {
+      if (hazard.coords && hazard.coords.length > 0) {
+        const centerLat = hazard.coords.reduce((acc, c) => acc + c[0], 0) / hazard.coords.length;
+        const centerLng = hazard.coords.reduce((acc, c) => acc + c[1], 0) / hazard.coords.length;
 
-    return alerts.filter((alert) => {
-      if (corridorNm <= 0 || corridorNm >= 9999) return true;
-      const dist = distanceToSegmentNm(alert.lat, alert.lng, depLat, depLng, arrLat, arrLng);
-      return dist <= corridorNm;
+        alerts.push({
+          id: idx + 1,
+          type: hazard.type,
+          subtype: hazard.hazard,
+          text: hazard.title + " - " + hazard.decodedSummary,
+          priority: hazard.hazard === "CONVECTIVE" ? "HIGH" : "MED",
+          lat: centerLat,
+          lng: centerLng,
+        });
+      }
     });
-  }, [depCode, arrCode, corridorNm]);
+
+    return alerts;
+  }, [depCode, arrCode, enrouteHazards]);
 
   // Dispatcher Briefing Summary
   const enrouteSummary = useMemo(() => {
@@ -309,21 +300,21 @@ export default function BriefingView() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <Shield className="w-6 h-6 text-indigo-400" />
+            <Shield className="w-6 h-6 text-sky-400" />
             Live Pilot & Dispatcher Briefing
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Real-time NOAA Aviation Weather Center (AWC) METARs, decoded TAF forecasts, SIGMETs & AIRMETs.
+          <p className="text-xs text-slate-300 mt-0.5 font-medium">
+            Real-time NOAA Aviation Weather Center (AWC) METARs, decoded TAF forecasts, D-ATIS & AIRMETs.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs font-mono">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#151c2c] border border-slate-700/80 rounded-xl text-xs font-mono shadow-md">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-slate-400 text-[11px]">
+            <span className="text-slate-300 text-[11px] font-bold">
               {lastUpdated ? `NOAA Live • Updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Connecting..."}
             </span>
           </div>
@@ -331,7 +322,7 @@ export default function BriefingView() {
           <button
             onClick={loadLiveWeather}
             disabled={isFetchingWeather}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetchingWeather ? "animate-spin" : ""}`} />
             <span>Refresh</span>
@@ -344,7 +335,7 @@ export default function BriefingView() {
         <button
           onClick={() => setMobileTab("briefing")}
           className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-            mobileTab === "briefing" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+            mobileTab === "briefing" ? "bg-sky-600 text-white" : "text-slate-400 hover:text-slate-200"
           }`}
         >
           Briefing & Decoded Weather
@@ -352,7 +343,7 @@ export default function BriefingView() {
         <button
           onClick={() => setMobileTab("map")}
           className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-            mobileTab === "map" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+            mobileTab === "map" ? "bg-sky-600 text-white" : "text-slate-400 hover:text-slate-200"
           }`}
         >
           Map Overlay & Hazards ({enrouteHazards.length})
@@ -364,18 +355,18 @@ export default function BriefingView() {
         {/* LEFT COLUMN: Briefing Cards & Weather */}
         <div className={`xl:col-span-6 space-y-5 flex flex-col ${mobileTab === "briefing" ? "flex" : "hidden xl:flex"}`}>
           {/* Flight Leg Selector & Dispatcher Overview */}
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur-md">
+          <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-5 shadow-xl">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Navigation className="w-5 h-5 text-indigo-400" />
-                <h2 className="text-base font-bold text-slate-100">Select Active Sequence Leg</h2>
+                <Navigation className="w-5 h-5 text-sky-400" />
+                <h2 className="text-base font-bold text-white">Select Active Sequence Leg</h2>
               </div>
               <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg font-mono border ${
                 legStatus === "IN_PROGRESS"
                   ? "bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse"
                   : legStatus === "NEXT_UPCOMING"
                   ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300"
-                  : "bg-indigo-950 border-indigo-800 text-indigo-400"
+                  : "bg-sky-950/80 border-sky-500/40 text-sky-300"
               }`}>
                 {legStatus === "IN_PROGRESS"
                   ? "✈ IN FLIGHT NOW"
@@ -390,7 +381,7 @@ export default function BriefingView() {
                 <select
                   value={selectedLegId}
                   onChange={(e) => setSelectedLegId(e.target.value)}
-                  className="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 font-bold focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-[#0b0f17] border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs text-white font-bold focus:outline-none focus:border-sky-500 transition"
                 >
                   {activeLegs.map((leg) => (
                     <option key={leg.id} value={leg.id}>
@@ -400,31 +391,31 @@ export default function BriefingView() {
                 </select>
               </div>
 
-              <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 text-xs font-mono text-center flex flex-col justify-center">
+              <div className="bg-[#0b0f17] p-2.5 rounded-xl border border-slate-700/80 text-xs font-mono text-center flex flex-col justify-center">
                 <span className="text-[10px] text-slate-400 font-medium">Route Corridor</span>
-                <span className="font-bold text-indigo-400">{corridorNm === 9999 ? "All USA" : `${corridorNm} NM`}</span>
+                <span className="font-bold text-sky-400">{corridorNm === 9999 ? "All USA" : `${corridorNm} NM`}</span>
               </div>
             </div>
 
             {/* Quick Dispatcher Weather Overview Card */}
-            <div className="bg-indigo-950/30 border border-indigo-800/40 rounded-xl p-3.5 text-xs">
+            <div className="bg-sky-950/30 border border-sky-500/30 rounded-xl p-3.5 text-xs">
               <p className="text-slate-200 leading-relaxed font-medium">
                 {enrouteSummary.summary}
               </p>
-              <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-indigo-900/40 text-[11px] font-medium text-indigo-300">
+              <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-sky-500/20 text-[11px] font-medium text-sky-300">
                 <span className="flex items-center gap-1">
-                  <Wind className="w-3.5 h-3.5 text-indigo-400" />
+                  <Wind className="w-3.5 h-3.5 text-sky-400" />
                   {enrouteSummary.turb}
                 </span>
                 <span className="flex items-center gap-1">
-                  <CloudRain className="w-3.5 h-3.5 text-indigo-400" />
+                  <CloudRain className="w-3.5 h-3.5 text-sky-400" />
                   {enrouteSummary.ice}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Departure & Arrival Weather Cards with Live ASOS / ATIS / METAR */}
+          {/* Departure & Arrival Weather Cards with Live ASOS / D-ATIS / METAR */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Departure Station Card */}
             <div className={`p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition flex flex-col justify-between ${getCategoryColor(depWeather?.category)}`}>
@@ -444,14 +435,61 @@ export default function BriefingView() {
                 <div className="flex items-baseline justify-between mb-2">
                   <div className="flex items-baseline gap-2">
                     <h3 className="text-2xl font-black text-white">{activeLeg.dep}</h3>
-                    <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
-                      {depWeather?.atisCode || "D-ATIS Info Active"}
-                    </span>
+                    {depWeather?.atisData?.datisText || depWeather?.datisText ? (
+                      <span
+                        className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-950/80 border border-emerald-500/40 px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm"
+                        title="Live FAA D-ATIS Broadcast Active"
+                      >
+                        <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                        {depWeather?.atisCode || `D-ATIS Info ${depWeather?.atisData?.letter || "SIERRA"}`}
+                      </span>
+                    ) : (
+                      <span
+                        className="text-[10px] font-mono text-amber-300 font-bold bg-amber-950/80 border border-amber-500/50 px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm"
+                        title="D-ATIS Unavailable — Active Surface Weather Driven by Live ASOS/AWOS Sensor"
+                      >
+                        <Radio className="w-3 h-3 text-amber-400" />
+                        ASOS / AWOS LIVE (NO D-ATIS)
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs font-mono text-slate-400">{depWeather?.obsTime || "Recent"}</span>
                 </div>
 
-                <p className="text-[11px] font-medium text-slate-400 mb-2.5 flex items-center gap-1.5">
+                {/* D-ATIS Live Broadcast Text Box */}
+                {(depWeather?.atisData?.datisText || depWeather?.datisText) ? (
+                  <div className="mb-3 bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-2.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                        <Radio className="w-3 h-3 text-emerald-400 animate-ping" />
+                        Live D-ATIS Broadcast Text
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-300/80 font-bold">
+                        Info {depWeather?.atisData?.letter || depWeather?.atisCode || "SIERRA"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-mono leading-relaxed text-emerald-200/90 select-all bg-black/40 p-2 rounded-lg border border-emerald-900/50 max-h-28 overflow-y-auto">
+                      {depWeather?.atisData?.datisText || depWeather?.datisText}
+                    </p>
+                    {depWeather?.atisData?.approachesInUse && (
+                      <p className="text-[10px] text-emerald-300 font-medium mt-1.5 flex items-center gap-1">
+                        <span className="font-bold text-emerald-400">Approaches:</span> {depWeather.atisData.approachesInUse}
+                      </p>
+                    )}
+                    {depWeather?.atisData?.runwaysInUse && (
+                      <p className="text-[10px] text-emerald-300 font-medium mt-0.5 flex items-center gap-1">
+                        <span className="font-bold text-emerald-400">Runways:</span> {depWeather.atisData.runwaysInUse}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mb-3 bg-amber-950/20 border border-amber-500/30 rounded-xl p-2 text-[11px] font-medium text-amber-200/90 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>D-ATIS unavailable for {activeLeg.dep}. Active surface conditions auto-populated from live ASOS observation below.</span>
+                  </div>
+                )}
+
+                <p className="text-[11px] font-medium text-slate-400 mb-2 flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   <span>{depWeather?.stationType || "ASOS Automated Station (AO2 Sensor)"}</span>
                 </p>
@@ -460,6 +498,19 @@ export default function BriefingView() {
                 <p className="text-xs leading-relaxed text-slate-200 font-mono mb-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800 select-all">
                   {depWeather?.rawOb || "Loading live ASOS/METAR..."}
                 </p>
+
+                {/* Decoded Weather Phenomena / Precip Banner */}
+                {depWeather?.weatherPhenomena && depWeather.weatherPhenomena !== "None Reported" && (
+                  <div className="mb-3 bg-amber-950/30 border border-amber-500/40 rounded-xl p-2 flex items-center justify-between text-xs shadow-sm">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <CloudRain className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
+                      Precipitation / Weather:
+                    </span>
+                    <span className="font-extrabold text-amber-200 font-mono bg-amber-900/60 px-2.5 py-0.5 rounded-lg border border-amber-500/50">
+                      {depWeather.weatherPhenomena}
+                    </span>
+                  </div>
+                )}
 
                 {/* ASOS Decoded Parameters */}
                 <div className="grid grid-cols-2 gap-2 text-xs mb-3">
@@ -480,7 +531,7 @@ export default function BriefingView() {
                   <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
                     <span className="text-[10px] text-slate-400 block font-medium">Ceiling / Clouds</span>
                     <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5 truncate">
-                      <Cloud className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <Cloud className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                       {depWeather?.clouds || "CLR"}
                     </span>
                   </div>
@@ -526,14 +577,61 @@ export default function BriefingView() {
                 <div className="flex items-baseline justify-between mb-2">
                   <div className="flex items-baseline gap-2">
                     <h3 className="text-2xl font-black text-white">{activeLeg.arr}</h3>
-                    <span className="text-[11px] font-mono text-cyan-400 font-bold bg-cyan-950/60 border border-cyan-500/30 px-2 py-0.5 rounded-lg">
-                      {arrWeather?.atisCode || "D-ATIS Info Active"}
-                    </span>
+                    {arrWeather?.atisData?.datisText || arrWeather?.datisText ? (
+                      <span
+                        className="text-[11px] font-mono text-cyan-400 font-bold bg-cyan-950/80 border border-cyan-500/40 px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm"
+                        title="Live FAA D-ATIS Broadcast Active"
+                      >
+                        <Radio className="w-3 h-3 text-cyan-400 animate-pulse" />
+                        {arrWeather?.atisCode || `D-ATIS Info ${arrWeather?.atisData?.letter || "SIERRA"}`}
+                      </span>
+                    ) : (
+                      <span
+                        className="text-[10px] font-mono text-amber-300 font-bold bg-amber-950/80 border border-amber-500/50 px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-sm"
+                        title="D-ATIS Unavailable — Active Surface Weather Driven by Live ASOS/AWOS Sensor"
+                      >
+                        <Radio className="w-3 h-3 text-amber-400" />
+                        ASOS / AWOS LIVE (NO D-ATIS)
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs font-mono text-slate-400">{arrWeather?.obsTime || "Recent"}</span>
                 </div>
 
-                <p className="text-[11px] font-medium text-slate-400 mb-2.5 flex items-center gap-1.5">
+                {/* D-ATIS Live Broadcast Text Box */}
+                {(arrWeather?.atisData?.datisText || arrWeather?.datisText) ? (
+                  <div className="mb-3 bg-cyan-950/30 border border-cyan-500/30 rounded-xl p-2.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
+                        <Radio className="w-3 h-3 text-cyan-400 animate-ping" />
+                        Live D-ATIS Broadcast Text
+                      </span>
+                      <span className="text-[10px] font-mono text-cyan-300/80 font-bold">
+                        Info {arrWeather?.atisData?.letter || arrWeather?.atisCode || "SIERRA"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-mono leading-relaxed text-cyan-200/90 select-all bg-black/40 p-2 rounded-lg border border-cyan-900/50 max-h-28 overflow-y-auto">
+                      {arrWeather?.atisData?.datisText || arrWeather?.datisText}
+                    </p>
+                    {arrWeather?.atisData?.approachesInUse && (
+                      <p className="text-[10px] text-cyan-300 font-medium mt-1.5 flex items-center gap-1">
+                        <span className="font-bold text-cyan-400">Approaches:</span> {arrWeather.atisData.approachesInUse}
+                      </p>
+                    )}
+                    {arrWeather?.atisData?.runwaysInUse && (
+                      <p className="text-[10px] text-cyan-300 font-medium mt-0.5 flex items-center gap-1">
+                        <span className="font-bold text-cyan-400">Runways:</span> {arrWeather.atisData.runwaysInUse}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mb-3 bg-amber-950/20 border border-amber-500/30 rounded-xl p-2 text-[11px] font-medium text-amber-200/90 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>D-ATIS unavailable for {activeLeg.arr}. Active surface conditions auto-populated from live ASOS observation below.</span>
+                  </div>
+                )}
+
+                <p className="text-[11px] font-medium text-slate-400 mb-2 flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                   <span>{arrWeather?.stationType || "ASOS Automated Station (AO2 Sensor)"}</span>
                 </p>
@@ -542,6 +640,19 @@ export default function BriefingView() {
                 <p className="text-xs leading-relaxed text-slate-200 font-mono mb-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800 select-all">
                   {arrWeather?.rawOb || "Loading live ASOS/METAR..."}
                 </p>
+
+                {/* Decoded Weather Phenomena / Precip Banner */}
+                {arrWeather?.weatherPhenomena && arrWeather.weatherPhenomena !== "None Reported" && (
+                  <div className="mb-3 bg-amber-950/30 border border-amber-500/40 rounded-xl p-2 flex items-center justify-between text-xs shadow-sm">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <CloudRain className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
+                      Precipitation / Weather:
+                    </span>
+                    <span className="font-extrabold text-amber-200 font-mono bg-amber-900/60 px-2.5 py-0.5 rounded-lg border border-amber-500/50">
+                      {arrWeather.weatherPhenomena}
+                    </span>
+                  </div>
+                )}
 
                 {/* ASOS Decoded Parameters */}
                 <div className="grid grid-cols-2 gap-2 text-xs mb-3">
@@ -562,7 +673,7 @@ export default function BriefingView() {
                   <div className="bg-slate-950/50 p-2 rounded-lg border border-slate-800/80">
                     <span className="text-[10px] text-slate-400 block font-medium">Ceiling / Clouds</span>
                     <span className="font-bold text-slate-200 flex items-center gap-1 mt-0.5 truncate">
-                      <Cloud className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <Cloud className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                       {arrWeather?.clouds || "CLR"}
                     </span>
                   </div>
@@ -592,10 +703,10 @@ export default function BriefingView() {
           </div>
 
           {/* Decoded TAF Terminal Aerodrome Forecasts */}
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur-md space-y-4">
+          <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-indigo-400" />
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-sky-400" />
                 Decoded Terminal Aerodrome Forecasts (TAF)
               </h2>
               <span className="text-xs font-mono text-emerald-400 font-bold bg-emerald-950/50 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
@@ -625,7 +736,7 @@ export default function BriefingView() {
                     <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">Forecast Timeline Breakdown:</span>
                     {depTaf.periods.map((p, idx) => (
                       <div key={idx} className="bg-slate-900/80 p-2 rounded-lg border border-slate-850 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="font-mono text-[11px] font-bold text-indigo-300 shrink-0">{p.timePeriod}</span>
+                        <span className="font-mono text-[11px] font-bold text-sky-300 shrink-0">{p.timePeriod}</span>
                         <span className="text-slate-300 text-[11px]">{p.summary}</span>
                       </div>
                     ))}
@@ -683,14 +794,14 @@ export default function BriefingView() {
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 shadow-xl backdrop-blur-md space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-center gap-2">
-                <Plane className="w-5 h-5 text-indigo-400" />
+                <Plane className="w-5 h-5 text-sky-400" />
                 <h2 className="text-sm font-bold text-slate-100">Live Airspace & NEXRAD Radar Overlay</h2>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 {/* Corridor Radius Selector */}
                 <div className="flex items-center bg-slate-950/90 border border-slate-800 rounded-lg p-0.5">
                   <span className="text-[10px] font-bold text-slate-400 px-2 flex items-center gap-1">
-                    <Navigation className="w-3 h-3 text-indigo-400" />
+                    <Navigation className="w-3 h-3 text-sky-400" />
                     Corridor:
                   </span>
                   {[50, 100, 200, 300, 9999].map((dist) => (
@@ -699,7 +810,7 @@ export default function BriefingView() {
                       onClick={() => setCorridorNm(dist)}
                       className={`px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
                         corridorNm === dist
-                          ? "bg-indigo-600 text-white shadow-sm"
+                          ? "bg-sky-600 text-white shadow-sm"
                           : "text-slate-400 hover:text-slate-200"
                       }`}
                     >
@@ -711,7 +822,7 @@ export default function BriefingView() {
                 <button
                   onClick={() => setShowRadar(!showRadar)}
                   className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
-                    showRadar ? "bg-indigo-600 border-indigo-500 text-white" : "bg-slate-950 border-slate-800 text-slate-400"
+                    showRadar ? "bg-sky-600 border-sky-500 text-white" : "bg-slate-950 border-slate-800 text-slate-400"
                   }`}
                 >
                   NEXRAD Radar

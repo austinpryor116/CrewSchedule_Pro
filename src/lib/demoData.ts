@@ -10,6 +10,72 @@ export const DEFAULT_PAY_RATES: PayRates = {
 // Generate realistic sequences for July/August 2026
 export const MOCK_SEQUENCES: SequenceTrip[] = [
   {
+    id: "seq-17894-jul27",
+    sequenceNumber: "17894",
+    startDate: "2026-07-27",
+    endDate: "2026-07-28",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 478,
+    totalCreditMinutes: 478,
+    layoverCities: ["CAE"],
+    colorTag: "sky",
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "1421",
+        releaseTime: "2319",
+        dutyMinutes: 538,
+        legs: [
+          {
+            flightNumber: "AA3980",
+            depAirport: "ORD",
+            arrAirport: "DTW",
+            depTime: "1506",
+            arrTime: "1741",
+            blockMinutes: 95,
+          },
+          {
+            flightNumber: "AA3980",
+            depAirport: "DTW",
+            arrAirport: "ORD",
+            depTime: "1811",
+            arrTime: "1858",
+            blockMinutes: 107,
+          },
+          {
+            flightNumber: "AA4275",
+            depAirport: "ORD",
+            arrAirport: "CAE",
+            depTime: "2014",
+            arrTime: "2319",
+            blockMinutes: 125,
+          },
+        ],
+        layoverCity: "CAE",
+        layoverHotelInfo: "Courtyard Columbia Downtown at USC (803-799-7800)",
+      },
+      {
+        dayIndex: 1,
+        reportTime: "1528",
+        releaseTime: "1844",
+        dutyMinutes: 196,
+        legs: [
+          {
+            flightNumber: "AA4183",
+            depAirport: "CAE",
+            arrAirport: "ORD",
+            depTime: "1713",
+            arrTime: "1844",
+            blockMinutes: 151,
+          },
+        ],
+        layoverCity: "",
+        layoverHotelInfo: "",
+      },
+    ],
+  },
+  {
     id: "S8341-demo-1",
     sequenceNumber: "S8341",
     startDate: "2026-07-22",
@@ -19,7 +85,7 @@ export const MOCK_SEQUENCES: SequenceTrip[] = [
     totalBlockMinutes: 980, // ~16.3 hrs
     totalCreditMinutes: 1200, // 4 days * 300 min = 1200 min (20.0 hrs) due to soft pay guarantee!
     layoverCities: ["DEN", "SFO", "PHX"],
-    colorTag: "indigo",
+    colorTag: "sky",
     dutyPeriods: [
       {
         dayIndex: 0,
@@ -296,12 +362,15 @@ export const MOCK_SEQUENCES: SequenceTrip[] = [
   },
 ];
 
-// Correct release time on day 2 of sequence 3
-MOCK_SEQUENCES[2].dutyPeriods[1].releaseTime = "1730";
-MOCK_SEQUENCES[2].dutyPeriods[1].dutyMinutes = 495; // 0915 to 1730 = 8h15m = 495m
-MOCK_SEQUENCES[2].dutyPeriods[1].legs[2].blockMinutes = 75; // Total block = 165 + 75 + 75 = 315 mins.
-MOCK_SEQUENCES[2].totalBlockMinutes = 150 + 65 + 60 + 165 + 75 + 75; // 590 mins (9.8 hrs)
-MOCK_SEQUENCES[2].totalCreditMinutes = Math.max(150 + 65 + 60, 300) + Math.max(165 + 75 + 75, 300); // 300 + 315 = 615 mins
+// Correct release time on day 2 of sequence S7210
+const s7210 = MOCK_SEQUENCES.find((s) => s.sequenceNumber === "S7210");
+if (s7210 && s7210.dutyPeriods[1]) {
+  s7210.dutyPeriods[1].releaseTime = "1730";
+  s7210.dutyPeriods[1].dutyMinutes = 495;
+  if (s7210.dutyPeriods[1].legs[2]) s7210.dutyPeriods[1].legs[2].blockMinutes = 75;
+  s7210.totalBlockMinutes = 150 + 65 + 60 + 165 + 75 + 75;
+  s7210.totalCreditMinutes = Math.max(150 + 65 + 60, 300) + Math.max(165 + 75 + 75, 300);
+}
 
 export const RAW_DEMO_TEXT = `
 SEQ S8341 BASE ORD EQ B737 DATES 2026-07-22 to 2026-07-25
@@ -423,75 +492,7 @@ SKD CHG - SEE LEG DETAIL
 END OF DISPLAY
 `;
 
-export const RAW_N4_TEXT = `
-ORD E75 CA   OPEN SEQUENCES             AS OF 20JUL/1655
-
-20JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
-NONE FOUND
-
-21JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 21585  0.00 0600 1400/21 2
- 21586  0.00 0600 1400/21 2
- 21587  0.00 0600 1400/21 2
- 21588  0.00 0600 1400/21 2
- 21589  0.00 0900 1700/21 2
- 21590  0.00 0900 1700/21 2
- 21591  0.00 0900 1700/21 2
- 21592  0.00 1700 0100/22 2
- 21593  0.00 1700 0100/22 2
- 21594  0.00 1700 0100/22 2
- 21595  0.00 1700 0100/22 2
-
-22JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 17457 19.28 0805 2159/25 3-3/3-1   SYR-DCA/XNA-
- 21505  2.43 1115 0735/23 1-1       GRB-
- 17645 19.11 1315 1525/25 1-4-2-3   SPI-HPN-YYZ-
- 18027 14.51 1700 1235/25 3-2/3     BMI-CAE/
- 17996 17.15 1700 1831/25 3-4-2-1   MSY-HSV-SYR-
- 17691 13.20 1954 2130/25 1-2-2-3   CMI-ICT-LIT-
- 17728 13.52 2102 1604/25 1/2-3     SYR/BIL      23JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 21565  2.21 1310 0548/24 1-1       LAN-
- 17789 19.48 1355 1234/26 3-2-2-3   CMH-GSP-SYR-
- 17835 18.19 1452 1414/26 3-2-2-1   AVP-BHM-VPS-
- 21578 11.06 1701 2031/25 3-2-1     PIA-AVL-
- 17368 11.18 1959 2223/25 1-2-3     ABE-CAK      24JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 17298 15.29 0640 1829/26 3-2-3     SPI-SYR-
- 18015 17.14 1659 1314/27 3-2-2-3   MSN-CWA-HPN-
- 21557  3.42 1730 2142/24 2
- 17542 12.12 1829 2007/27 1-2-2-1   GSO-TLH-RDU-
- 21535  9.36 1859 2038/26 1-4-1     MQT-CWA      25JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 21535  7.45 1000 1523/26 1-3       CMI-
- 17546 18.00 1143 1414/28 3-2-2-3   XNA-TVC-XNA-
- 17693 19.48 1320 1604/28 3-2-4-1   ABE-CMH-SGF-
- 17924 18.09 1511 1036/28 3-2-2-3   LAN-XNA-TVC-
- 17987 17.55 1610 1410/28 3-2-2-3   PIA-LAN-PIA  26JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 17310  3.02 0659 0632/27 1-1       CVG-
- 17280  2.25 0808 0716/27 1-1       PIA-
- 17792 14.01 1355 0713/29 3-2-2-1   GSO-CLL-ICT-
- 17866 14.36 1459 1612/29 3-2-2-1   SGF-ATW-XNA-
- 17914  8.16 1508 0849/28 3/1       SYR/
-27JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 17445 18.42 0800 1559/30 1-3/3-1   LIT-DCA/BOS-
- 17391  8.37 1315 0905/29 1-4-1     SPI-SGF-
- 18160  8.47 1859 1414/29 1-4-1     MQT-MSN      28JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 17357  8.52 0830 0910/30 1-2-1     VPS-CMH      29JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 21526  7.12 1630 0731/31 1-2-1     BMI-MCI      30JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
-NONE FOUND
-31JUL DOM
-SEQ     TIME ORIG TERM    LEGS      LAYOVER      NAV  DIVS
- 14002  5.05 0715 1036/02 3-2-3     XNA-TVC      END
-`;
+export const RAW_N4_TEXT = "ORD E75 CA   OPEN SEQUENCES                    AS OF 27JUL/1107\n27JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n28JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 17357   8.52 0830 0910/30 1-2-1    VPS-CMH-\n29JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 21510   8.28 1000 1610/30 1-3      CMI-\n30JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n31JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 21538   1.58 0646 1737/01 1-3      XNA-\n 14002   5.05 0715 1036/02 3-2-3    XNA-TVC-\n 21550   1.21 1643 0731/02 1-3-1    CWA-CMH-\n01AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14322   8.14 0646 0842/03 1-2-1    XNA-LIT-\n 14782  12.41 1332 0842/04 1-2-2-1  ABE-COU-LIT-\n 14972  13.26 1511 1243/04 3-2-2-1  GSO-TLH-AVL-\n 15130  12.33 1829 0801/04 1-2-2-1  HPN-YYZ-COU-\n 15168  14.25 1930 1612/04 1-4-2-1  CMH-GSP-XNA-\n 15210   4.57 2058 0829/03 1/1      ALB/\n 15226  12.41 2200 1133/04 1-4/2    TVC-BUF/\n 15234  14.56 2330 1232/04 1-2-2-3  BMI-LIT-AVL-\n02AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14320  20.59 0640 1810/05 3-2-4-5  MQT-GRB-MSN-\n 06516   9.37 0659 1030/04 1-2-3    CVG-ROC-\n 14469  10.07 0709 1523/03 1-4      SYR-\n 14476   8.49 0805 0851/04 1-2-1    ROC-HPN-\n 06548   5.07 0816 1410/02 2\n 14399  14.01 0829 1539/04 1-2-3    VPS-CMH-\n 14611  16.56 1151 0043/05 1-3/3    LIT-DCA/\n 14614  13.48 1159 1929/03 3-3      CVG-\n 14439  13.53 1511 2014/04 3-2-1    AVP-AVP-\n 15146   8.53 1848 1814/04 1-2-1    GSO-SYR-\n03AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 15191  16.48 2014 1510/06 1-2-2-4  CAE-CMI-SYR-\n04AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14403   5.29 0900 0730/05 3-1      SPI-\n 14712   9.40 1321 1904/05 3-1      FAR-\n05AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14343  12.06 0800 1423/07 1-2-3    GSP-TYS-\n 14347  13.12 0805 1432/07 1-2-3    ROC-HPN-\n 14494  17.23 0806 1549/08 3-2-2-3  MSN-LIT-MAF-\n 14501  18.22 0810 2010/08 1-2-2-3  SAV-CVG-ROC-\n 14695  17.50 1320 1209/08 3-4/3    CMH-RST/\n 14953  20.27 1505 2130/08 3-2-4-1  AVP-CVG-CMH-\n 15078  18.01 1704 1939/08 3-2-4-1  PIA-TVC-SYR-\n06AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14348  13.25 0805 1428/08 1-2-3    ROC-GSP-\n 14477  17.14 0805 1259/09 3-2-2-3  GRB-AVL-ICT-\n 14514  16.39 0815 0845/09 3-2-2-1  ORF-DAY-TYS-\n 14606  16.17 1148 2015/09 3-4-2-1  CVG-LIT-PIA-\n 14451  13.15 1945 2205/08 1-4-3    CMH-SPI-\n07AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14427  13.58 1344 2137/09 3-2-1    CHA-LIT-\n 14873  18.33 1430 2030/10 3-4-2-1  CVG-LIT-EVV-\n 14932   8.08 1500 2001/08 3-1      ORF-\n 14275   4.21 1700 2205/07 2\n08AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14278   8.40 0647 1324/09 1-3      XNA-\n 14402  13.16 0854 2030/10 4-2-1    GSO-COU-\n 14255   7.29 1000 1759/08 2                          MSO\n 06500   5.52 1150 1817/08 2\n09AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14328  14.07 0655 1929/11 4/3-1    TPA/GRR-\n 14481  17.51 0805 0741/12 3-2-4-1  CMH-COU-RIC-\n 14391  14.37 0826 1239/11 3-2-3    CVG-ROC-\n 14560  17.02 0930 1530/12 1-2-2-3  DAY-ORF-TYS-\n 14659  15.48 1250 1605/11 1-4-4    CVG-CVG-\n 06500  11.18 1259 1443/11 1-2-3    SPI-MHT-\n 14922  19.24 1459 1619/12 3-4-2-1  TVC-SYR-YYZ-\n 15194  19.05 2024 2020/12 1-2-4-3  GSP-JAX-GSO-\n10AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14324  13.40 0647 1259/12 3-2-3    CVG-GSP-\n 14388  14.39 0825 1420/12 1-4-3    VPS-CMH-\n 14615   2.21 1159 0650/11 1-1      GRR-\n 06501   5.11 1324 1919/10 2\n11AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14383  12.06 0818 0546/13 3-2-1    YYZ-CLE-\n 14936  14.46 1921 2024/14 1-4-2-1  ORF-GSO-COU-\n 15170  17.57 1930 2030/14 1-2-2-3  ABE-ABE-DAY-\n12AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14351  14.11 0805 1500/14 3-2-3    SPI-MHT-\n 14370  14.56 0810 1544/14 3-2-3    CWA-MSP-\n 14391  14.37 0826 1239/14 3-2-3    CVG-ROC-\n 14260   7.11 1159 1948/12 2\n 14787  18.04 1340 1314/15 3-2-2-3  MQT-LSE-HPN-\n 14268   6.10 1458 2205/12 2\n13AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 15008  17.25 1556 1527/16 3-2/3    ATW-CAE/\n 15142  17.43 1845 2030/16 1-3-3-1  XNA-CLT-GSO-\n14AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14733  17.02 1324 1144/17 3-2-2-3  HPN-MSN-CVG-\n 15212  14.57 2059 1412/17 1/4-3    TRI/CWA-\n 14998  13.03 2300 1101/17 1-2-2-3  PIA-ROC-FAR-\n15AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14279   8.40 0647 1324/16 1-3      XNA-\n 14520  17.25 0815 0908/18 3-2-4-1  CHA-MLI-MSN-\n 14256   7.29 1000 1759/15 2                          MSO\n 06506   4.57 1304 1838/15 2\n 14814  16.32 1359 0852/18 3-2-2-1  CLE-LSE-HPN-\n 14434  12.41 1429 2205/17 3-2-1    PIA-TUL-\n 06515   8.36 1457 1623/16 2-1      BIL-\n 15002  18.49 1550 1544/18 3-2-2-3  ATW-DAY-ABE-\n 15076  15.28 2106 1420/18 1-4-2-1  TVC-SYR-YYZ-\n16AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14532  19.03 0818 1436/19 3-3/3-1  GSO-CLT/GSO-\n 14254   7.29 0954 1753/16 2                          MSO\n 14264   7.11 1208 1950/16 2\n17AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14284   8.50 0700 1114/18 3-3      BMI-\n 14344  13.49 0800 1544/19 3-2-3    GRB-MSP-\n 14358   6.22 0805 0730/18 3-1      SPI-\n18AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14409  11.33 0947 1244/20 1-2-3    MSY-BMI-\n 14261   7.11 1159 1948/18 2\n 14268   6.10 1458 2205/18 2\n19AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14362  14.28 0805 1325/21 3-2-3    SPI-MHT-\n 14394  15.25 0826 1549/21 2-2-3    CMH-MAF-\n 14942  17.42 1500 1406/22 3-2-2-3  GSO-COU-LSE-\n 15021  17.44 1615 1600/22 3-2-2-3  ROC-CMH-MSY-\n 15081  18.01 1704 1943/22 3-2-4-1  PIA-TVC-SYR-\n 15094  16.52 1708 1114/22 3-2-2-3  MLI-ICT-BMI-\n20AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14704  18.51 1320 1234/23 3-2-2-3  CMH-CVG-COU-\n 15171  19.06 1930 2134/23 1-2-2-3  ABE-HPN-YYZ-\n 06508   8.53 1938 1925/21 1-3      HPN-\n 15185  19.06 1959 2040/23 1-4-2-3  LIT-XNA-BIL-\n21AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14488  13.46 0805 0900/24 3-2/2-1  CMH-XNA/XNA-\n 14497  18.44 0806 1255/24 3-2-2-3  CHA-CMI-HPN-\n 14305   7.33 0815 1409/22 1-3      MSN-\n 14576  19.46 0945 1619/24 1-2-4-3  GSO-LIT-ABE-\n22AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14256   7.29 1000 1759/22 2                          MSO\n 14261   7.11 1159 1948/22 2\n 14755  10.49 1325 1950/23 3-1      MHT-\n 14767  18.37 1328 2030/25 3-2-4-1  TYS-SRQ-GSO-\n 15116  19.01 1729 2020/25 3-2-4-3  LSE-GSP-CMI-\n23AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14332  14.16 0655 1925/25 4/3-1    TPA/ATW-\n 14489  17.06 0805 0852/26 3-2-2-1  MHT-LSE-HPN-\n 14264   7.11 1208 1950/23 2\n24AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14294   8.46 0805 1114/25 3-3      BMI-\n 14310   8.36 1148 1324/25 1-3      XNA-\n 14717  11.07 1321 2157/25 3-4      CVG-\n 14445  14.55 1704 2205/26 3-2-3    PIA-XNA-\n 15177  12.06 1945 1234/27 1-4/3    CMH-RST/\n25AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14254   7.29 0954 1753/25 2                          MSO\n 14420  14.52 1313 2205/27 3-4/1    XNA-TUL/\n26AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14510  18.22 0810 2010/29 1-2-2-3  SAV-CVG-ROC-\n 14593  17.56 1045 1100/29 1-4-2-3  COU-XNA-TVC-\n 14838  18.52 1409 1642/29 3-2-4-1  GSP-CVG-LSE-\n 14966  19.16 1505 2135/29 3-2-4-1  AVP-CVG-LIT-\n 15081  18.01 1704 1943/29 3-2-4-1  PIA-TVC-SYR-\n 15144  17.28 1845 2024/29 1-3-3-1  XNA-CLT-GSO-\n 15174  17.18 1938 1817/29 1-2-2-3  HPN-CWA-MSP-\n27AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14254   7.29 0954 1753/27 2                          MSO\n 14410  14.14 1005 1406/29 3-2-3    MQT-COU-\n 14594  17.55 1045 1250/30 3-2-2-3  CHA-TYS-AVP-\n 14421  12.35 1313 2200/29 3-2-3    MQT-CMH-\n 14803  18.24 1344 1702/30 3-2-2-1  CHA-GSP-CMH-\n 14881   9.45 1430 2013/28 3-1      AVP-\n 15036  19.51 1629 2134/30 3-2-2-3  LSE-GSO-COU-\n28AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n29AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 14263   7.11 1200 1948/29 2\n30AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\nEND\n        ** TO PICKUP ONE OF THESE SEQUENCES ENTER **\n             HT   IN YOUR PERSONAL MODE.\n";
 
 export const RAW_HSS_17495_TEXT = `
 SEQ 17495      BASE ORD  SEL  502 ORG SCH DOM E75
@@ -539,65 +540,7 @@ FDPT  8.35          START  0532  END  1407  ACC STA  ORD
 SEQ EST 17.26        P/C  0.00  TL 17.26 TAFB  74.07
 `;
 
-export const RAW_N4_DFW_TEXT = `DFW E75 CA   OPEN SEQUENCES                    AS OF 20JUL/2211
-20JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
-NONE FOUND
-21JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 21584   0.00 1700 0100/22 2
- 21605  10.50 2008 1418/23 1-2-3    TRC-AEX-
-22JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 21590   4.55 1045 0950/23 1-1      AGU-
-23JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 21510   9.49 1123 2021/24 5-1      CID-
-24JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 05287   1.59 1200 0620/25 1-1      ABI-
- 06343  18.17 1543 1504/27 3-2-2-5  AMA-MSY-LIT-
- 06635   9.29 1543 0620/27 1-4-2-1  TXK-ICT-ABI-
- 06002   4.51 2000 1915/25 1-1      LEX-
- 21558  10.21 2008 1227/26 1-2-3    TRC-LCH-
- 21561   8.43 2158 1949/26 1-4-1    GCK-CLL-
- 21503   4.57 2211 0607/26 1-2-1    SGF-TYR-
- 06668   1.58 2249 1823/25 1-1      TYR-
-25JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 05699  18.14 1201 1218/28 5-2-2-3  GRK-HSV-ABQ-
- 05823  17.19 1245 0835/28 3-2-2-1  LIT-XNA-TRC-
- 06211  18.18 1507 1336/28 3-2-2-3  BMI-LIT-MLU-
- 06240  19.07 1515 2118/28 1-2-3/2  CAE-LIT-DCA/
- 21534  10.17 1803 1111/27 3-2-3    TXK-ACT-
-26JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 05343   7.58 0700 0825/28 3-2-1    MLU-AMA-
- 05299   6.19 0820 1141/27 1-3      CLL-
- 21532   5.11 0856 1558/26 4
- 06295  17.59 1528 1140/29 3-2-2-3  EVV-SGF-ABI-
-27JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 05370  13.45 0711 2118/29 1-2/3    DSM-CID/
- 06153  16.24 1452 1507/30 3/2-3    AVL/TRC-
- 21554   2.15 1740 2025/27 2
- 06776  11.38 2035 1259/30 1-2-2-3  MAF-SPS-LRD-
- 06591   6.12 2249 1914/29 1-2-1    FSM-COU-
-28JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 21545   7.40 1648 1510/29 1-5      LRD-
-29JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
- 05303   2.14 0820 0611/30 1-1      CLL-
- 05439  10.07 1737 2145/31 1-2-1    CMH-GSP-
-30JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
-NONE FOUND
-31JUL DOM
-SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS
-NONE FOUND
-***************************************************************
-`;
+export const RAW_N4_DFW_TEXT = "DFW E75 CA   OPEN SEQUENCES                    AS OF 27JUL/1107\n27JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n28JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n29JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 05303   9.13 0820 1735/01 1-2-2-3  CLL-FWA-MTY-\n 02059   7.40 1355 1510/01 1-2-2-5  JAN-MAF-MHK-\n 02073  13.10 1429 1126/01 5-2-2-3  CRP-CRP-HSV-\n 21572   2.19 1700 1111/30 1-1      CLL-\n 02131  13.01 1728 2145/01 3-2-2-3  BRO-CUU-CUU-\n 05439  10.07 1737 2145/31 1-2-1    CMH-GSP-\n30JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 21527   4.44 1100 0850/02 1-2-4-1  MTY-GGG-CRP-\n 21534   4.24 1613 0807/01 1-2-1    CRP-LBB-\n 02119   8.40 1701 2145/02 3-2-2-5  EVV-MEM-FWA-\n 02082   2.07 2118 1915/31 1-1      ABI-\n31JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 21537   1.30 1046 1522/01 1-3      SGF-\n 02051   1.23 1306 2150/03 1-2/4-5  CRP-CUU/GPT-\n 02052   1.04 1311 1525/03 1-2-4-3  TXK-XNA-XNA-\n 21540   1.00 1312 1104/01 1-3      SPS-\n 05268   5.42 1355 2150/31 4\n 21542   1.12 1532 1417/01 1-3      FSM-\n 21564   0.50 1648 1038/01 1-3      ACT-\n01AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 06502  13.43 0600 1616/02 2-3      BIL-\n 02516  11.40 0820 1316/03 1-2-2    FWA-GSO-\n 02551  14.23 0912 0850/04 1-2-4-1  GPT-MTY-JAN-\n 02259   6.42 1040 1918/01 2\n 02262   6.36 1100 1853/01 2\n 02663  15.06 1156 1338/04 1-3/3-1  LIT-CLT/COU-\n 02691  13.44 1212 1333/03 3-2-2    CMH-EVV-\n 02726   5.21 1226 0850/03 1-2-1    GGG-CRP-\n 03083   9.31 1429 1439/03 5-2-1    ACT-AMA-\n 03084   5.44 1429 0840/03 1-2-1    AMA-SGF-\n 03181  11.52 1507 0607/04 3-2-2-1  BHM-TXK-ACT-\n 03425   9.37 1621 1414/03 3-2-1    GRK-HSV-\n 06528  15.32 1648 1533/04 1-4-2-5  ACT-MLU-LCH-\n 03523   8.35 1715 2333/02 3-2      ICT-\n 03557  12.20 1736 2120/03 3-2-3    LRD-CRP-\n 03705   9.13 2129 2056/03 1-2-2    EVV-SPI-\n02AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02465  15.15 0700 1853/04 3-3/2    BUF-DCA/\n 02357  12.30 0711 1554/04 1-2-3    DSM-CID-\n 02287   6.13 0820 1129/03 1-3      CLL-\n 02293   2.41 0822 0619/03 1-1      AMA-\n 06554   3.19 0835 1227/02 2\n 02442  13.32 1311 1406/04 1-4-3    TXK-BMI-\n 02870   8.18 1322 0825/04 1-4-1    LBB-AMA-\n 02877  11.13 1340 1111/04 5-2-1    ACT-SGF-\n 03141  10.46 1458 0954/04 3-2-1    AMA-SGF-\n 03532   6.24 1717 1950/03 3-1      CUU-\n 03558   8.26 1736 1419/04 3-2-1    CLL-CRP-\n 03559   8.54 1737 0844/04 1-2-1    CMH-AVL-\n03AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02359  15.23 0711 1905/05 1-2-5    DSM-CID-\n 03036  11.48 1427 2332/04 5-2      MHK-\n 03710  15.16 2247 1726/06 1-4/3    GRK-YUM/\n04AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02527  19.21 0822 1147/07 3-2-4-3  MEM-GSO-CMH-\n 06527   3.46 0835 1017/05 1-1      MTY-\n 02610  17.32 1100 1553/07 1-2-2-3  MTY-ELP-BMI-\n 02868  18.01 1312 1201/07 3-4-2-3  ABI-MAF-ACT-\n 03657  16.03 1955 1345/07 1-2-2-3  CID-LIT-ICT-\n 03678  17.57 2003 1343/07 1-4-2-3  RAP-ABI-BTR-\n05AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02532  17.45 0823 1459/08 1-2-2-3  FWA-MHK-BIS-\n 02837  19.31 1252 1540/08 3-4-2-5  SPS-CRP-FSM-\n 02858  17.24 1310 1601/08 3/2-2-3  LFT/GRK-ICT-\n 03020  17.34 1425 1147/08 3-4-2-3  AMA-SPS-LRD-\n 03187  17.26 1508 1145/08 3-2-2-3  BHM-SAV-MHK-\n 03550  17.55 1728 2148/08 3-2-4-2  EVV-LAN-CWA-\n06AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02332  13.54 0700 1329/08 3-2-3    LIT-CID-\n 02395  13.50 0835 1556/08 3-2-3    MAF-AGU-\n 02436  12.51 1236 1017/08 3-2-3    GGG-TYR-\n 02983  18.04 1406 1412/09 3-4-2-3  GRK-LCH-MAF-\n 03046  18.05 1428 1345/09 3-2-2-3  AMA-GPT-LRD-\n 03104  17.36 1440 1106/09 5-2-2-3  CLL-TRC-XNA-\n 03137  17.42 1454 1517/09 3-2-2-3  LBB-MTY-CUU-\n 03143  17.52 1458 1219/09 3-2-2-3  TRI-BHM-TXK-\n 03243  18.12 1523 1301/09 3-2-2-3  JAN-GRK-FWA-\n 03307  16.34 1550 1321/09 3-2-2-3  ATW-SGF-TUL-\n 03500  18.39 1652 2130/09 3-2-2-3  BMI-FWA-BRO-\n 03568  17.55 1748 1314/09 3-2-2-3  LRD-COU-FAR-\n 03646  18.17 1930 1652/09 1-2-2-3  CID-LIT-AGU-\n07AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02356  13.32 0710 1428/09 3-2-3    LIT-COU-\n 02388  15.05 0823 1635/09 1-2-3    FWA-MLI-\n 03215  17.01 1516 1137/10 3-2-2-3  SGF-SGF-GRK-\n 03345  17.10 1552 1115/10 3-4-2-3  LBB-MHK-XNA-\n 03534  17.14 1718 1152/10 3-4-2-3  GGG-CRP-BHM-\n08AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02373  13.36 0820 1147/10 3-2-3    JAN-AMA-\n 03618  16.32 1834 1546/11 1-2-2-5  AVL-SGF-LCH-\n09AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02316   7.19 0933 1219/10 3-3      GGG-\n 02730  18.57 1226 1712/12 5-4-2-1  BMI-RIC-BHM-\n 03038  17.58 1427 1115/12 5-4-2-3  SGF-ABI-SPS-\n 03469  18.18 1638 1652/12 1-2-2-3  MHK-BIS-AGU-\n 03545  17.00 1722 1517/12 3-2-2-3  XNA-XNA-TRC-\n10AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02836  17.13 1248 1459/13 1-4-2-3  GGG-TRI-CMI-\n 06505   3.06 1406 0738/11 1-1      LRD-\n 03052  18.36 1428 1713/13 3-2-2-3  AMA-BTR-MTY-\n 03138  18.04 1455 1704/13 3-2-2-3  ACT-MTY-CUU-\n 03192  20.28 1508 2029/13 3-2-4-1  MHK-ELP-GPT-\n 03428  18.34 1621 2150/13 3-2-2-3  COU-MSY-BHM-\n11AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02334  13.56 0700 1635/13 1-2-3    BHM-MLI-\n 02521  19.09 0820 1343/14 5-2-4-3  GRK-TYR-GRK-\n 06515  19.26 0827 1749/13 2-3-3    CVG-BOS-\n 02720  17.47 1221 1525/14 1-4-2-5  ICT-DAY-SGF-\n12AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02335  14.05 0700 1314/14 3-4-3    MLU-CRP-\n 02401  14.25 0840 1704/14 1-4-3    LRD-MAF-\n 02305   7.26 0850 1230/13 1-3      AEX-\n 06511   9.00 0910 1201/13 3-3      BHM-\n 02628  18.03 1145 1017/15 5-4-2-3  ABI-GGG-TYR-\n 02860  17.38 1310 1632/15 3/2-2-3  LFT/GRK-CUU-\n 03520  17.20 1702 1441/15 3-2-2-3  MHK-LIT-EVV-\n 03552  17.55 1728 2148/15 3-2-4-2  EVV-LAN-CWA-\n13AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02916  17.39 1353 1131/16 5-2-2-3  BRO-MAF-BRO-\n 03057  17.31 1428 1321/16 3-2-2-3  AMA-SGF-CRP-\n 06511   7.36 1440 1914/14 5-1      CLL-\n 03259  17.34 1527 1115/16 3-2-2-3  MLI-ICT-LBB-\n 03388  17.41 1611 1342/16 3-4-2-3  ABI-TYR-GGG-\n 03504  17.58 1657 1417/16 3-2-2-3  CID-MLU-TUL-\n14AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n15AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n16AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02378  12.57 0820 1538/18 1-2-3    XNA-BIL-\n 02423  14.19 1002 1726/18 3-2-3    LRD-MTY-\n17AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02593  18.42 1002 1343/20 5-2-2-3  LRD-AMA-BTR-\n 06512  13.44 1055 1737/19 4-2-1    GSO-XNA-\n 02427  14.57 1200 2148/19 5-2-2    LIT-CWA-\n 02757  19.07 1228 1517/20 5-2-2-3  JAN-GRK-CUU-\n 03262  19.52 1527 2150/20 3-2-2-3  FAR-RIC-BHM-\n 03167   8.21 1955 1553/19 1-2-1    CMI-GSP-\n 03515   8.01 2145 1203/19 1-4-1    BRO-TYR-\n18AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02538  17.52 0835 1314/21 1-4-4-3  LCH-MAF-CRP-\n 02787  18.21 1234 1504/21 5-2-2-5  AMA-XNA-MHK-\n 02815  11.39 2124 1412/21 1-2-2-1  MHK-CAE-CRP-\n19AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02529  18.13 0822 0928/22 3-4-2-1  BHM-XNA-BIS-\n 02568  19.46 0930 1332/22 3-2-2-3  LIT-HSV-SGF-\n 06518  12.01 0930 1653/21 1-3-3    GSO-CLT-\n 02601  19.10 1018 1443/22 3-2-2-3  COU-DAY-SGF-\n 02770  18.46 1230 1152/22 5-4-2-3  GGG-ABI-BHM-\n 02816  18.26 1238 1017/22 5-2-2-3  LCH-ATW-CLL-\n 02901  17.56 1342 1201/22 3-2-2-3  ECP-LBB-HRL-\n 03123  19.46 1448 1907/22 3-4-2-1  MLI-CAK-ILM-\n 03530  18.19 1716 1601/22 3-2-2-3  GPT-BTR-ICT-\n20AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02380  13.55 0820 1441/22 3-2-3    BRO-COU-\n 02788  18.14 1234 1343/23 5-4/3    MLU-JAN/\n 02798  17.37 1236 1429/23 3-2-2-1  ABI-AGU-TRC-\n 02817  18.00 1238 1419/23 5-2-2-3  GPT-TYR-GGG-\n 03506  17.41 1657 1443/23 3-2-2-3  LCH-LIT-EVV-\n21AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 06519   4.09 0940 0907/22 1-1      TRC-\n 03171  13.05 1503 0849/24 3-2-2-1  MSN-CMH-XNA-\n 06518  13.14 1626 2135/23 3-2-3    ABI-AGU-\n22AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02310   7.26 0855 1230/23 1-3      AEX-\n 02654  18.31 1155 1546/25 5-2-2-5  TYR-ABI-LCH-\n 02653  17.58 1155 1115/25 3-2-2-3  CLL-TRC-GPT-\n 02746  17.54 1227 1143/25 5-2-2-3  JAN-CRP-BTR-\n 02800  19.35 1236 0833/25 3-4-2-1  TXK-MTY-MTY-\n 03150  17.49 1458 1343/25 3-2-2-3  SGF-GSO-EVV-\n 06503   9.15 1838 1137/24 1-2-3    BTR-GRK-\n23AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02295   8.06 0822 1417/24 1-3      FSM-\n 02304   8.51 0840 1219/24 3-3      TXK-\n 02318   8.51 0933 1525/24 3-5      GGG-\n 03423  18.10 1620 1601/26 3-2-2-3  HRL-TXK-ICT-\n 03497  18.43 1648 1314/26 3-2-2-3  BIL-GRB-AVL-\n24AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02481  21.06 0700 2147/27 1-3-3-3  BHM-CLT-GSO-\n 02491  19.07 0701 1000/27 3-3-3-1  SGF-CLT-SGF-\n 02802  20.09 1236 1517/27 3-2-2-3  CLL-TRC-MTY-\n 02892  19.58 1340 2148/27 5-2-4-2  EVV-LAN-CWA-\n 03151  18.04 1458 1417/27 3-2-2-3  ECP-HRL-SPS-\n 03265  13.45 2110 1343/27 1-2-2-3  LIT-GRB-MHK-\n25AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02513  18.48 0730 2024/28 1-3-5-3  SGF-CLT-GSO-\n 02748  18.49 1227 1653/28 5/2-4    JAN/GSO-\n 03074  17.45 1428 1504/28 3-2-2-5  AMA-XNA-MHK-\n 02591  14.46 1531 1525/28 1-2-2-5  CMH-GRR-SGF-\n26AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02600  19.58 1010 1459/29 3-2-2-3  ACT-MTY-CUU-\n 02658  18.33 1155 1329/29 1-4-2-3  MLU-TRI-BIS-\n 02676  18.29 1200 0738/29 5-4-2-1  LIT-SPS-LRD-\n 02737  19.42 1226 1907/29 5-2-2-1  MHK-CAE-ILM-\n 02892  19.58 1340 2148/29 5-2-4-2  EVV-LAN-CWA-\n 02929  17.47 1353 1107/29 3-4-2-3  SPS-COU-AMA-\n 03124  18.29 1448 1321/29 3-2-2-3  MLI-ICT-CRP-\n 03152  19.07 1458 1540/29 3-2-2-5  SGF-SGF-LIT-\n 03277  17.21 1531 1229/29 1-4-2-3  CMH-DAY-SGF-\n 03398  19.36 1612 1504/29 3-4-2-5  CRP-ABI-SPS-\n 03470  18.18 1638 1709/29 1-2-2-3  MHK-BIS-AGU-\n 03577  17.04 1748 1404/29 1-4-2-3  SGF-CAE-HSV-\n27AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02367  14.58 0755 1147/29 5-2-3    ABI-CID-\n 02290  15.04 0820 1556/29 3-4-3    BRO-MAF-\n 02301   6.54 0825 0728/28 3-1      BHM-\n 02308   7.26 0850 1230/28 1-3      AEX-\n 02979  17.46 1357 1302/30 3-2-2-3  ECP-JAN-AMA-\n 03002  19.26 1406 1219/30 3-4-4-3  GRK-GRK-GGG-\n28AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02777  13.25 1230 1219/31 5/4-3    JAN/XNA-\n 03178  13.34 1503 1428/31 3-2-2-3  CMI-TRC-BTR-\n 03692   9.41 2044 1704/31 1-2-2-3  COU-MSY-CUU-\n29AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\nNONE FOUND\n30AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS\n 02253   5.35 0935 1551/30 2\n***************************************************************\nDFW E75 CA   CREWED SEQUENCES POSTED FOR DROP  AS OF 27JUL/1107\n27JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 05254   4.43 0600 1113/27 2                                   *\n28JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 21514   2.56 2205 1530/29 1-1      LFT-\n 05894  17.50 1315 1440/31 1-4-2-3  GCK-AMA-LEX-\n30JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 21503   2.58 1306 1635/30 2\n 05718   9.57 1214 1342/02 5-2-2-3  BTR-LBB-BRO-\n 02089   7.49 1516 1441/02 3-2-2-3  CMI-ABE-COU-\n31JUL DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 21532   3.27 1621 2030/31 2\n01AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 02252   5.37 0930 1604/01 2\n 06515   4.48 0940 1458/01 2\n03AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 06525   6.20 0821 1333/04 1-3      CRP-\n11AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 02915   8.12 1353 1958/12 3-3      SPS-\n14AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 06501   2.39 0822 1131/14 2\n15AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 03148  18.04 1458 1219/18 3-4-2-3  SGF-CRP-TXK-\n17AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 06513  11.50 1430 1037/19 2-2-3    GSO-CLL-\n20AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 02253   5.35 0935 1606/20 2\n21AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 02253   5.35 0935 1606/21 2\n27AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 02391  14.41 0823 1704/29 1-2-3    FWA-COU-\n30AUG DOM\nSEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS    HB\n 02876   2.28 1325 1707/02 1-2-2-3  TRI-BIS-AGU-\nEND\n        ** TO PICKUP ONE OF THESE SEQUENCES ENTER **\n             HT   IN YOUR PERSONAL MODE.\n";
 
 export const MOCK_VACATIONS: VacationPeriod[] = [
 
@@ -685,54 +628,58 @@ export const MOCK_AUG_SEQUENCES: SequenceTrip[] = [
     endDate: "2026-08-16",
     base: "ORD",
     equipment: "E75",
-    totalBlockMinutes: 735,
-    totalCreditMinutes: 1033, // 17.22h
+    totalBlockMinutes: 1042,
+    totalCreditMinutes: 1042, // 17.22h (17h 13m)
     layoverCities: ["FAR", "CMI", "CLE"],
     colorTag: "cyan",
     statusTag: "SKD",
     dutyPeriods: [
       {
         dayIndex: 0,
-        reportTime: "0800",
-        releaseTime: "1600",
-        dutyMinutes: 480,
+        reportTime: "1239",
+        releaseTime: "2312",
+        dutyMinutes: 633,
         legs: [
-          { flightNumber: "AA4210", depAirport: "ORD", arrAirport: "FAR", depTime: "0845", arrTime: "1100", blockMinutes: 135, tailNumber: "N388AA" },
+          { flightNumber: "AA3602", depAirport: "ORD", arrAirport: "YUL", depTime: "1324", arrTime: "1650", blockMinutes: 146, tailNumber: "N360AA" },
+          { flightNumber: "AA3602", depAirport: "YUL", arrAirport: "ORD", depTime: "1734", arrTime: "1919", blockMinutes: 105, tailNumber: "N360AA" },
+          { flightNumber: "AA3377", depAirport: "ORD", arrAirport: "FAR", depTime: "2105", arrTime: "2312", blockMinutes: 127, tailNumber: "N360AA" },
         ],
         layoverCity: "FAR",
         layoverHotelInfo: "Radisson Blu Hotel Fargo (701-232-7300)",
       },
       {
         dayIndex: 1,
-        reportTime: "0830",
-        releaseTime: "1615",
-        dutyMinutes: 465,
+        reportTime: "1141",
+        releaseTime: "2028",
+        dutyMinutes: 527,
         legs: [
-          { flightNumber: "AA4211", depAirport: "FAR", arrAirport: "ORD", depTime: "0915", arrTime: "1130", blockMinutes: 135, tailNumber: "N388AA" },
-          { flightNumber: "AA3314", depAirport: "ORD", arrAirport: "CMI", depTime: "1300", arrTime: "1405", blockMinutes: 65, tailNumber: "N388AA" },
+          { flightNumber: "AA3449", depAirport: "FAR", arrAirport: "ORD", depTime: "1226", arrTime: "1432", blockMinutes: 126, tailNumber: "N344AA" },
+          { flightNumber: "AA3484", depAirport: "ORD", arrAirport: "CMI", depTime: "1521", arrTime: "1624", blockMinutes: 63, tailNumber: "N344AA" },
+          { flightNumber: "AA3484", depAirport: "CMI", arrAirport: "ORD", depTime: "1654", arrTime: "1829", blockMinutes: 95, tailNumber: "N344AA" },
+          { flightNumber: "AA3694", depAirport: "ORD", arrAirport: "CMI", depTime: "1922", arrTime: "2028", blockMinutes: 66, tailNumber: "N344AA" },
         ],
         layoverCity: "CMI",
         layoverHotelInfo: "I Hotel & Conference Center Champaign (217-819-5000)",
       },
       {
         dayIndex: 2,
-        reportTime: "0900",
-        releaseTime: "1630",
-        dutyMinutes: 450,
+        reportTime: "1056",
+        releaseTime: "1624",
+        dutyMinutes: 328,
         legs: [
-          { flightNumber: "AA3315", depAirport: "CMI", arrAirport: "ORD", depTime: "0945", arrTime: "1050", blockMinutes: 65, tailNumber: "N410AA" },
-          { flightNumber: "AA4480", depAirport: "ORD", arrAirport: "CLE", depTime: "1230", arrTime: "1450", blockMinutes: 140, tailNumber: "N410AA" },
+          { flightNumber: "AA3492", depAirport: "CMI", arrAirport: "ORD", depTime: "1141", arrTime: "1255", blockMinutes: 74, tailNumber: "N349AA" },
+          { flightNumber: "AA3749", depAirport: "ORD", arrAirport: "CLE", depTime: "1340", arrTime: "1609", blockMinutes: 89, tailNumber: "N349AA" },
         ],
         layoverCity: "CLE",
         layoverHotelInfo: "Hilton Cleveland Downtown (216-413-5000)",
       },
       {
         dayIndex: 3,
-        reportTime: "0830",
-        releaseTime: "1230",
-        dutyMinutes: 240,
+        reportTime: "0430",
+        releaseTime: "0601",
+        dutyMinutes: 91,
         legs: [
-          { flightNumber: "AA4481", depAirport: "CLE", arrAirport: "ORD", depTime: "0915", arrTime: "1110", blockMinutes: 115, tailNumber: "N410AA" },
+          { flightNumber: "AA3356", depAirport: "CLE", arrAirport: "ORD", depTime: "0515", arrTime: "0546", blockMinutes: 91, tailNumber: "N335AA" },
         ],
         layoverCity: "",
         layoverHotelInfo: "",
@@ -746,56 +693,60 @@ export const MOCK_AUG_SEQUENCES: SequenceTrip[] = [
     endDate: "2026-08-23",
     base: "ORD",
     equipment: "E75",
-    totalBlockMinutes: 1115,
-    totalCreditMinutes: 1337, // 22.28h
+    totalBlockMinutes: 1349,
+    totalCreditMinutes: 1349, // 22.29h (22h 17m)
     layoverCities: ["RIC", "FSM", "MAF"],
-    colorTag: "indigo",
+    colorTag: "sky",
     statusTag: "SKD",
     dutyPeriods: [
       {
         dayIndex: 0,
-        reportTime: "0700",
-        releaseTime: "1645",
-        dutyMinutes: 585,
+        reportTime: "1420",
+        releaseTime: "0021",
+        dutyMinutes: 601,
         legs: [
-          { flightNumber: "AA3540", depAirport: "ORD", arrAirport: "RIC", depTime: "0745", arrTime: "1040", blockMinutes: 115, tailNumber: "N912AA" },
-          { flightNumber: "AA3541", depAirport: "RIC", arrAirport: "ORD", depTime: "1130", arrTime: "1250", blockMinutes: 140, tailNumber: "N912AA" },
-          { flightNumber: "AA3542", depAirport: "ORD", arrAirport: "RIC", depTime: "1415", arrTime: "1710", blockMinutes: 115, tailNumber: "N912AA" },
+          { flightNumber: "AA4145", depAirport: "ORD", arrAirport: "GSP", depTime: "1505", arrTime: "1804", blockMinutes: 119, tailNumber: "N414AA" },
+          { flightNumber: "AA4145", depAirport: "GSP", arrAirport: "ORD", depTime: "1834", arrTime: "2004", blockMinutes: 150, tailNumber: "N414AA" },
+          { flightNumber: "AA3811", depAirport: "ORD", arrAirport: "RIC", depTime: "2052", arrTime: "0006", blockMinutes: 134, tailNumber: "N414AA" },
         ],
         layoverCity: "RIC",
         layoverHotelInfo: "Hilton Richmond Downtown (804-344-7000)",
       },
       {
         dayIndex: 1,
-        reportTime: "0815",
-        releaseTime: "1630",
-        dutyMinutes: 495,
+        reportTime: "1058",
+        releaseTime: "1700",
+        dutyMinutes: 362,
         legs: [
-          { flightNumber: "AA3543", depAirport: "RIC", arrAirport: "ORD", depTime: "0900", arrTime: "1025", blockMinutes: 145, tailNumber: "N912AA" },
-          { flightNumber: "AA3890", depAirport: "ORD", arrAirport: "FSM", depTime: "1200", arrTime: "1415", blockMinutes: 135, tailNumber: "N930AA" },
+          { flightNumber: "AA3778", depAirport: "RIC", arrAirport: "DFW", depTime: "1143", arrTime: "1402", blockMinutes: 199, tailNumber: "N377AA" },
+          { flightNumber: "AA3859", depAirport: "DFW", arrAirport: "FSM", depTime: "1532", arrTime: "1645", blockMinutes: 73, tailNumber: "N377AA" },
         ],
         layoverCity: "FSM",
         layoverHotelInfo: "Courtyard Fort Smith (479-783-2100)",
       },
       {
         dayIndex: 2,
-        reportTime: "0745",
-        releaseTime: "1645",
-        dutyMinutes: 540,
+        reportTime: "0515",
+        releaseTime: "1406",
+        dutyMinutes: 531,
         legs: [
-          { flightNumber: "AA3891", depAirport: "FSM", arrAirport: "ORD", depTime: "0830", arrTime: "1040", blockMinutes: 130, tailNumber: "N930AA" },
-          { flightNumber: "AA4120", depAirport: "ORD", arrAirport: "MAF", depTime: "1230", arrTime: "1515", blockMinutes: 165, tailNumber: "N930AA" },
+          { flightNumber: "AA4179", depAirport: "FSM", arrAirport: "DFW", depTime: "0600", arrTime: "0720", blockMinutes: 80, tailNumber: "N417AA" },
+          { flightNumber: "AA3873", depAirport: "DFW", arrAirport: "GRK", depTime: "0829", arrTime: "0929", blockMinutes: 60, tailNumber: "N417AA" },
+          { flightNumber: "AA3873", depAirport: "GRK", arrAirport: "DFW", depTime: "0959", arrTime: "1110", blockMinutes: 71, tailNumber: "N417AA" },
+          { flightNumber: "AA3512", depAirport: "DFW", arrAirport: "MAF", depTime: "1233", arrTime: "1351", blockMinutes: 78, tailNumber: "N417AA" },
         ],
         layoverCity: "MAF",
         layoverHotelInfo: "DoubleTree by Hilton Midland Plaza (432-683-6131)",
       },
       {
         dayIndex: 3,
-        reportTime: "0800",
-        releaseTime: "1330",
-        dutyMinutes: 330,
+        reportTime: "0715",
+        releaseTime: "1604",
+        dutyMinutes: 529,
         legs: [
-          { flightNumber: "AA4121", depAirport: "MAF", arrAirport: "ORD", depTime: "0845", arrTime: "1135", blockMinutes: 170, tailNumber: "N930AA" },
+          { flightNumber: "AA3352", depAirport: "MAF", arrAirport: "DFW", depTime: "0800", arrTime: "0925", blockMinutes: 85, tailNumber: "N335AA" },
+          { flightNumber: "AA3689", depAirport: "DFW", arrAirport: "RAP", depTime: "1018", arrTime: "1149", blockMinutes: 151, tailNumber: "N335AA" },
+          { flightNumber: "AA3573", depAirport: "RAP", arrAirport: "ORD", depTime: "1220", arrTime: "1549", blockMinutes: 149, tailNumber: "N335AA" },
         ],
         layoverCity: "",
         layoverHotelInfo: "",
@@ -809,54 +760,58 @@ export const MOCK_AUG_SEQUENCES: SequenceTrip[] = [
     endDate: "2026-08-30",
     base: "ORD",
     equipment: "E75",
-    totalBlockMinutes: 890,
-    totalCreditMinutes: 976, // 16.26h
+    totalBlockMinutes: 976,
+    totalCreditMinutes: 976, // 16.26h (16h 16m)
     layoverCities: ["SPI", "MLI", "GSO"],
     colorTag: "emerald",
     statusTag: "SKD",
     dutyPeriods: [
       {
         dayIndex: 0,
-        reportTime: "1300",
-        releaseTime: "1515",
-        dutyMinutes: 135,
+        reportTime: "1623",
+        releaseTime: "0027",
+        dutyMinutes: 484,
         legs: [
-          { flightNumber: "AA4330", depAirport: "ORD", arrAirport: "SPI", depTime: "1345", arrTime: "1450", blockMinutes: 65, tailNumber: "N375AA" },
+          { flightNumber: "AA3626", depAirport: "ORD", arrAirport: "SGF", depTime: "1708", arrTime: "1853", blockMinutes: 105, tailNumber: "N362AA" },
+          { flightNumber: "AA3594", depAirport: "SGF", arrAirport: "ORD", depTime: "2004", arrTime: "2200", blockMinutes: 116, tailNumber: "N362AA" },
+          { flightNumber: "AA3771", depAirport: "ORD", arrAirport: "SPI", depTime: "2305", arrTime: "0012", blockMinutes: 67, tailNumber: "N362AA" },
         ],
         layoverCity: "SPI",
         layoverHotelInfo: "President Abraham Lincoln Springfield - DoubleTree (217-544-8800)",
       },
       {
         dayIndex: 1,
-        reportTime: "0600",
-        releaseTime: "1230",
-        dutyMinutes: 390,
+        reportTime: "1406",
+        releaseTime: "1826",
+        dutyMinutes: 260,
         legs: [
-          { flightNumber: "AA4328", depAirport: "SPI", arrAirport: "ORD", depTime: "0645", arrTime: "0755", blockMinutes: 70, tailNumber: "N375AA" },
-          { flightNumber: "AA3710", depAirport: "ORD", arrAirport: "MLI", depTime: "0930", arrTime: "1035", blockMinutes: 65, tailNumber: "N375AA" },
+          { flightNumber: "AA4330", depAirport: "SPI", arrAirport: "ORD", depTime: "1451", arrTime: "1609", blockMinutes: 78, tailNumber: "N433AA" },
+          { flightNumber: "AA3559", depAirport: "ORD", arrAirport: "MLI", depTime: "1700", arrTime: "1811", blockMinutes: 71, tailNumber: "N433AA" },
         ],
         layoverCity: "MLI",
         layoverHotelInfo: "Radisson Quad City Plaza Moline (309-764-1000)",
       },
       {
         dayIndex: 2,
-        reportTime: "0715",
-        releaseTime: "1430",
-        dutyMinutes: 435,
+        reportTime: "0515",
+        releaseTime: "1301",
+        dutyMinutes: 466,
         legs: [
-          { flightNumber: "AA3711", depAirport: "MLI", arrAirport: "ORD", depTime: "0800", arrTime: "0905", blockMinutes: 65, tailNumber: "N420AA" },
-          { flightNumber: "AA3920", depAirport: "ORD", arrAirport: "GSO", depTime: "1100", arrTime: "1350", blockMinutes: 110, tailNumber: "N420AA" },
+          { flightNumber: "AA3708", depAirport: "MLI", arrAirport: "ORD", depTime: "0600", arrTime: "0719", blockMinutes: 79, tailNumber: "N370AA" },
+          { flightNumber: "AA4144", depAirport: "ORD", arrAirport: "GSO", depTime: "0945", arrTime: "1246", blockMinutes: 121, tailNumber: "N370AA" },
         ],
         layoverCity: "GSO",
         layoverHotelInfo: "Proximity Hotel Greensboro (336-379-8200)",
       },
       {
         dayIndex: 3,
-        reportTime: "0800",
-        releaseTime: "1200",
-        dutyMinutes: 240,
+        reportTime: "0704",
+        releaseTime: "1458",
+        dutyMinutes: 474,
         legs: [
-          { flightNumber: "AA3921", depAirport: "GSO", arrAirport: "ORD", depTime: "0845", arrTime: "0955", blockMinutes: 130, tailNumber: "N420AA" },
+          { flightNumber: "AA3673", depAirport: "GSO", arrAirport: "ORD", depTime: "0749", arrTime: "0910", blockMinutes: 141, tailNumber: "N367AA" },
+          { flightNumber: "AA3552", depAirport: "ORD", arrAirport: "MSP", depTime: "1045", arrTime: "1227", blockMinutes: 102, tailNumber: "N367AA" },
+          { flightNumber: "AA3552", depAirport: "MSP", arrAirport: "ORD", depTime: "1257", arrTime: "1443", blockMinutes: 106, tailNumber: "N367AA" },
         ],
         layoverCity: "",
         layoverHotelInfo: "",

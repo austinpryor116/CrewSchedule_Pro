@@ -34,6 +34,8 @@ import { readUploadedFileAsText } from "../../lib/pdfExtractor";
 import { RAW_HI1_TEXT, RAW_N4_TEXT, RAW_HI1_AUG_TEXT } from "../../lib/demoData";
 import { RAW_HSS_1_TEXT } from "../../lib/hss_extracted_text";
 import { SequenceTrip, OpenSequence } from "../../types";
+import { parseHSSSequence, parse26BCommute, parseReleaseSummary } from "../../lib/parserHooks";
+import MacroActionBar from "../MacroActionBar";
 
 export default function PortalBrowserStudio() {
   const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
@@ -53,7 +55,7 @@ export default function PortalBrowserStudio() {
   const [historyIndex, setHistoryIndex] = useState(0);
 
   // Terminal Buffer State
-  const [terminalBuffer, setTerminalBuffer] = useState(RAW_HI1_TEXT);
+  const [terminalBuffer, setTerminalBuffer] = useState("");
   const [terminalTheme, setTerminalTheme] = useState<"green" | "amber" | "dark">("green");
 
   // File Upload Ref
@@ -114,12 +116,17 @@ export default function PortalBrowserStudio() {
     { name: "HSS Daily Pairing", url: "https://cci.aa.com/hss", sample: RAW_HSS_1_TEXT, type: "HSS Pairing" },
   ];
 
-  // Listen for iframe navigation events via postMessage
+  // Listen for iframe navigation events and live page text via postMessage
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       if (e.data && e.data.type === "PROXY_URL_CHANGE" && e.data.url) {
         setUrlInput(e.data.url);
         setActiveUrl(e.data.url);
+      }
+      if (e.data && e.data.type === "PROXY_PAGE_TEXT" && e.data.text) {
+        if (e.data.text.trim().length > 0) {
+          setTerminalBuffer(e.data.text);
+        }
       }
     };
     window.addEventListener("message", handleMessage);
@@ -180,25 +187,37 @@ export default function PortalBrowserStudio() {
   const parseResult = useMemo(() => {
     const text = terminalBuffer;
     if (!text || text.trim().length === 0) {
-      return { type: "none", sequences: [], openSequences: [] };
+      return { type: "none", sequences: [], openSequences: [], commuteFlights: [], releaseInfo: null };
     }
 
-    // Check if N4 Open Time
-    if (text.includes("OPEN TIME") || text.includes("POS  TRIP") || text.includes("SEQ  POS")) {
+    // 1. JP* Dispatch Release
+    const releaseInfo = parseReleaseSummary(text);
+    if (releaseInfo && (text.includes("RELEASE") || text.includes("DISPATCH") || text.includes("REL FUEL"))) {
+      return { type: "JP* Dispatch Release", sequences: [], openSequences: [], commuteFlights: [], releaseInfo };
+    }
+
+    // 2. 26B Commute Listings
+    const commuteFlights = parse26BCommute(text);
+    if (commuteFlights.length > 0 && (text.includes("26B") || text.includes("COMMUTE") || text.includes("PASSENGER") || text.includes("F") && text.includes("Y"))) {
+      return { type: "26B Commute Listings", sequences: [], openSequences: [], commuteFlights, releaseInfo: null };
+    }
+
+    // 3. N4 Open Time
+    if (text.includes("OPEN TIME") || text.includes("POS  TRIP") || text.includes("SEQ  POS") || text.includes("N4D")) {
       const openSeqs = parseN4OpenTime(text);
       if (openSeqs.length > 0) {
         const trips = openSeqs.map((o) => convertOpenToTrip(o));
-        return { type: "N4 Open Time", sequences: trips, openSequences: openSeqs };
+        return { type: "N4 Open Time", sequences: trips, openSequences: openSeqs, commuteFlights: [], releaseInfo: null };
       }
     }
 
-    // Default HI1 / HSS / Raw Parser
+    // 4. Default HI1 / HSS Sequence Roster
     const seqs = parseRawSchedule(text);
     if (seqs.length > 0) {
-      return { type: "HI1 / HSS Sequence Roster", sequences: seqs, openSequences: [] };
+      return { type: "HI1 / HSS Sequence Roster", sequences: seqs, openSequences: [], commuteFlights: [], releaseInfo: null };
     }
 
-    return { type: "unrecognized", sequences: [], openSequences: [] };
+    return { type: "Raw Terminal Buffer", sequences: [], openSequences: [], commuteFlights: [], releaseInfo: null };
   }, [terminalBuffer]);
 
   // Action: Import Sequences to Main Schedule
@@ -289,7 +308,7 @@ export default function PortalBrowserStudio() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-extrabold text-white flex items-center gap-2.5">
-            <Globe className="w-7 h-7 text-indigo-400" />
+            <Globe className="w-7 h-7 text-sky-400" />
             Live Portal Browser & Real-Time Schedule Extractor
           </h1>
           <p className="text-xs text-slate-400 mt-1">
@@ -302,7 +321,7 @@ export default function PortalBrowserStudio() {
           <button
             onClick={() => setViewMode("web")}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-              viewMode === "web" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+              viewMode === "web" ? "bg-sky-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
             }`}
           >
             <Globe className="w-4 h-4" />
@@ -311,7 +330,7 @@ export default function PortalBrowserStudio() {
           <button
             onClick={() => setViewMode("terminal")}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition cursor-pointer ${
-              viewMode === "terminal" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+              viewMode === "terminal" ? "bg-sky-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
             }`}
           >
             <Terminal className="w-4 h-4" />
@@ -319,6 +338,9 @@ export default function PortalBrowserStudio() {
           </button>
         </div>
       </div>
+
+      {/* DECS Macro Action Bar */}
+      <MacroActionBar />
 
       {/* Status Feedback Alert */}
       {statusMessage && (
@@ -350,10 +372,10 @@ export default function PortalBrowserStudio() {
                 handleNavigate(b.url);
                 setTerminalBuffer(b.sample);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs rounded-xl font-mono transition cursor-pointer hover:border-indigo-500/50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs rounded-xl font-mono transition cursor-pointer hover:border-sky-500/50"
             >
               <span>{b.name}</span>
-              <span className="text-[9px] px-1.5 py-0.2 bg-indigo-950 text-indigo-300 rounded border border-indigo-500/30">
+              <span className="text-[9px] px-1.5 py-0.2 bg-sky-950 text-sky-300 rounded border border-sky-500/30">
                 {b.type}
               </span>
             </button>
@@ -364,7 +386,7 @@ export default function PortalBrowserStudio() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleReadClipboard}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-600/20 transition cursor-pointer"
             title="Read schedule text copied to clipboard"
           >
             <Clipboard className="w-3.5 h-3.5" />
@@ -388,7 +410,7 @@ export default function PortalBrowserStudio() {
         <div className="lg:col-span-7 flex flex-col gap-4">
           {viewMode === "web" ? (
             /* Web Browser Interactive Viewport */
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px]">
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[420px]">
               {/* Address Navigation Bar */}
               <div className="bg-slate-950/90 p-3 border-b border-slate-800 flex items-center gap-2">
                 <button
@@ -418,14 +440,14 @@ export default function PortalBrowserStudio() {
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleNavigate(urlInput)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-3 pr-8 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-3 pr-8 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500"
                   />
                   <Globe className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
 
                 <button
                   onClick={() => handleNavigate(urlInput)}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                  className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
                 >
                   Go
                 </button>
@@ -437,7 +459,7 @@ export default function PortalBrowserStudio() {
                   className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0"
                   title="Open site directly in native browser tab"
                 >
-                  <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+                  <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
                   <span className="hidden sm:inline">Open in New Tab</span>
                 </a>
               </div>
@@ -454,7 +476,7 @@ export default function PortalBrowserStudio() {
             </div>
           ) : (
             /* DECS / CCI Terminal CRT Viewport */
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[640px]">
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[420px]">
               {/* Terminal Control Bar */}
               <div className="bg-slate-900/90 p-3 border-b border-slate-800 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 font-mono text-xs text-slate-300">
@@ -469,7 +491,7 @@ export default function PortalBrowserStudio() {
                       key={t}
                       onClick={() => setTerminalTheme(t)}
                       className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold capitalize transition cursor-pointer ${
-                        terminalTheme === t ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400"
+                        terminalTheme === t ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-400"
                       }`}
                     >
                       {t}
@@ -504,15 +526,62 @@ export default function PortalBrowserStudio() {
               </div>
             </div>
           )}
+
+          {/* Real-Time Screen Extractor Reader ("What the Engine Sees Below") directly underneath browser */}
+          <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-4 shadow-xl space-y-3 flex flex-col h-[230px] shrink-0">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Eye className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  What the Engine Sees Below
+                  <span className="px-2 py-0.2 text-[9px] font-extrabold uppercase rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                    {parseResult.type}
+                  </span>
+                </h4>
+              </div>
+
+              <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                <span>Lines: <strong className="text-white font-sans">{terminalBuffer ? terminalBuffer.split("\n").length : 0}</strong></span>
+                <span className="text-slate-600">•</span>
+                <span>Chars: <strong className="text-white font-sans">{terminalBuffer ? terminalBuffer.length : 0}</strong></span>
+              </div>
+            </div>
+
+            {/* Structured JP* Release */}
+            {parseResult.releaseInfo && (
+              <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 font-mono text-[11px] space-y-1 shrink-0">
+                <div className="flex items-center justify-between text-sky-400 font-bold">
+                  <span>DISPATCH RELEASE: {parseResult.releaseInfo.flightNumber} ({parseResult.releaseInfo.depAirport}➔{parseResult.releaseInfo.arrAirport})</span>
+                  <span className="text-emerald-400">FUEL: {parseResult.releaseInfo.releaseFuelPounds.toLocaleString()} lbs</span>
+                </div>
+              </div>
+            )}
+
+            {/* 26B Commute Flights */}
+            {parseResult.commuteFlights.length > 0 && (
+              <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 font-mono text-[11px] flex flex-wrap gap-2 shrink-0">
+                {parseResult.commuteFlights.slice(0, 4).map((cf, idx) => (
+                  <span key={idx} className="px-2 py-0.5 bg-slate-900 border border-slate-800 rounded text-slate-300">
+                    {cf.flightNumber} ({cf.depAirport}➔{cf.arrAirport}): <strong className="text-emerald-400">F{cf.firstClassCount} Y{cf.mainCabinCount}</strong>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Monospace Raw Screen Reader Viewer */}
+            <div className="flex-1 p-3 bg-slate-950 rounded-xl border border-slate-850 font-mono text-[11px] leading-relaxed overflow-y-auto scrollbar-thin text-emerald-400 selection:bg-emerald-900 selection:text-white">
+              <pre className="whitespace-pre-wrap break-all">{terminalBuffer || "// Live screen text buffer is empty. Navigate a web page or search above."}</pre>
+            </div>
+          </div>
         </div>
 
         {/* Right Side: Live Schedule Extractor Panel (Col 5) */}
         <div className="lg:col-span-5 flex flex-col gap-4">
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur-md flex flex-col h-[640px]">
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur-md flex flex-col h-[670px]">
             {/* Extractor Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-400" />
+                <Sparkles className="w-5 h-5 text-sky-400" />
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
                   Live Screen Extractor Engine
                 </h3>
@@ -533,7 +602,7 @@ export default function PortalBrowserStudio() {
             <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-3 mb-4 space-y-1.5 font-mono text-xs">
               <div className="flex justify-between items-center text-slate-300">
                 <span>Detected Trips on Screen:</span>
-                <span className="font-extrabold text-indigo-400 text-sm">{parseResult.sequences.length}</span>
+                <span className="font-extrabold text-sky-400 text-sm">{parseResult.sequences.length}</span>
               </div>
               <div className="flex justify-between items-center text-slate-400 text-[11px]">
                 <span>Total Block Duration:</span>
@@ -561,10 +630,10 @@ export default function PortalBrowserStudio() {
                 parseResult.sequences.map((s, idx) => (
                   <div
                     key={`${s.sequenceNumber}-${idx}`}
-                    className="bg-slate-950/90 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-3 space-y-2 transition"
+                    className="bg-slate-950/90 border border-slate-800 hover:border-sky-500/50 rounded-xl p-3 space-y-2 transition"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-extrabold text-indigo-300 text-xs font-mono">
+                      <span className="font-extrabold text-sky-300 text-xs font-mono">
                         SEQ #{s.sequenceNumber}
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">
@@ -615,7 +684,7 @@ export default function PortalBrowserStudio() {
               <button
                 onClick={handleImportToRoster}
                 disabled={parseResult.sequences.length === 0}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 disabled:opacity-40 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-600/20 transition cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>Import Extracted Roster to Schedule</span>

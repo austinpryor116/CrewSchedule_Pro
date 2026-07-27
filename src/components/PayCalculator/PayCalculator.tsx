@@ -335,7 +335,7 @@ export default function PayCalculator() {
           {/* Time ratios block vs credit */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans">
             <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/50 flex items-center gap-4">
-              <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl">
+              <div className="p-3 bg-sky-500/10 text-sky-400 rounded-xl">
                 <Clock className="w-6 h-6" />
               </div>
               <div>
@@ -378,10 +378,10 @@ export default function PayCalculator() {
               
               <div className="grid grid-cols-3 px-4 py-3 text-slate-300">
                 <span className="font-sans font-bold text-slate-200">Soft Pay Rig Adjustment</span>
-                <span className="text-right text-indigo-400">
+                <span className="text-right text-sky-400">
                   +{(Math.max(0, calcs.creditHours - calcs.blockHours)).toFixed(2)} hrs
                 </span>
-                <span className="text-right text-indigo-400 font-bold">
+                <span className="text-right text-sky-400 font-bold">
                   +${calcs.softPayAdjustment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
@@ -406,10 +406,10 @@ export default function PayCalculator() {
         </div>
 
         {/* Projections Card (Full width under xl:col-span-3) */}
-        <div className="xl:col-span-3 bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-indigo-950/20 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 font-sans">
+        <div className="xl:col-span-3 bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-sky-950/20 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 font-sans">
           <div className="space-y-2">
             <h3 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-indigo-400" />
+              <TrendingUp className="w-5 h-5 text-sky-400" />
               Projections & Extrapolation Studio
             </h3>
             <p className="text-xs text-slate-400 max-w-[580px] leading-relaxed">
@@ -423,7 +423,7 @@ export default function PayCalculator() {
               <button
                 onClick={() => setExtrapolatePeriod("monthly")}
                 className={`px-3 py-1 rounded-lg font-bold transition duration-150 ${
-                  extrapolatePeriod === "monthly" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+                  extrapolatePeriod === "monthly" ? "bg-sky-600 text-white" : "text-slate-400 hover:text-slate-200"
                 }`}
               >
                 Monthly Extrapolation
@@ -431,7 +431,7 @@ export default function PayCalculator() {
               <button
                 onClick={() => setExtrapolatePeriod("annual")}
                 className={`px-3 py-1 rounded-lg font-bold transition duration-150 ${
-                  extrapolatePeriod === "annual" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+                  extrapolatePeriod === "annual" ? "bg-sky-600 text-white" : "text-slate-400 hover:text-slate-200"
                 }`}
               >
                 Annual Salary Projector
@@ -443,7 +443,7 @@ export default function PayCalculator() {
               <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
                 Projected Gross Total
               </span>
-              <p className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-400 font-mono mt-0.5">
+              <p className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-sky-400 font-mono mt-0.5">
                 ${currentExtrapolation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
@@ -455,7 +455,7 @@ export default function PayCalculator() {
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div>
               <h3 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-indigo-400" />
+                <FileSpreadsheet className="w-5 h-5 text-sky-400" />
                 Rainmaker Day-by-Day Pay Ledger
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -463,7 +463,7 @@ export default function PayCalculator() {
               </p>
             </div>
             {isHi1Active && (
-              <span className="text-[10px] font-black uppercase text-indigo-400 bg-indigo-950/80 border border-indigo-900/50 px-2.5 py-1 rounded-lg">
+              <span className="text-[10px] font-black uppercase text-sky-400 bg-sky-950/80 border border-sky-900/50 px-2.5 py-1 rounded-lg">
                 Roster Reconciled
               </span>
             )}
@@ -499,7 +499,7 @@ export default function PayCalculator() {
                     <td className={`py-2 px-3 text-right ${row.other ? "text-slate-200" : "text-slate-600"}`}>{row.other || "00:00"}</td>
                     <td className={`py-2 px-3 text-right ${row.tt ? (row.tt.startsWith("-") ? "text-rose-400" : "text-emerald-400") : "text-slate-600"}`}>{row.tt || "00:00"}</td>
                     <td className={`py-2 px-3 text-right ${row.otadj ? "text-amber-400" : "text-slate-600"}`}>{row.otadj || "00:00"}</td>
-                    <td className={`py-2 px-3 text-right ${row.blprtc ? (row.blprtc.startsWith("-") ? "text-rose-400/80" : "text-indigo-400") : "text-slate-600"}`}>{row.blprtc || "00:00"}</td>
+                    <td className={`py-2 px-3 text-right ${row.blprtc ? (row.blprtc.startsWith("-") ? "text-rose-400/80" : "text-sky-400") : "text-slate-600"}`}>{row.blprtc || "00:00"}</td>
                     <td className={`py-2 px-3 text-right ${row.pdm ? "text-amber-500/85" : "text-slate-600"}`}>{row.pdm || "00:00"}</td>
                     <td className="py-2 px-4 text-right font-bold text-slate-400 border-l border-slate-800/20">
                       {row.usd > 0 ? `$${row.usd.toFixed(2)}` : "—"}
@@ -516,9 +516,9 @@ export default function PayCalculator() {
                   <td className="py-3.5 px-3 text-right text-amber-400">{formatMinStr(ledgerTotals.ot)}</td>
                   <td className="py-3.5 px-3 text-right text-amber-500">{formatMinStr(ledgerTotals.prem)}</td>
                   <td className="py-3.5 px-3 text-right text-slate-100">{formatMinStr(ledgerTotals.other)}</td>
-                  <td className="py-3.5 px-3 text-right text-indigo-400">{formatMinStr(ledgerTotals.tt)}</td>
+                  <td className="py-3.5 px-3 text-right text-sky-400">{formatMinStr(ledgerTotals.tt)}</td>
                   <td className="py-3.5 px-3 text-right text-amber-400">{formatMinStr(ledgerTotals.otadj)}</td>
-                  <td className="py-3.5 px-3 text-right text-indigo-500">{formatMinStr(ledgerTotals.blprtc)}</td>
+                  <td className="py-3.5 px-3 text-right text-sky-400">{formatMinStr(ledgerTotals.blprtc)}</td>
                   <td className="py-3.5 px-3 text-right text-amber-500">{formatMinStr(ledgerTotals.pdm)}</td>
                   <td className="py-3.5 px-4 text-right text-emerald-400 border-l border-slate-800/40">
                     ${ledgerTotals.usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -542,7 +542,7 @@ export default function PayCalculator() {
               </div>
               <div>
                 <span className="text-slate-500 font-sans block">Total Above</span>
-                <span className="text-slate-200 text-sm text-indigo-400">37:28</span>
+                <span className="text-slate-200 text-sm text-sky-400">37:28</span>
               </div>
               <div>
                 <span className="text-slate-500 font-sans block">Roster Credit Due</span>

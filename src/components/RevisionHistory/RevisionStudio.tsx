@@ -85,7 +85,7 @@ export default function RevisionStudio() {
         );
       default:
         return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
+          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-sky-500/15 border border-sky-500/30 text-sky-400">
             Schedule Change
           </span>
         );
@@ -96,13 +96,13 @@ export default function RevisionStudio() {
     <div className="flex flex-col gap-6">
       {/* Header Banner */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-md relative overflow-hidden">
-        <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl" />
+        <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <History className="w-6 h-6 text-indigo-400" />
+              <History className="w-6 h-6 text-sky-400" />
               <h1 className="text-xl font-black text-slate-100">Schedule Revision Studio & Audit Trail</h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-sky-500/10 border border-sky-500/30 text-sky-400">
                 Local Computer Persistent
               </span>
             </div>
@@ -114,7 +114,7 @@ export default function RevisionStudio() {
           <div className="flex items-center gap-3">
             <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-right">
               <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Snapshots</span>
-              <span className="text-sm font-black text-indigo-400">{snapshots.length} Versions Saved</span>
+              <span className="text-sm font-black text-sky-400">{snapshots.length} Versions Saved</span>
             </div>
           </div>
         </div>
@@ -126,7 +126,7 @@ export default function RevisionStudio() {
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-indigo-400" />
+                <Clock className="w-4 h-4 text-sky-400" />
                 <h2 className="text-sm font-bold text-slate-100">Upload Timeline</h2>
               </div>
               <span className="text-[10px] font-bold text-slate-500">HI Document Versions</span>
@@ -144,13 +144,13 @@ export default function RevisionStudio() {
                     onClick={() => setSelectedSnapshotId(snap.id)}
                     className={`p-3.5 rounded-xl border transition-all cursor-pointer relative ${
                       isSelected
-                        ? "bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-950/20"
+                        ? "bg-sky-950/40 border-sky-500/60 shadow-lg shadow-sky-950/20"
                         : "bg-slate-950/40 border-slate-800/60 hover:border-slate-700"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-2">
-                        <FileText className={`w-4 h-4 ${isSelected ? "text-indigo-400" : "text-slate-500"}`} />
+                        <FileText className={`w-4 h-4 ${isSelected ? "text-sky-400" : "text-slate-500"}`} />
                         <span className="text-xs font-bold text-slate-200">{snap.sourceFileName}</span>
                       </div>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
@@ -159,7 +159,7 @@ export default function RevisionStudio() {
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2">
-                      <span className="font-mono text-indigo-300 font-semibold">AS OF {snap.asOfDateStr}</span>
+                      <span className="font-mono text-sky-300 font-semibold">AS OF {snap.asOfDateStr}</span>
                       <span className="font-semibold text-slate-300">{snap.projectedCreditHours.toFixed(2)}h credit</span>
                     </div>
 
@@ -182,7 +182,7 @@ export default function RevisionStudio() {
                             e.stopPropagation();
                             setActiveSnapshotId(snap.id);
                           }}
-                          className="text-indigo-400 hover:text-indigo-300 font-bold underline cursor-pointer"
+                          className="text-sky-400 hover:text-sky-300 font-bold underline cursor-pointer"
                         >
                           Load as Active
                         </button>
@@ -197,7 +197,7 @@ export default function RevisionStudio() {
           {/* Importer / Snapshot Creator Card */}
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-lg backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-3">
-              <FileUp className="w-4 h-4 text-indigo-400" />
+              <FileUp className="w-4 h-4 text-sky-400" />
               <h2 className="text-sm font-bold text-slate-100">Upload New HI Document</h2>
             </div>
             <p className="text-[11px] text-slate-400 mb-3">
@@ -211,7 +211,7 @@ export default function RevisionStudio() {
                   type="text"
                   value={sourceFileNameInput}
                   onChange={(e) => setSourceFileNameInput(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
@@ -222,14 +222,14 @@ export default function RevisionStudio() {
                   value={pastedText}
                   onChange={(e) => setPastedText(e.target.value)}
                   placeholder="Paste HI1/HSS report text here..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <button
                 onClick={handleCreateSnapshotFromText}
                 disabled={!pastedText.trim()}
-                className="w-full py-2.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-xl font-bold text-xs bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
               >
                 <Sparkles className="w-4 h-4" /> Save Version Snapshot
               </button>
@@ -246,11 +246,11 @@ export default function RevisionStudio() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <FileText className="w-5 h-5 text-indigo-400" />
+                      <FileText className="w-5 h-5 text-sky-400" />
                       <h2 className="text-lg font-black text-slate-100">{activeSnapshot.sourceFileName}</h2>
                     </div>
                     <p className="text-xs text-slate-400 font-mono">
-                      Timestamp Header: <span className="text-indigo-400 font-bold">AS OF {activeSnapshot.asOfDateStr}</span> • Month: {activeSnapshot.monthLabel}
+                      Timestamp Header: <span className="text-sky-400 font-bold">AS OF {activeSnapshot.asOfDateStr}</span> • Month: {activeSnapshot.monthLabel}
                     </p>
                   </div>
 
@@ -262,7 +262,7 @@ export default function RevisionStudio() {
                     ) : (
                       <button
                         onClick={() => setActiveSnapshotId(activeSnapshot.id)}
-                        className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg transition cursor-pointer flex items-center gap-1.5"
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white shadow-lg transition cursor-pointer flex items-center gap-1.5"
                       >
                         Set as Active Schedule
                       </button>
@@ -282,7 +282,7 @@ export default function RevisionStudio() {
                   </div>
                   <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60">
                     <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Sequences</span>
-                    <span className="text-base font-black text-indigo-400">{activeSnapshot.sequences.length} Trips</span>
+                    <span className="text-base font-black text-sky-400">{activeSnapshot.sequences.length} Trips</span>
                   </div>
                   <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60">
                     <span className="text-[10px] text-slate-500 font-bold uppercase block">Audit Diffs Detected</span>
@@ -295,7 +295,7 @@ export default function RevisionStudio() {
               <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-lg backdrop-blur-sm space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                    <ShieldCheck className="w-5 h-5 text-sky-400" />
                     <h3 className="text-base font-bold text-slate-100">Audit Trail & Change Log</h3>
                   </div>
                   <span className="text-xs text-slate-500">Automated Version Diff</span>
@@ -347,7 +347,7 @@ export default function RevisionStudio() {
                             )}
                             {diff.oldValue && diff.newValue && <ArrowRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
                             {diff.newValue && (
-                              <div className="text-indigo-300 font-semibold">
+                              <div className="text-sky-300 font-semibold">
                                 <span className="text-[9px] text-slate-500 block uppercase font-sans">New / Reassigned</span>
                                 <span>{diff.newValue}</span>
                               </div>
@@ -401,7 +401,7 @@ export default function RevisionStudio() {
                       </div>
 
                       <div className="text-right font-mono">
-                        <span className="text-indigo-400 font-bold text-xs block">
+                        <span className="text-sky-400 font-bold text-xs block">
                           {(seq.totalCreditMinutes / 60).toFixed(2)}h
                         </span>
                         <span className="text-[10px] text-slate-500">

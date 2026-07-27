@@ -68,7 +68,7 @@ export interface SequenceTrip {
   totalCreditMinutes: number;
   layoverCities: string[];
   dutyPeriods: DutyPeriod[];
-  colorTag: string; // Tailwind color class suffix (e.g. "indigo", "emerald", "amber")
+  colorTag: string; // Tailwind color class suffix (e.g. "sky", "emerald", "amber")
   isOvertime?: boolean;
   statusTag?: string; // e.g. "OT", "TT", "RA", "DROP", "DTS"
   isDropped?: boolean;

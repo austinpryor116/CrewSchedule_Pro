@@ -155,12 +155,84 @@ SKD ONDUTY  8.33 ODL  14.36
 FDPT  8.18         START  0606  END  1424  ACC STA  ORD
 SKD 31 54 4328 SPI 0600 ORD 0718    1.18        0.47
 SKD 31 54 3546 ORD 0805 GRB 0921    1.16        0.30
-SKD 31 54 3546 GRB 0951 ORD 1111    1.20
-D/P SKD  3.54        P/C  0.00  TL  3.54
-                SKD TL  3.54  ACT TL  0.00
-SKD ONDUTY  6.11
-FDPT  5.56         START  0515  END  1111  ACC STA  ORD
-SEQ SKD  9.25        P/C  0.00  TL  9.25 TAFB  29.20
+`;
+
+export const RAW_HSS_8_TEXT = `
+SEQ   21566   BASE   ORD   SEL   502   DOM   E75
+CAPT   PRYOR   AR   EMP   NBR   742840
+    DT   EQ   FLT   STA   DEP   STA   ARR   AC   FLY   GTR   GRD   ACT
+SKD   23   54   4151   ORD   1436   MHK   1630   1.54   0.30
+ACT   23   1A   4151   ORD   1428   MHK   1606   1.38   1.54   0.44
+SKD   23   54   4151   MHK   1700   ORD   1904   2.04
+ACT   23   1A   4151   MHK   1650   ORD   1836   1.46   2.04
+D/P   GTR   3.58   P/C   0.00   TL   3.58
+                SKD   TL   3.58   ACT   TL   3.24
+SKD   ONDUTY   5.28   TAXABLE   EXP   5.00
+ACT   ONDUTY   5.00
+FDPT   4.45   START   1351   END   1836   ACC   STA   ORD
+SEQ   GTR   3.58   P/C   0.00   TL   3.58   TAFB   5.28
+`;
+
+export const RAW_HSS_9_TEXT = `
+SEQ   17333   BASE   ORD   SEL   502   ORG   SCH   DOM   E75   R/A   61
+CAPT   PRYOR   AR   EMP   NBR   742840
+    DT   EQ   FLT   STA   DEP   STA   ARR   AC   FLY   GTR   GRD   ACT
+SKD   24   54   3625   ORD   0800   LIT   0959   1.59   0.30
+ACT   24   1A   3625   ORD   0757   LIT   0941   1.44   1.59   0.39
+SKD   24   54   3625   LIT   1029   ORD   1232   2.03   2.27
+ACT   24   1A   3625   LIT   1020   ORD   1220   2.00   2.03   2.34
+SKD   24   54   3407   ORD   1459   AVP   1804   RA   2.05
+ACT   24   1A   3407   ORD   1454   AVP   1738   RA   1.44   2.05
+D/P   GTR   6.07   P/C   0.00   TL   6.07
+HALF   DAY   COUNT   AVP   3
+                SKD   TL   6.07   ACT   TL   5.28
+SKD   ONDUTY   10.04   ODL   10.56
+ACT   ONDUTY   9.38   ODL   11.22
+FDPT   9.23   START   0715   END   1638   ACC   STA   ORD
+SKD   25   0F   3587   AVP   0600   ORD   0731   RA   2.31   2.14
+ACT   25   0F   3587   AVP   0559   ORD   0710   RA   2.11   2.31   2.32
+SKD   25   54   3698   ORD   0945   MLI   1058   1.13
+ACT   25   1A   3698   ORD   0942   MLI   1047   1.05   1.13
+D/P   GTR   3.44   P/C   0.00   TL   3.44
+HALF   DAY   COUNT   MLI   3
+                SKD   TL   3.44   ACT   TL   3.16
+SKD   ONDUTY   6.58   ODL   18.10
+ACT   ONDUTY   6.47   ODL   18.21
+FDPT   6.32   START   0415   END   1047   ACC   STA   ORD
+SKD   26   0F   3445   MLI   0608   ORD   0730   1.22   1.00
+ACT   26   0F   3445   MLI   0558   ORD   0656   0.58   1.22   1.29
+SKD   26   0F   3439   ORD   0830   BNA   1013   1.43   0.30
+ACT   26   0F   3439   ORD   0825   BNA   0949   1.24   1.43   0.54
+SKD   26   0F   3439   BNA   1043   ORD   1239   1.56
+ACT   26   0F   3439   BNA   1043   ORD   1222   1.39   1.56
+D/P   GTR   5.01   P/C   0.00   TL   5.01
+                SKD   TL   5.01   ACT   TL   4.01
+SKD   ONDUTY   7.31   EXP   53.22
+ACT   ONDUTY   7.14
+FDPT   6.59   START   0523   END   1222   ACC   STA   ORD
+SEQ   GTR   14.52   P/C   0.00   TL   14.52   TAFB   53.39
+`;
+
+export const RAW_HSS_10_TEXT = `
+SEQ   17894   BASE   ORD   SEL   502   DOM   E75
+CAPT   PRYOR   AR   EMP   NBR   742840
+    DT   EQ   FLT   STA   DEP   STA   ARR   AC   FLY   GTR   GRD   ACT
+SKD   27   0F   3980   ORD   1506   DTW   1741   1.35   0.30
+SKD   27   0F   3980   DTW   1811   ORD   1858   1.47   1.16
+SKD   27   54   4275   ORD   2014   CAE   2319   2.05
+RSK   27   1A   4275   ORD   2014   CAE   2319   2.05
+D/P   SKD   5.27   P/C   0.00   TL   5.27
+HALF   DAY   COUNT   CAE   3
+                SKD   TL   5.27   ACT   TL   0.00
+SKD   ONDUTY   8.13   ODL   16.54
+FDPT   7.58   START   1421   END   2219   ACC   STA   ORD
+SKD   28   54   4183   CAE   1713   ORD   1844   2.31
+RSK   28   1A   4183   CAE   1713   ORD   1844   2.31
+D/P   SKD   2.31   P/C   0.00   TL   2.31
+                SKD   TL   2.31   ACT   TL   0.00
+SKD   ONDUTY   3.31
+FDPT   3.16   START   1528   END   1844   ACC   STA   ORD
+SEQ   SKD   7.58   P/C   0.00   TL   7.58   TAFB   28.38
 `;
 
 export const RAW_HSS_1_TEXT = `

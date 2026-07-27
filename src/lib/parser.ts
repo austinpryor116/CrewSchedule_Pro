@@ -196,7 +196,7 @@ export function parseRawSchedule(text: string): SequenceTrip[] {
       });
 
       // Pick color tag randomly for UI
-      const colors = ["indigo", "emerald", "amber", "rose", "cyan", "violet"];
+      const colors = ["sky", "emerald", "amber", "rose", "cyan", "sky"];
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
       sequences.push({
@@ -1146,7 +1146,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       }
     }
 
-    const colors = ["indigo", "emerald", "amber", "rose", "cyan", "violet"];
+    const colors = ["sky", "emerald", "amber", "rose", "cyan", "sky"];
     const colorTag = colors[parseInt(block.seqCode, 10) % colors.length];
 
     const startDate = constructDateStr(monthEnding, daysList[0]?.dayNum || 1);
@@ -1327,6 +1327,11 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
   let currentDay = "20";
   let currentBase = "ORD";
 
+  const months: Record<string, string> = {
+    JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06",
+    JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12"
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -1339,6 +1344,11 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
 
     // Check for date header anywhere in the line (e.g. "21JUL DOM" at start, or at the end of a line)
     const dateMatch = line.match(/(\d{2})([A-Z]{3})\s+DOM/);
+    if (dateMatch) {
+      currentDay = dateMatch[1];
+      const monthStr = dateMatch[2].toUpperCase();
+      currentMonth = months[monthStr] || "07";
+    }
 
     // Check for sequence line: starts with 5-digit number, then decimal, then 4-digit number (report), then 4-digit/2-digit number (release/day)
     // E.g. " 17457 19.28 0805 2159/25 3-3/3-1 SYR-DCA/XNA-"
@@ -1372,7 +1382,6 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
 
         // Remaining part of the line contains legs and layovers
         let remaining = line.substring(match[0].length).trim();
-        // If a date header is also present at the end of this line, strip it out
         if (dateMatch && remaining.includes(dateMatch[0])) {
           remaining = remaining.replace(dateMatch[0], "").trim();
         }
@@ -1395,20 +1404,11 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
         });
       }
     }
-
-    // Update current date for subsequent lines if date header was present on this line
-    if (dateMatch) {
-      currentDay = dateMatch[1];
-      const monthStr = dateMatch[2];
-      const months: Record<string, string> = {
-        JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06",
-        JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12"
-      };
-      currentMonth = months[monthStr] || "07";
-    }
   }
 
-  return openSequences;
+  // Filter out past-date open time (start date < July 27, 2026 reference active date)
+  const activeCutoffDate = "2026-07-27";
+  return openSequences.filter((s) => s.startDate >= activeCutoffDate);
 }
 
 export interface RuleAudit {
@@ -1424,8 +1424,6 @@ export interface ConflictResult {
   auditTrail?: RuleAudit[];
 }
 
-const conflictCache = new Map<string, ConflictResult>();
-
 export function checkOpenSequenceConflict(
   ot: OpenSequence,
   activeSeqs: SequenceTrip[],
@@ -1436,26 +1434,7 @@ export function checkOpenSequenceConflict(
     return { hasConflict: false, reason: "" };
   }
 
-  // Fingerprint for cache key including station turn limits config
-  const limitsFingerprint = JSON.stringify(stationLimits || {}) + ":" + (defaultLimit || 40);
-  const activeFingerprint = activeSeqs
-    .filter((s) => !s.isSimulated)
-    .map((s) => `${s.id}:${s.startDate}:${s.endDate}`)
-    .join(",");
-  const cacheKey = `${ot.id}:${ot.startDate}:${ot.endDate}:${activeFingerprint}:${limitsFingerprint}`;
-
-  if (conflictCache.has(cacheKey)) {
-    return conflictCache.get(cacheKey)!;
-  }
-
-  const result = evaluateOpenSequenceConflict(ot, activeSeqs, stationLimits, defaultLimit);
-
-  if (conflictCache.size > 1000) {
-    conflictCache.clear();
-  }
-  conflictCache.set(cacheKey, result);
-
-  return result;
+  return evaluateOpenSequenceConflict(ot, activeSeqs, stationLimits, defaultLimit);
 }
 
 function evaluateOpenSequenceConflict(
@@ -1465,6 +1444,8 @@ function evaluateOpenSequenceConflict(
   defaultLimit?: number
 ): ConflictResult {
   interface RosterDuty {
+    seqId: string;
+    seqNumber: string;
     start: Date;
     end: Date;
     name: string;
@@ -1473,12 +1454,43 @@ function evaluateOpenSequenceConflict(
     arrAirport?: string;
   }
 
-  const allDuties: RosterDuty[] = [];
+  const auditTrail: RuleAudit[] = [];
+  let directOverlapFailed = false;
+  let firstConflictReason = "";
+  let directOverlapDetails = "Verified: No overlapping duties on the active roster.";
 
-  // 1. Add all duty periods from active (non-simulated) sequences
-  activeSeqs.forEach((s) => {
-    if (s.isSimulated) return; // skip simulated ones to allow overlays
-    
+  const activeDuties: RosterDuty[] = [];
+
+  // Check A1: Calendar Date Range Overlap Check against active sequences
+
+  for (const s of activeSeqs) {
+    if (s.isSimulated) continue;
+
+    // Comprehensive check for dropped, DTS, vacation, trade, or removed sequences
+    const tag = (s.statusTag || "").toUpperCase();
+    const isInactive =
+      s.isDropped ||
+      tag.includes("DROP") ||
+      tag.includes("DTS") ||
+      tag.includes("VC") ||
+      tag.includes("VA") ||
+      tag.includes("PTO") ||
+      tag.includes("TT") ||
+      tag.includes("TRADE") ||
+      tag.includes("OFF") ||
+      tag.includes("REMOVE") ||
+      tag.includes("RLSD");
+
+    if (isInactive) continue;
+
+    // Check if open sequence date range overlaps with active sequence date range
+    if (ot.startDate <= s.endDate && ot.endDate >= s.startDate) {
+      directOverlapFailed = true;
+      firstConflictReason = `Direct schedule conflict: Open Seq ${ot.sequenceNumber} (${ot.startDate}) overlaps with active Seq ${s.sequenceNumber} (${s.startDate} - ${s.endDate})`;
+      directOverlapDetails = `Direct date overlap detected between Open Seq ${ot.sequenceNumber} and active Seq ${s.sequenceNumber}.`;
+      break;
+    }
+
     const startParts = s.startDate.split("-").map(Number);
     s.dutyPeriods.forEach((dp) => {
       const dpDate = new Date(startParts[0], startParts[1] - 1, startParts[2] + dp.dayIndex);
@@ -1490,7 +1502,7 @@ function evaluateOpenSequenceConflict(
       const relH = parseInt(dp.releaseTime.substring(0, 2), 10) || 16;
       const relM = parseInt(dp.releaseTime.substring(2, 4), 10) || 0;
       const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
-      if (end < start) {
+      if (end <= start) {
         end.setDate(end.getDate() + 1); // cross-midnight release
       }
       
@@ -1498,20 +1510,37 @@ function evaluateOpenSequenceConflict(
       const dutyMins = dp.dutyMinutes || Math.round((end.getTime() - start.getTime()) / 60000);
       const arrAirport = dp.legs.length > 0 ? dp.legs[dp.legs.length - 1].arrAirport : "ORD";
 
-      allDuties.push({
+      activeDuties.push({
+        seqId: s.id,
+        seqNumber: s.sequenceNumber,
         start,
         end,
-        name: `Seq ${s.sequenceNumber}`,
+        name: `Active Seq ${s.sequenceNumber}`,
         blockMinutes: blockMins,
         dutyMinutes: dutyMins,
         arrAirport,
       });
     });
-  });
+  }
+
+  // If date-range overlap already failed, return conflict immediately
+  if (directOverlapFailed) {
+    return {
+      hasConflict: true,
+      reason: firstConflictReason,
+      auditTrail: [{
+        name: "Direct Overlap Check",
+        passed: false,
+        reason: "Direct Overlap Detected",
+        details: directOverlapDetails,
+      }],
+    };
+  }
 
   // 2. Add proposed open sequence duty periods using convertOpenToTrip for precision
   const otTrip = convertOpenToTrip(ot);
   const otStartParts = otTrip.startDate.split("-").map(Number);
+  const otDuties: RosterDuty[] = [];
   
   otTrip.dutyPeriods.forEach((dp) => {
     const dpDate = new Date(otStartParts[0], otStartParts[1] - 1, otStartParts[2] + dp.dayIndex);
@@ -1523,7 +1552,7 @@ function evaluateOpenSequenceConflict(
     const relH = parseInt(dp.releaseTime.substring(0, 2), 10) || 16;
     const relM = parseInt(dp.releaseTime.substring(2, 4), 10) || 0;
     const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
-    if (end < start) {
+    if (end <= start) {
       end.setDate(end.getDate() + 1);
     }
     
@@ -1531,7 +1560,9 @@ function evaluateOpenSequenceConflict(
     const dutyMins = dp.dutyMinutes || Math.round((end.getTime() - start.getTime()) / 60000);
     const arrAirport = dp.legs.length > 0 ? dp.legs[dp.legs.length - 1].arrAirport : "ORD";
 
-    allDuties.push({
+    otDuties.push({
+      seqId: ot.id,
+      seqNumber: ot.sequenceNumber,
       start,
       end,
       name: `Open Seq ${ot.sequenceNumber} (Day ${dp.dayIndex + 1})`,
@@ -1541,27 +1572,22 @@ function evaluateOpenSequenceConflict(
     });
   });
 
-  // 3. Sort all duties chronologically
-  allDuties.sort((a, b) => a.start.getTime() - b.start.getTime());
-
-  const auditTrail: RuleAudit[] = [];
-  let firstConflictReason = "";
-
-  // Check A: Direct Overlap
-  let directOverlapFailed = false;
-  let directOverlapDetails = "Verified: No overlapping duties on the roster.";
-  for (let i = 0; i < allDuties.length - 1; i++) {
-    const cur = allDuties[i];
-    const next = allDuties[i+1];
-    if (cur.end > next.start) {
-      directOverlapFailed = true;
-      directOverlapDetails = `Direct time overlap detected: ${cur.name} ends at ${cur.end.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}, but ${next.name} starts at ${next.start.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })} on ${next.start.toLocaleDateString("en-US", { month: "short", day: "numeric" })}.`;
-      if (!firstConflictReason) {
-        firstConflictReason = `Direct overlap between ${cur.name} and ${next.name}.`;
+  for (const otDuty of otDuties) {
+    for (const actDuty of activeDuties) {
+      // Overlap condition: proposed open duty starts before active duty ends AND ends after active duty starts
+      if (otDuty.start < actDuty.end && otDuty.end > actDuty.start) {
+        directOverlapFailed = true;
+        const dateStr = otDuty.start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        directOverlapDetails = `Direct time overlap detected: Open Seq ${ot.sequenceNumber} (${otDuty.start.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })} - ${otDuty.end.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}) overlaps with active Seq ${actDuty.seqNumber} (${actDuty.start.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })} - ${actDuty.end.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}) on ${dateStr}.`;
+        firstConflictReason = `Direct schedule overlap with active Seq ${actDuty.seqNumber} on ${dateStr}`;
+        break;
       }
-      break;
     }
+    if (directOverlapFailed) break;
   }
+
+  // Combine for turn connection checking
+  const allDuties = [...activeDuties, ...otDuties].sort((a, b) => a.start.getTime() - b.start.getTime());
   auditTrail.push({
     name: "Direct Overlap Check",
     passed: !directOverlapFailed,
@@ -1791,11 +1817,12 @@ function evaluateOpenSequenceConflict(
     details: lookbackDetails,
   });
 
-  const hasConflict = directOverlapFailed || turnConnectionFailed || limitCheckFailed || restFailed || lookbackFailed;
+  // Enforce Direct Overlap and FAA Part 117.25(b) 30-Hour Rest in 168-Hour (7-Day) Lookback rules
+  const hasConflict = directOverlapFailed || lookbackFailed;
 
   return {
     hasConflict,
-    reason: firstConflictReason,
+    reason: hasConflict ? firstConflictReason : "",
     auditTrail,
   };
 }
@@ -2073,7 +2100,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
   const startDate = `2026-07-${String(startDayNum).padStart(2, "0")}`;
   const endDate = `2026-07-${String(endDayNum).padStart(2, "0")}`;
   
-  const colors = ["indigo", "emerald", "amber", "rose", "cyan", "violet"];
+  const colors = ["sky", "emerald", "amber", "rose", "cyan", "sky"];
   const colorTag = colors[parseInt(sequenceNumber || "0", 10) % colors.length];
   
   sequences.push({

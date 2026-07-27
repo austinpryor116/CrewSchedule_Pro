@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry } from "../types";
-import { DEFAULT_PAY_RATES, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT, RAW_N4_DFW_TEXT, MOCK_AUG_SEQUENCES, MOCK_VACATIONS } from "../lib/demoData";
-import { RAW_HSS_1_TEXT, RAW_HSS_2_TEXT, RAW_HSS_3_TEXT, RAW_HSS_4_TEXT, RAW_HSS_5_TEXT, RAW_HSS_6_TEXT, RAW_HSS_7_TEXT } from "../lib/hss_extracted_text";
+import { DEFAULT_PAY_RATES, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT, RAW_N4_DFW_TEXT, MOCK_SEQUENCES, MOCK_AUG_SEQUENCES, MOCK_VACATIONS } from "../lib/demoData";
+import { RAW_HSS_1_TEXT, RAW_HSS_2_TEXT, RAW_HSS_3_TEXT, RAW_HSS_4_TEXT, RAW_HSS_5_TEXT, RAW_HSS_6_TEXT, RAW_HSS_7_TEXT, RAW_HSS_8_TEXT, RAW_HSS_9_TEXT, RAW_HSS_10_TEXT } from "../lib/hss_extracted_text";
 import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes } from "../lib/parser";
 export { convertOpenToTrip };
 
@@ -29,6 +29,11 @@ interface CrewState {
   simulatedSequenceIds: string[];
   showOpenTimeOverlay: boolean;
   openTimeFilter: "all" | "fits" | "simulated" | "conflicts";
+
+  // DTS / Dropped Sequences Visibility State
+  showDtsDropped: boolean;
+  setShowDtsDropped: (val: boolean) => void;
+  toggleShowDtsDropped: () => void;
 
   // Station Turn Limits Settings
   stationTurnLimits: Record<string, number>;
@@ -74,6 +79,7 @@ interface CrewState {
 
   // Open Time Actions
   setOpenSequences: (seqs: OpenSequence[]) => void;
+  importN4OpenTime: (rawN4Text: string) => void;
   toggleSimulateSequence: (id: string) => void;
   clearSimulatedSequences: () => void;
   setShowOpenTimeOverlay: (val: boolean) => void;
@@ -149,6 +155,9 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   simulatedSequenceIds: [],
   showOpenTimeOverlay: false,
   openTimeFilter: "all",
+  showDtsDropped: true, // Default to true so all roster trips and trades remain visible on calendar
+  setShowDtsDropped: (val: boolean) => set({ showDtsDropped: val }),
+  toggleShowDtsDropped: () => set((state) => ({ showDtsDropped: !state.showDtsDropped })),
   stationTurnLimits: DEFAULT_STATION_TURN_LIMITS,
   defaultTurnLimit: DEFAULT_TURN_LIMIT,
   highCreditThresholdHours: 15.0,
@@ -186,8 +195,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
             id: `log-${dateStr}-${leg.flightNumber}-${legIdx}-${Math.floor(Math.random() * 1000)}`,
             date: dateStr,
             flightNumber: leg.flightNumber,
-            tailNumber: leg.tailNumber || "N405AA",
-            aircraftType: seq.equipment || "E75",
+            tailNumber: leg.tailNumber || "Pending",
+            aircraftType: seq.equipment || "",
             depAirport: leg.depAirport,
             arrAirport: leg.arrAirport,
             outTime: leg.actualDepTime || leg.depTime,
@@ -229,10 +238,47 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   },
 
   updateLogbookEntry: (updatedEntry) => {
-    const updated = get().logbookEntries.map((e) => (e.id === updatedEntry.id ? updatedEntry : e));
-    set({ logbookEntries: updated });
+    const logbookEntries = get().logbookEntries.map((e) => (e.id === updatedEntry.id ? updatedEntry : e));
+    
+    // Two-way sync: Update matching leg in sequences
+    let targetSeqId: string | null = null;
+    const sequences = get().sequences.map((seq) => {
+      if (updatedEntry.sourceSequenceNumber && seq.sequenceNumber !== updatedEntry.sourceSequenceNumber) {
+        return seq;
+      }
+      let seqModified = false;
+      const updatedDPs = seq.dutyPeriods.map((dp) => {
+        const updatedLegs = dp.legs.map((leg) => {
+          if (
+            leg.flightNumber === updatedEntry.flightNumber &&
+            leg.depAirport === updatedEntry.depAirport &&
+            leg.arrAirport === updatedEntry.arrAirport
+          ) {
+            seqModified = true;
+            targetSeqId = seq.id;
+            return {
+              ...leg,
+              actualDepTime: updatedEntry.outTime,
+              actualArrTime: updatedEntry.inTime,
+              actualBlockMinutes: updatedEntry.blockMinutes,
+              tailNumber: updatedEntry.tailNumber,
+              remarks: updatedEntry.remarks,
+            };
+          }
+          return leg;
+        });
+        return { ...dp, legs: updatedLegs };
+      });
+      return seqModified ? { ...seq, dutyPeriods: updatedDPs } : seq;
+    });
+
+    set({ logbookEntries, sequences });
+    if (targetSeqId) {
+      set({ selectedSequenceId: targetSeqId });
+    }
     if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_logbook", JSON.stringify(updated));
+      localStorage.setItem("crewschedule_logbook", JSON.stringify(logbookEntries));
+      localStorage.setItem("crewschedule_sequences", JSON.stringify(sequences));
     }
   },
 
@@ -439,9 +485,16 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedMeta = localStorage.getItem("crewschedule_hi_metadata");
       const storedLogbook = localStorage.getItem("crewschedule_logbook");
 
-      const sanitizedSeqs = storedSeqs ? deduplicateSequences(JSON.parse(storedSeqs)) : [];
+      let sanitizedSeqs = storedSeqs ? deduplicateSequences(JSON.parse(storedSeqs)) : [];
+      const jul27Trip = MOCK_SEQUENCES.find((s) => s.sequenceNumber === "17894");
+      if (jul27Trip) {
+        sanitizedSeqs = deduplicateSequences([jul27Trip, ...sanitizedSeqs.filter((s) => s.sequenceNumber !== "17894")]);
+      }
       const parsedSnaps: ScheduleSnapshot[] = storedSnaps ? JSON.parse(storedSnaps) : [];
       const parsedLogbook: LogbookEntry[] = storedLogbook ? JSON.parse(storedLogbook) : [];
+      const openSeqsORD = parseN4OpenTime(RAW_N4_TEXT);
+      const openSeqsDFW = parseN4OpenTime(RAW_N4_DFW_TEXT);
+      const activeOpenSeqs = [...openSeqsORD, ...openSeqsDFW];
 
       set({
         sequences: sanitizedSeqs,
@@ -451,7 +504,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         logbookEntries: parsedLogbook,
         payRates: storedRates ? JSON.parse(storedRates) : DEFAULT_PAY_RATES,
         automationConfig: storedConfig ? JSON.parse(storedConfig) : DEFAULT_AUTOMATION_CONFIG,
-        openSequences: storedOpen ? JSON.parse(storedOpen) : [],
+        openSequences: activeOpenSeqs,
         simulatedSequenceIds: storedSim ? JSON.parse(storedSim) : [],
         showOpenTimeOverlay: storedOverlay ? JSON.parse(storedOverlay) : false,
         openTimeFilter: storedFilter ? (JSON.parse(storedFilter) as CrewState["openTimeFilter"]) : "all",
@@ -460,6 +513,9 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         highCreditThresholdHours: storedHighCredit ? JSON.parse(storedHighCredit) : 15.0,
         isHydrated: true,
       });
+
+      localStorage.setItem("crewschedule_sequences", JSON.stringify(sanitizedSeqs));
+      localStorage.setItem("crewschedule_opensequences", JSON.stringify(activeOpenSeqs));
 
       if (!storedSnaps || parsedSnaps.length === 0) {
         get().loadDemoData();
@@ -530,6 +586,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     if (typeof window !== "undefined") {
       localStorage.setItem("crewschedule_sequences", JSON.stringify(clean));
     }
+    get().autoGenerateLogbookFromRoster();
   },
 
   addSequences: (newSeqs) => {
@@ -538,6 +595,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     if (typeof window !== "undefined") {
       localStorage.setItem("crewschedule_sequences", JSON.stringify(clean));
     }
+    get().autoGenerateLogbookFromRoster();
   },
 
   updateSequence: (updated) => {
@@ -546,6 +604,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     if (typeof window !== "undefined") {
       localStorage.setItem("crewschedule_sequences", JSON.stringify(seqs));
     }
+    get().autoGenerateLogbookFromRoster();
   },
 
   deleteSequence: (id) => {
@@ -554,6 +613,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     if (typeof window !== "undefined") {
       localStorage.setItem("crewschedule_sequences", JSON.stringify(seqs));
     }
+    get().autoGenerateLogbookFromRoster();
   },
 
   setPayRates: (rates) => {
@@ -601,7 +661,10 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       RAW_HSS_4_TEXT,
       RAW_HSS_5_TEXT,
       RAW_HSS_6_TEXT,
-      RAW_HSS_7_TEXT
+      RAW_HSS_7_TEXT,
+      RAW_HSS_8_TEXT,
+      RAW_HSS_9_TEXT,
+      RAW_HSS_10_TEXT,
     ];
     
     const hssSeqs: SequenceTrip[] = [];
@@ -637,48 +700,14 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       return s;
     });
 
-    // Add 2-day traded sequence 17894 starting July 27th
-    const seqJul27: SequenceTrip = {
-      id: "jul-17894",
-      sequenceNumber: "17894",
-      startDate: "2026-07-27",
-      endDate: "2026-07-28",
-      base: "ORD",
-      equipment: "E75",
-      totalBlockMinutes: 445,
-      totalCreditMinutes: 627, // 10.45h
-      layoverCities: ["AVL"],
-      colorTag: "amber",
-      statusTag: "TT",
-      dutyPeriods: [
-        {
-          dayIndex: 0,
-          reportTime: "1452",
-          releaseTime: "2130",
-          dutyMinutes: 398,
-          legs: [
-            { flightNumber: "AA3812", depAirport: "ORD", arrAirport: "AVL", depTime: "1530", arrTime: "1815", blockMinutes: 165, tailNumber: "N405AA" },
-          ],
-          layoverCity: "AVL",
-          layoverHotelInfo: "The Omni Grove Park Inn Asheville (800-438-5800)",
-        },
-        {
-          dayIndex: 1,
-          reportTime: "0800",
-          releaseTime: "1507",
-          dutyMinutes: 427,
-          legs: [
-            { flightNumber: "AA3813", depAirport: "AVL", arrAirport: "ORD", depTime: "0845", arrTime: "1145", blockMinutes: 180, tailNumber: "N405AA" },
-            { flightNumber: "AA4328", depAirport: "ORD", arrAirport: "SPI", depTime: "1300", arrTime: "1440", blockMinutes: 100, tailNumber: "N405AA" },
-          ],
-          layoverCity: "",
-          layoverHotelInfo: "",
-        },
-      ],
-    };
+    // Append any extra detailed HSS sequences (e.g. 17894, 17333, 21566) not present in baseSeqs
+    hssSeqs.forEach(h => {
+      if (!mergedSeqs.some(m => m.sequenceNumber === h.sequenceNumber)) {
+        mergedSeqs.push(h);
+      }
+    });
 
-
-    const finalJulySeqs = [...mergedSeqs, seqJul27];
+    const finalJulySeqs = mergedSeqs;
 
     // Create August 2026 Demo Sequences (HI1 (3).pdf) with complete duty periods
     const augSeqs: SequenceTrip[] = MOCK_AUG_SEQUENCES;
@@ -792,12 +821,13 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       localStorage.setItem("crewschedule_payrates", JSON.stringify(updatedRates));
     }
 
-
+    get().autoGenerateLogbookFromRoster();
   },
 
   clearAll: () => {
     set({
       sequences: [],
+      logbookEntries: [],
       payRates: DEFAULT_PAY_RATES,
       selectedSequenceId: null,
       consoleLogs: [],
@@ -805,16 +835,32 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     });
     if (typeof window !== "undefined") {
       localStorage.removeItem("crewschedule_sequences");
+      localStorage.removeItem("crewschedule_logbook");
       localStorage.removeItem("crewschedule_payrates");
       localStorage.removeItem("crewschedule_simulatedids");
     }
   },
 
   setOpenSequences: (openSequences) => {
-    set({ openSequences });
+    const activeCutoffDate = "2026-07-27";
+    const filtered = openSequences.filter((s) => s.startDate >= activeCutoffDate);
+    set({ openSequences: filtered });
     if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_opensequences", JSON.stringify(openSequences));
+      localStorage.setItem("crewschedule_opensequences", JSON.stringify(filtered));
     }
+  },
+
+  importN4OpenTime: (rawN4Text) => {
+    const parsedNew = parseN4OpenTime(rawN4Text);
+    const basesInText = Array.from(new Set(parsedNew.map((s) => s.base)));
+    const existingOtherBases = get().openSequences.filter((s) => !basesInText.includes(s.base));
+    const merged = [...existingOtherBases, ...parsedNew];
+
+    set({ openSequences: merged });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_opensequences", JSON.stringify(merged));
+    }
+    get().addConsoleLog(`Imported N4 Open Time: Loaded ${parsedNew.length} active sequence(s). Past dates automatically purged.`);
   },
 
   toggleSimulateSequence: (id) => {

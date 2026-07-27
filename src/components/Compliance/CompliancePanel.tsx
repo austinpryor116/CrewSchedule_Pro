@@ -108,7 +108,7 @@ export default function CompliancePanel() {
           <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-xl space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-indigo-400" />
+                <Activity className="w-5 h-5 text-sky-400" />
                 FAA Part 117 Cumulative Audits
               </h2>
               <span className="text-[10px] text-slate-500 font-mono">Month Ending July 2026</span>
@@ -138,7 +138,7 @@ export default function CompliancePanel() {
                       <div
                         style={{ width: `${percent}%` }}
                         className={`h-full rounded-full transition-all duration-500 ${
-                          percent > 85 ? "bg-amber-500" : "bg-gradient-to-r from-indigo-500 to-emerald-500"
+                          percent > 85 ? "bg-amber-500" : "bg-gradient-to-r from-sky-500 to-emerald-500"
                         }`}
                       />
                     </div>
@@ -153,7 +153,7 @@ export default function CompliancePanel() {
         <div className="space-y-6">
           <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-xl space-y-6">
             <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-indigo-400" />
+              <Calendar className="w-5 h-5 text-sky-400" />
               Envoy CBA Contract Checks
             </h2>
 
@@ -176,7 +176,7 @@ export default function CompliancePanel() {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 leading-relaxed">{rule.desc}</p>
-                  <p className="text-[10px] text-indigo-400 font-mono">{rule.detail}</p>
+                  <p className="text-[10px] text-sky-400 font-mono">{rule.detail}</p>
                 </div>
               ))}
             </div>
@@ -185,8 +185,8 @@ export default function CompliancePanel() {
       </div>
 
       {/* Part 121 Fatigue Management Card */}
-      <div className="bg-gradient-to-r from-slate-900/80 to-indigo-950/20 border border-slate-800/80 rounded-3xl p-6 shadow-xl flex items-center gap-4">
-        <div className="p-3.5 bg-indigo-500/10 text-indigo-400 rounded-2xl shrink-0">
+      <div className="bg-gradient-to-r from-slate-900/80 to-sky-950/20 border border-slate-800/80 rounded-3xl p-6 shadow-xl flex items-center gap-4">
+        <div className="p-3.5 bg-sky-500/10 text-sky-400 rounded-2xl shrink-0">
           <Moon className="w-6 h-6" />
         </div>
         <div className="space-y-1">

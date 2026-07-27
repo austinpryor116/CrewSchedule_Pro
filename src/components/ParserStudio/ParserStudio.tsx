@@ -174,7 +174,7 @@ export default function ParserStudio() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-extrabold tracking-tight text-white bg-gradient-to-r from-sky-400 via-cyan-400 to-teal-400 bg-clip-text text-transparent">
             Monthly HI & Schedule Log Parser Studio
           </h1>
           <p className="mt-1 text-sm text-slate-400">
@@ -223,7 +223,7 @@ export default function ParserStudio() {
         <button
           onClick={() => switchMode("roster")}
           className={`flex-1 py-2 rounded-xl transition duration-150 ${
-            parseMode === "roster" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+            parseMode === "roster" ? "bg-sky-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
           }`}
         >
           Parse Roster Schedule (HI / HI1 / HI2)
@@ -231,7 +231,7 @@ export default function ParserStudio() {
         <button
           onClick={() => switchMode("opentime")}
           className={`flex-1 py-2 rounded-xl transition duration-150 ${
-            parseMode === "opentime" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+            parseMode === "opentime" ? "bg-sky-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
           }`}
         >
           Parse Open Time (N4)
@@ -246,7 +246,7 @@ export default function ParserStudio() {
         onClick={() => fileInputRef.current?.click()}
         className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 ${
           isDragOver
-            ? "border-indigo-400 bg-indigo-500/10 scale-[1.01]"
+            ? "border-sky-400 bg-sky-500/10 scale-[1.01]"
             : "border-slate-800 hover:border-slate-700 bg-slate-900/40 hover:bg-slate-900/60"
         }`}
       >
@@ -258,7 +258,7 @@ export default function ParserStudio() {
           className="hidden"
         />
         <div className="flex flex-col items-center justify-center space-y-2">
-          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400">
+          <div className="p-3 bg-sky-500/10 border border-sky-500/20 rounded-2xl text-sky-400">
             <Upload className="w-6 h-6 animate-bounce" />
           </div>
           <div>
@@ -266,12 +266,12 @@ export default function ParserStudio() {
               {uploadedFileName ? `Uploaded: ${uploadedFileName}` : "Drag & Drop your Monthly HI Log (.pdf, .txt)"}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Supports <span className="text-indigo-400 font-semibold">HI1.pdf</span>, <span className="text-indigo-400 font-semibold">HI2.pdf</span>, <span className="text-indigo-400 font-semibold">HSS.pdf</span>, or monospace text logs. Click to browse files.
+              Supports <span className="text-sky-400 font-semibold">HI1.pdf</span>, <span className="text-sky-400 font-semibold">HI2.pdf</span>, <span className="text-sky-400 font-semibold">HSS.pdf</span>, or monospace text logs. Click to browse files.
             </p>
           </div>
           {isExtracting && (
-            <div className="flex items-center gap-2 text-xs text-indigo-400 font-medium pt-2">
-              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
+            <div className="flex items-center gap-2 text-xs text-sky-400 font-medium pt-2">
+              <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
               Extracting text and parsing PDF coordinates...
             </div>
           )}
@@ -284,7 +284,7 @@ export default function ParserStudio() {
         <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col h-[650px]">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-              <Clipboard className="w-5 h-5 text-indigo-400" />
+              <Clipboard className="w-5 h-5 text-sky-400" />
               Raw Monospace Log Text
             </h2>
             <span className="text-xs text-slate-500 font-mono">
@@ -300,7 +300,7 @@ export default function ParserStudio() {
                 ? "Paste raw monthly HI schedule log text or drop your HI PDF file above..."
                 : "Paste raw N4 Open Time log text here..."
             }
-            className="w-full flex-grow bg-slate-950/80 border border-slate-800/80 focus:border-indigo-500/80 focus:ring-1 focus:ring-indigo-500/80 rounded-xl p-4 text-slate-300 font-mono text-xs leading-relaxed resize-none focus:outline-none transition duration-150 scrollbar-thin"
+            className="w-full flex-grow bg-slate-950/80 border border-slate-800/80 focus:border-sky-500/80 focus:ring-1 focus:ring-sky-500/80 rounded-xl p-4 text-slate-300 font-mono text-xs leading-relaxed resize-none focus:outline-none transition duration-150 scrollbar-thin"
           />
 
           <div className="mt-4 flex items-center justify-between">
@@ -309,7 +309,7 @@ export default function ParserStudio() {
             </span>
             <button
               onClick={handleManualParse}
-              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/20 active:scale-95 transition-all text-sm cursor-pointer"
+              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white rounded-xl font-bold shadow-lg shadow-sky-600/20 active:scale-95 transition-all text-sm cursor-pointer"
             >
               <Play className="w-4 h-4 fill-white" />
               Parse Schedule Log
@@ -350,16 +350,16 @@ export default function ParserStudio() {
 
             {/* Parsed Monthly HI Header Summary Card */}
             {parsedMetadata && (
-              <div className="mb-4 p-4 bg-slate-900/95 border border-indigo-500/30 rounded-2xl shadow-xl space-y-3">
+              <div className="mb-4 p-4 bg-slate-900/95 border border-sky-500/30 rounded-2xl shadow-xl space-y-3">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                    <div className="p-2 bg-sky-500/10 border border-sky-500/20 rounded-xl text-sky-400">
                       <User className="w-4 h-4" />
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-white flex items-center gap-2">
                         {parsedMetadata.pilotName}
-                        <span className="px-2 py-0.5 bg-indigo-950 text-indigo-400 border border-indigo-900/60 rounded text-[10px] font-mono">
+                        <span className="px-2 py-0.5 bg-sky-950 text-sky-400 border border-sky-900/60 rounded text-[10px] font-mono">
                           Seniority #{parsedMetadata.seniorityNum}
                         </span>
                       </h3>
@@ -383,7 +383,7 @@ export default function ParserStudio() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
                   <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
                     <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
-                      <Award className="w-3 h-3 text-indigo-400" /> Guarantee
+                      <Award className="w-3 h-3 text-sky-400" /> Guarantee
                     </div>
                     <div className="text-slate-100 font-bold text-sm mt-0.5">{parsedMetadata.guaranteeHours.toFixed(2)} hrs</div>
                   </div>
@@ -430,7 +430,7 @@ export default function ParserStudio() {
                           <span className="text-xs font-bold text-slate-100 flex items-center gap-2">
                             <span
                               className={`w-2.5 h-2.5 rounded-full ${
-                                seq.isDropped ? "bg-rose-500" : seq.isOvertime ? "bg-amber-500" : "bg-indigo-500"
+                                seq.isDropped ? "bg-rose-500" : seq.isOvertime ? "bg-amber-500" : "bg-sky-500"
                               }`}
                             />
                             Seq {seq.sequenceNumber}
@@ -445,7 +445,7 @@ export default function ParserStudio() {
                               </span>
                             )}
                           </span>
-                          <span className="px-2 py-0.5 bg-indigo-950/80 text-indigo-400 border border-indigo-900/50 rounded font-bold text-[10px]">
+                          <span className="px-2 py-0.5 bg-sky-950/80 text-sky-400 border border-sky-900/50 rounded font-bold text-[10px]">
                             {seq.base}
                           </span>
                         </div>
@@ -510,7 +510,7 @@ export default function ParserStudio() {
                 <div className="sticky bottom-0 bg-slate-950 p-4 border border-slate-800 rounded-2xl flex flex-col gap-3 shadow-2xl">
                   <button
                     onClick={handleImport}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-indigo-600 hover:from-emerald-600 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-sm cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-sky-600 hover:from-emerald-600 hover:to-sky-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-sm cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     {parseMode === "roster"

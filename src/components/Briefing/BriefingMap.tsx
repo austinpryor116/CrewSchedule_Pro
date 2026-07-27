@@ -414,37 +414,22 @@ export default function BriefingMap({
             }).addTo(activeMap);
 
             poly.bindPopup(`
-              <div class="text-xs p-1 font-sans">
-                <p class="font-bold text-slate-100">${hazard.title}</p>
-                <p class="text-[10px] text-amber-400 font-mono mt-0.5">${hazard.type} • Valid: ${hazard.validUntil}</p>
-                <p class="text-slate-300 mt-1">${hazard.decodedSummary}</p>
+              <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #f8fafc; padding: 6px; max-width: 280px;">
+                <div style="font-weight: 800; font-size: 13px; color: #38bdf8; margin-bottom: 4px; display: flex; items-center; gap: 4px;">
+                  ⚠️ ${hazard.title}
+                </div>
+                <div style="font-size: 11px; font-family: monospace; color: #fbbf24; font-weight: 700; margin-bottom: 6px; background: rgba(251, 191, 36, 0.15); padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(251, 191, 36, 0.3); display: inline-block;">
+                  ${hazard.type} • Valid: ${hazard.validUntil}
+                </div>
+                <div style="font-size: 11px; line-height: 1.45; color: #cbd5e1; background: rgba(15, 23, 42, 0.85); padding: 8px; border-radius: 8px; border: 1px solid #334155;">
+                  ${hazard.decodedSummary}
+                </div>
               </div>
             `);
 
             sigmetLayersRef.current.push(poly);
           }
         });
-      } else {
-        const depLatLng = await getAirportCoords(depAirport);
-        const arrLatLng = await getAirportCoords(arrAirport);
-        if (depLatLng && arrLatLng && isMounted) {
-          const midLat = (depLatLng[0] + arrLatLng[0]) / 2;
-          const midLng = (depLatLng[1] + arrLatLng[1]) / 2;
-          const polygonCoords: [number, number][] = [
-            [midLat + 0.7, midLng - 0.95],
-            [midLat + 0.8, midLng + 0.95],
-            [midLat - 0.7, midLng + 0.95],
-            [midLat - 0.8, midLng - 0.95],
-          ];
-          const sigmet = L.polygon(polygonCoords, {
-            color: "#f43f5e",
-            fillColor: "#be123c",
-            fillOpacity: 0.25,
-            weight: 2,
-            dashArray: "4, 4",
-          }).addTo(activeMap);
-          sigmetLayersRef.current.push(sigmet);
-        }
       }
     }
 
@@ -467,8 +452,8 @@ export default function BriefingMap({
 
     filteredAlerts.forEach((alert) => {
       const isSigmet = alert.type === "SIGMET";
-      const isTurb = alert.subtype === "TURB" || alert.text.includes("turbulence");
-      const isIce = alert.subtype === "ICE" || alert.text.includes("icing");
+      const isTurb = alert.subtype === "TURB" || alert.subtype === "TURBULENCE" || alert.text.includes("turbulence");
+      const isIce = alert.subtype === "ICE" || alert.subtype === "ICING" || alert.text.includes("icing");
       const isConvective = alert.subtype === "CONVECTIVE" || alert.text.includes("CONVECTIVE");
 
       const bgColor = isSigmet || isConvective
@@ -477,7 +462,7 @@ export default function BriefingMap({
         ? "bg-amber-500"
         : isIce
         ? "bg-cyan-500"
-        : "bg-indigo-500";
+        : "bg-sky-500";
 
       const icon = L.divIcon({
         className: "custom-alert-marker",
@@ -495,11 +480,11 @@ export default function BriefingMap({
 
       const marker = L.marker([alert.lat, alert.lng], { icon }).addTo(map);
       marker.bindPopup(`
-        <div class="text-xs p-1 font-sans max-w-[220px]">
-          <span class="px-1.5 py-0.5 text-[9px] font-bold rounded ${bgColor} text-slate-950 uppercase">
+        <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #f8fafc; padding: 6px; max-width: 260px;">
+          <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #38bdf8; background: rgba(56, 189, 248, 0.15); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.3); display: inline-block; margin-bottom: 6px;">
             ${alert.type} ${alert.subtype || ""}
-          </span>
-          <p class="text-slate-200 mt-2 font-mono text-[11px] leading-relaxed">${alert.text}</p>
+          </div>
+          <p style="font-size: 11px; line-height: 1.45; color: #e2e8f0; font-family: monospace; background: rgba(15, 23, 42, 0.85); padding: 8px; border-radius: 8px; border: 1px solid #334155; margin: 0;">${alert.text}</p>
         </div>
       `);
       alertMarkersRef.current.push(marker);

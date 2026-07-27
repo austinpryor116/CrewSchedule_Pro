@@ -233,10 +233,10 @@ export default function LogbookStudio() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-extrabold text-white flex items-center gap-2.5">
-            <BookOpen className="w-7 h-7 text-indigo-400" />
+            <BookOpen className="w-7 h-7 text-sky-400" />
             Pilot Electronic Logbook Studio
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-1 font-medium">
             Automated flight logging from roster schedules. Export formatted logs directly to LogTen Pro, ForeFlight, or custom REST APIs.
           </p>
         </div>
@@ -244,7 +244,7 @@ export default function LogbookStudio() {
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={autoGenerateLogbookFromRoster}
-            className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-600/20 transition cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
             <span>Sync & Auto-Populate Roster</span>
@@ -260,7 +260,7 @@ export default function LogbookStudio() {
 
           <button
             onClick={openNewModal}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-bold rounded-xl transition cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-sky-300 hover:text-white border border-sky-500/30 text-xs font-bold rounded-xl transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>+ Manual Entry</span>
@@ -271,68 +271,68 @@ export default function LogbookStudio() {
       {/* Logbook Statistics Dashboard */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* Total Flight Time */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 backdrop-blur-md">
+        <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-3.5 shadow-xl">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider">Total Flight Time</span>
-            <Clock className="w-4 h-4 text-indigo-400" />
+            <Clock className="w-4 h-4 text-sky-400" />
           </div>
           <p className="text-xl font-black text-white">{(totals.totalBlockMins / 60).toFixed(1)}h</p>
-          <span className="text-[10px] text-slate-500 font-mono">{logbookEntries.length} logged flight leg(s)</span>
+          <span className="text-[10px] text-slate-400 font-mono">{logbookEntries.length} logged flight leg(s)</span>
         </div>
 
         {/* PIC Time */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 backdrop-blur-md">
+        <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-3.5 shadow-xl">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider">PIC Hours</span>
             <Award className="w-4 h-4 text-emerald-400" />
           </div>
           <p className="text-xl font-black text-emerald-400">{(totals.picMins / 60).toFixed(1)}h</p>
-          <span className="text-[10px] text-slate-500 font-mono">Captain / Command</span>
+          <span className="text-[10px] text-slate-400 font-mono">Captain / Command</span>
         </div>
 
         {/* SIC Time */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 backdrop-blur-md">
+        <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-3.5 shadow-xl">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider">SIC Hours</span>
             <Plane className="w-4 h-4 text-cyan-400" />
           </div>
           <p className="text-xl font-black text-cyan-400">{(totals.sicMins / 60).toFixed(1)}h</p>
-          <span className="text-[10px] text-slate-500 font-mono">First Officer</span>
+          <span className="text-[10px] text-slate-400 font-mono">First Officer</span>
         </div>
 
         {/* Night Time */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 backdrop-blur-md">
+        <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-3.5 shadow-xl">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider">Night Flight</span>
-            <Moon className="w-4 h-4 text-purple-400" />
+            <Moon className="w-4 h-4 text-cyan-400" />
           </div>
-          <p className="text-xl font-black text-purple-400">{(totals.nightMins / 60).toFixed(1)}h</p>
-          <span className="text-[10px] text-slate-500 font-mono">{totals.landingsNight} night landing(s)</span>
+          <p className="text-xl font-black text-cyan-400">{(totals.nightMins / 60).toFixed(1)}h</p>
+          <span className="text-[10px] text-slate-400 font-mono">{totals.landingsNight} night landing(s)</span>
         </div>
 
         {/* Instrument Time */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 backdrop-blur-md">
+        <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-3.5 shadow-xl">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider">Actual Instrument</span>
             <Compass className="w-4 h-4 text-amber-400" />
           </div>
           <p className="text-xl font-black text-amber-400">{(totals.instMins / 60).toFixed(1)}h</p>
-          <span className="text-[10px] text-slate-500 font-mono">{totals.approaches} IFR approach(es)</span>
+          <span className="text-[10px] text-slate-400 font-mono">{totals.approaches} IFR approach(es)</span>
         </div>
 
         {/* Total Landings */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 backdrop-blur-md">
+        <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-3.5 shadow-xl">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider">LogTen Pro Status</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
           <p className="text-sm font-extrabold text-emerald-400 mt-1">Ready for Export</p>
-          <span className="text-[10px] text-slate-500 font-mono">100% Schema Matched</span>
+          <span className="text-[10px] text-slate-400 font-mono">100% Schema Matched</span>
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 shadow-xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-4 shadow-xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -340,7 +340,7 @@ export default function LogbookStudio() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search flight #, station, tail #..."
-            className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
           />
         </div>
 
@@ -349,7 +349,7 @@ export default function LogbookStudio() {
           <select
             value={filterAircraft}
             onChange={(e) => setFilterAircraft(e.target.value)}
-            className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500 cursor-pointer"
+            className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 font-mono focus:outline-none focus:border-sky-500 cursor-pointer"
           >
             <option value="all">All Aircraft Types</option>
             {aircraftTypes.map((t) => (
@@ -363,7 +363,7 @@ export default function LogbookStudio() {
           <select
             value={filterMonth}
             onChange={(e) => setFilterMonth(e.target.value)}
-            className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500 cursor-pointer"
+            className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500 cursor-pointer"
           >
             <option value="all">All Months</option>
             {monthsList.map((m) => (
@@ -386,7 +386,7 @@ export default function LogbookStudio() {
       </div>
 
       {/* Logbook Entries Table */}
-      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl backdrop-blur-md">
+      <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -406,23 +406,23 @@ export default function LogbookStudio() {
                 <th className="py-3 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-850 font-mono text-slate-300">
+            <tbody className="divide-y divide-slate-800/80 font-mono text-slate-300">
               {filteredEntries.length > 0 ? (
                 filteredEntries.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-800/40 transition">
-                    <td className="py-3 px-4 font-bold text-slate-200 whitespace-nowrap">{e.date}</td>
-                    <td className="py-3 px-3 font-extrabold text-indigo-300 whitespace-nowrap">{e.flightNumber}</td>
+                  <tr key={e.id} className="hover:bg-slate-800/50 transition">
+                    <td className="py-3 px-4 font-bold text-white whitespace-nowrap">{e.date}</td>
+                    <td className="py-3 px-3 font-extrabold text-sky-400 whitespace-nowrap">{e.flightNumber}</td>
                     <td className="py-3 px-3 whitespace-nowrap">
                       <span className="text-slate-200 font-bold">{e.tailNumber}</span>{" "}
-                      <span className="text-slate-500 text-[10px]">({e.aircraftType})</span>
+                      <span className="text-slate-400 text-[10px]">({e.aircraftType})</span>
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap">
                       <span className="font-bold text-emerald-400">{e.depAirport}</span>
                       <span className="text-slate-500 mx-1">➔</span>
                       <span className="font-bold text-cyan-400">{e.arrAirport}</span>
-                      <span className="text-[10px] text-slate-500 ml-1.5">({e.outTime}-{e.inTime})</span>
+                      <span className="text-[10px] text-slate-400 ml-1.5">({e.outTime}-{e.inTime})</span>
                     </td>
-                    <td className="py-3 px-3 text-right font-extrabold text-slate-100 whitespace-nowrap">
+                    <td className="py-3 px-3 text-right font-extrabold text-white whitespace-nowrap">
                       {(e.blockMinutes / 60).toFixed(1)}h
                     </td>
                     <td className="py-3 px-3 text-right text-emerald-400 font-bold whitespace-nowrap">
@@ -431,7 +431,7 @@ export default function LogbookStudio() {
                     <td className="py-3 px-3 text-right text-cyan-400 font-bold whitespace-nowrap">
                       {e.sicMinutes > 0 ? `${(e.sicMinutes / 60).toFixed(1)}h` : "-"}
                     </td>
-                    <td className="py-3 px-3 text-right text-purple-400 whitespace-nowrap">
+                    <td className="py-3 px-3 text-right text-cyan-400 whitespace-nowrap">
                       {e.nightMinutes > 0 ? `${(e.nightMinutes / 60).toFixed(1)}h` : "-"}
                     </td>
                     <td className="py-3 px-3 text-right text-amber-400 whitespace-nowrap">
@@ -447,7 +447,7 @@ export default function LogbookStudio() {
                     </td>
                     <td className="py-3 px-3 text-center whitespace-nowrap">
                       {e.isAutoFilled ? (
-                        <span className="px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold">
+                        <span className="px-2 py-0.5 rounded bg-sky-950/80 border border-sky-500/30 text-sky-300 text-[10px] font-bold">
                           Roster
                         </span>
                       ) : (
@@ -482,7 +482,7 @@ export default function LogbookStudio() {
                     <BookOpen className="w-10 h-10 text-slate-600 mx-auto mb-3" />
                     <p className="text-sm font-bold text-slate-300">No Logbook Entries Found</p>
                     <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                      Click <strong className="text-indigo-400">Sync & Auto-Populate Roster</strong> above to automatically parse completed schedule flights into your logbook.
+                      Click <strong className="text-sky-400">Sync & Auto-Populate Roster</strong> above to automatically parse completed schedule flights into your logbook.
                     </p>
                   </td>
                 </tr>
@@ -524,7 +524,7 @@ export default function LogbookStudio() {
                     onClick={() => setExportFormat(tab.id as any)}
                     className={`flex-1 py-2 flex items-center justify-center gap-1.5 rounded-lg transition cursor-pointer ${
                       exportFormat === tab.id
-                        ? "bg-indigo-600 text-white shadow-sm"
+                        ? "bg-sky-600 text-white shadow-sm"
                         : "text-slate-400 hover:text-slate-200"
                     }`}
                   >
@@ -575,7 +575,7 @@ export default function LogbookStudio() {
                   Structured REST JSON Payload for automated third-party logbook API sync or custom webhook integrations.
                 </p>
 
-                <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 max-h-48 overflow-y-auto font-mono text-[10px] text-indigo-300 select-all scrollbar-thin">
+                <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 max-h-48 overflow-y-auto font-mono text-[10px] text-sky-300 select-all scrollbar-thin">
                   <pre className="whitespace-pre-wrap">
                     {JSON.stringify(
                       {
@@ -617,7 +617,7 @@ export default function LogbookStudio() {
                       setApiSynced(true);
                       setTimeout(() => setApiSynced(false), 3000);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 transition cursor-pointer"
+                    className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-sky-600/20 transition cursor-pointer"
                   >
                     <Send className="w-4 h-4" />
                     <span>{apiSynced ? "Sync Triggered (200 OK)" : "Trigger Webhook API Sync"}</span>
@@ -656,7 +656,7 @@ export default function LogbookStudio() {
                   type="date"
                   value={formData.date || ""}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-sky-500"
                   required
                 />
               </div>
@@ -667,7 +667,7 @@ export default function LogbookStudio() {
                   type="text"
                   value={formData.flightNumber || ""}
                   onChange={(e) => setFormData({ ...formData, flightNumber: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-sky-500"
                   required
                 />
               </div>

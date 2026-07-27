@@ -42,10 +42,10 @@ export default function OpenTimeOverlay() {
 
   if (openSequences.length === 0) {
     return (
-      <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center text-center h-full min-h-[400px]">
-        <Sparkles className="w-12 h-12 text-slate-700 stroke-1 mb-3 animate-pulse" />
-        <h3 className="text-lg font-bold text-slate-400">No Open Sequences Loaded</h3>
-        <p className="text-xs text-slate-500 max-w-[260px] mt-1.5 leading-relaxed font-sans">
+      <div className="bg-[#151c2c] border border-slate-700/80 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center text-center h-full min-h-[400px]">
+        <Sparkles className="w-12 h-12 text-slate-500 stroke-1 mb-3 animate-pulse" />
+        <h3 className="text-lg font-bold text-white">No Open Sequences Loaded</h3>
+        <p className="text-xs text-slate-400 max-w-[260px] mt-1.5 leading-relaxed font-sans">
           To simulate pickups, first copy/paste or load the **N4 Open Time** PDF log in the **Parser Studio** tab.
         </p>
       </div>
@@ -55,43 +55,43 @@ export default function OpenTimeOverlay() {
   const simulatedCount = simulatedIds.length;
 
   return (
-    <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-2xl flex flex-col h-[65vh] lg:h-[700px] overflow-hidden">
+    <div className="bg-[#151c2c] border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col h-[65vh] lg:h-[700px] overflow-hidden">
       {/* Header and Grid Toggle */}
       <div className="flex items-center justify-between pb-4 border-b border-slate-800">
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Award className="w-5 h-5 text-amber-500" />
+            <Award className="w-5 h-5 text-amber-400" />
             Open Time Marketplace
           </h2>
           <p className="text-xs text-slate-400 font-sans mt-0.5">
-            {openSequences.length} open routes out of ORD
+            {openSequences.length} open routes active
           </p>
         </div>
 
         {/* Calendar Grid Toggle */}
         <button
           onClick={() => setShowOverlay(!showOverlay)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition duration-150 select-none ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition duration-150 select-none cursor-pointer ${
             showOverlay
-              ? "bg-indigo-600/30 border-indigo-500/50 text-indigo-300"
-              : "bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200"
+              ? "bg-sky-600/30 border-sky-500/50 text-sky-300 font-bold"
+              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
           }`}
           title="Toggle visibility of ghost sequences directly on the calendar grid"
         >
-          {showOverlay ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+          {showOverlay ? <Eye className="w-4 h-4 text-sky-400" /> : <EyeOff className="w-4 h-4 text-slate-500" />}
           Grid Overlay
         </button>
       </div>
 
       {/* Simulator Summary (if active) */}
       {simulatedCount > 0 && (
-        <div className="my-3 p-3 bg-gradient-to-r from-amber-500/10 to-indigo-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between text-xs animate-pulse">
+        <div className="my-3 p-3 bg-gradient-to-r from-amber-500/10 to-sky-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between text-xs animate-pulse">
           <span className="text-amber-300 font-semibold font-sans">
             Simulating {simulatedCount} picked-up sequence(s) (+1.5x Premium)
           </span>
           <button
             onClick={clearSimulated}
-            className="text-[10px] text-slate-400 hover:text-rose-400 font-bold underline"
+            className="text-[10px] text-slate-400 hover:text-rose-400 font-bold underline cursor-pointer"
           >
             Clear All
           </button>
@@ -99,7 +99,7 @@ export default function OpenTimeOverlay() {
       )}
 
       {/* Filters */}
-      <div className="flex gap-1.5 overflow-x-auto py-3 border-b border-slate-850 scrollbar-none text-[10px] font-bold uppercase tracking-wider shrink-0 font-mono">
+      <div className="flex gap-1.5 overflow-x-auto py-3 border-b border-slate-800 scrollbar-none text-[10px] font-bold uppercase tracking-wider shrink-0 font-mono">
         {(["all", "fits", "simulated", "conflicts"] as const).map((f) => {
           const count =
             f === "all"
@@ -114,10 +114,10 @@ export default function OpenTimeOverlay() {
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-xl border transition shrink-0 ${
+              className={`px-3 py-1.5 rounded-xl border transition shrink-0 cursor-pointer ${
                 filter === f
-                  ? "bg-indigo-600 border-indigo-500 text-white shadow"
-                  : "bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                  ? "bg-sky-600 border-sky-500 text-white font-bold shadow-sm"
+                  : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
               }`}
             >
               {f === "fits" ? "Fits" : f} ({count})

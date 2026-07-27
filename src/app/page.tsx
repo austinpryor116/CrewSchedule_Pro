@@ -12,6 +12,7 @@ import BriefingView from "../components/Briefing/BriefingView";
 import RevisionStudio from "../components/RevisionHistory/RevisionStudio";
 import LogbookStudio from "../components/Logbook/LogbookStudio";
 import PortalBrowserStudio from "../components/PortalBrowser/PortalBrowserStudio";
+import MacroActionBar from "../components/MacroActionBar";
 
 import {
   Calendar as CalendarIcon,
@@ -32,7 +33,8 @@ import {
   BookOpen,
   Globe,
   X,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Layers,
 } from "lucide-react";
 
 export default function Home() {
@@ -44,6 +46,7 @@ export default function Home() {
   const loadDemoData = useCrewStore((state) => state.loadDemoData);
   const clearAll = useCrewStore((state) => state.clearAll);
   const sequences = useCrewStore((state) => state.sequences);
+  const openSequences = useCrewStore((state) => state.openSequences);
   const vacations = useCrewStore((state) => state.vacations);
   const rosterMetrics = useCrewStore((state) => state.getRosterMetrics)();
   const selectedSequenceId = useCrewStore((state) => state.selectedSequenceId);
@@ -62,9 +65,9 @@ export default function Home() {
 
   if (!isHydrated) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-indigo-400 font-mono text-sm">
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-sky-400 font-mono text-sm">
         <div className="flex flex-col items-center gap-4">
-          <RefreshCwIcon className="w-8 h-8 animate-spin text-indigo-500" />
+          <RefreshCwIcon className="w-8 h-8 animate-spin text-sky-500" />
           <span>INITIALIZING CREWSCHEDULE PRO...</span>
         </div>
       </div>
@@ -75,6 +78,7 @@ export default function Home() {
 
   const navItems = [
     { id: "calendar", name: "Schedule / Calendar", icon: CalendarIcon },
+    { id: "opentime", name: "Open Time Roster", icon: Layers, isSpecialOpenTime: true },
     { id: "briefing", name: "Pilot Briefing", icon: Plane },
     { id: "portal", name: "Live Portal & Extractor", icon: Globe },
     { id: "logbook", name: "Pilot Logbook Studio", icon: BookOpen },
@@ -93,22 +97,22 @@ export default function Home() {
         }`}
       >
         <aside
-          className={`bg-slate-900/40 border-r border-slate-800/80 flex flex-col justify-between shrink-0 transition-all duration-300 ease-in-out h-full relative ${
+          className={`bg-[#111827] border-r border-slate-800 flex flex-col justify-between shrink-0 transition-all duration-300 ease-in-out h-full relative ${
             isExpanded ? "w-80 p-6" : "w-20 py-6 px-3.5"
           }`}
         >
           <div className="space-y-6 overflow-y-auto scrollbar-thin pr-1">
             {/* Logo Brand */}
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/20 shrink-0">
+              <div className="p-2.5 bg-gradient-to-tr from-sky-500 to-cyan-500 rounded-2xl shadow-md shadow-sky-500/30 shrink-0">
                 <Plane className="w-6 h-6 text-white transform -rotate-45" />
               </div>
               {isExpanded && (
                 <div>
-                  <h2 className="text-lg font-black tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-400 bg-clip-text text-transparent">
+                  <h2 className="text-lg font-black tracking-tight text-white">
                     CrewSchedule Pro
                   </h2>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                     Professional Suite
                   </p>
                 </div>
@@ -119,22 +123,40 @@ export default function Home() {
             <nav className="space-y-1.5">
               {navItems.map((tab) => {
                 const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
+                const isActive = tab.isSpecialOpenTime
+                  ? activeTab === "calendar" && selectedSequenceId === "open-time"
+                  : activeTab === tab.id;
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => {
+                      if (tab.isSpecialOpenTime) {
+                        setActiveTab("calendar");
+                        setSelectedSequenceId("open-time");
+                      } else {
+                        setActiveTab(tab.id);
+                      }
+                    }}
                     className={`w-full flex items-center rounded-2xl text-sm font-semibold transition-all duration-200 text-left cursor-pointer ${
                       isExpanded ? "px-4 py-3 gap-3" : "p-3 justify-center"
                     } ${
                       isActive
-                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10 border-l-4 border-indigo-400"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+                        ? "bg-amber-600 text-white shadow-md shadow-amber-600/30 border-l-4 border-amber-300 font-bold"
+                        : "text-slate-300 hover:text-white hover:bg-slate-800/80"
                     }`}
                     title={!isExpanded ? tab.name : undefined}
                   >
-                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-white" : "text-slate-500"}`} />
-                    {isExpanded && <span className="truncate">{tab.name}</span>}
+                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-white" : tab.isSpecialOpenTime ? "text-amber-400" : "text-slate-400"}`} />
+                    {isExpanded && (
+                      <span className="truncate flex items-center justify-between w-full">
+                        <span>{tab.name}</span>
+                        {tab.isSpecialOpenTime && openSequences.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-extrabold border border-amber-500/30">
+                            {openSequences.length}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -142,13 +164,13 @@ export default function Home() {
 
             {/* Active Roster Statistics Quick Summary */}
             {isExpanded && (
-              <div className="bg-slate-950/60 border border-slate-850 rounded-2xl p-4 space-y-3 font-mono text-xs animate-fadeIn">
-                <div className="flex justify-between items-center pb-2 border-b border-slate-900">
-                  <p className="text-[10px] text-slate-500 font-sans font-black uppercase tracking-wider">
+              <div className="bg-[#151c2c] border border-slate-700/80 rounded-2xl p-4 space-y-3 font-mono text-xs animate-fadeIn shadow-lg">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-700/80">
+                  <p className="text-[10px] text-slate-400 font-sans font-black uppercase tracking-wider">
                     Roster & Block Metrics
                   </p>
                   {rosterMetrics.overtimeTripsCount > 0 && (
-                    <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] font-bold">
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-bold">
                       {rosterMetrics.overtimeTripsCount} OT
                     </span>
                   )}
@@ -156,40 +178,40 @@ export default function Home() {
                 
                 <div className="space-y-2 text-[11px]">
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-400 font-sans flex items-center gap-1.5">
-                      <Award className="w-3.5 h-3.5 text-indigo-400" /> Trips Loaded:
+                    <span className="text-slate-300 font-sans flex items-center gap-1.5 font-semibold">
+                      <Award className="w-3.5 h-3.5 text-sky-400" /> Trips Loaded:
                     </span>
-                    <span className="font-bold text-slate-200">{rosterMetrics.totalSequencesCount}</span>
+                    <span className="font-bold text-white">{rosterMetrics.totalSequencesCount}</span>
                   </div>
                   {vacations.length > 0 && (
                     <div className="flex justify-between items-center text-emerald-400 font-sans">
                       <span className="flex items-center gap-1.5"><Sun className="w-3.5 h-3.5 text-emerald-400" /> Vacation:</span>
-                      <span className="font-bold text-[10px] bg-emerald-950/80 border border-emerald-500/30 px-1.5 py-0.5 rounded text-emerald-300">Aug 01-07</span>
+                      <span className="font-bold text-[10px] bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded text-emerald-300">Aug 01-07</span>
                     </div>
                   )}
                   {droppedSeqsCount > 0 && (
                     <div className="flex justify-between items-center text-rose-400 font-sans">
                       <span className="flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5 text-rose-400" /> Dropped (DTS):</span>
-                      <span className="font-bold text-[10px] bg-rose-950/80 border border-rose-500/30 px-1.5 py-0.5 rounded text-rose-300">{droppedSeqsCount} Seq</span>
+                      <span className="font-bold text-[10px] bg-rose-950/80 border border-rose-500/40 px-1.5 py-0.5 rounded text-rose-300">{droppedSeqsCount} Seq</span>
                     </div>
                   )}
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-400 font-sans flex items-center gap-1.5">
+                    <span className="text-slate-300 font-sans flex items-center gap-1.5 font-semibold">
                       <Clock className="w-3.5 h-3.5 text-emerald-400" /> Flown Block:
                     </span>
                     <span className="font-bold text-emerald-400">{rosterMetrics.flownBlockHours.toFixed(1)}h</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-400 font-sans flex items-center gap-1.5">
+                    <span className="text-slate-300 font-sans flex items-center gap-1.5 font-semibold">
                       <Clock className="w-3.5 h-3.5 text-amber-400" /> To Be Flown:
                     </span>
                     <span className="font-bold text-amber-400">{rosterMetrics.toBeFlownBlockHours.toFixed(1)}h</span>
                   </div>
-                  <div className="flex justify-between items-center border-t border-slate-900/60 pt-1.5">
-                    <span className="text-slate-400 font-sans flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-indigo-400" /> Total Scheduled:
+                  <div className="flex justify-between items-center border-t border-slate-700/80 pt-1.5">
+                    <span className="text-slate-300 font-sans flex items-center gap-1.5 font-semibold">
+                      <Clock className="w-3.5 h-3.5 text-sky-400" /> Total Scheduled:
                     </span>
-                    <span className="font-bold text-slate-200">{rosterMetrics.totalBlockHours.toFixed(1)}h</span>
+                    <span className="font-bold text-white">{rosterMetrics.totalBlockHours.toFixed(1)}h</span>
                   </div>
                 </div>
               </div>
@@ -197,19 +219,19 @@ export default function Home() {
           </div>
 
           {/* Global Demo Actions and Collapse/Pin Panel */}
-          <div className="space-y-4 pt-4 border-t border-slate-800/60">
+          <div className="space-y-4 pt-4 border-t border-slate-800">
             {isExpanded && (
               <div className="space-y-2 animate-fadeIn">
                 <button
                   onClick={loadDemoData}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 text-indigo-300 hover:text-white border border-indigo-500/20 hover:border-indigo-500/30 rounded-2xl font-bold transition text-xs shadow-sm cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 rounded-2xl font-bold transition text-xs shadow-sm cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   Load Demo Schedule
                 </button>
                 <button
                   onClick={clearAll}
-                  className="w-full flex items-center justify-center gap-2 py-2 bg-slate-900/50 hover:bg-slate-900 text-slate-500 hover:text-slate-400 border border-slate-800 rounded-2xl font-bold transition text-xs cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700 rounded-2xl font-bold transition text-xs cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   Clear Active Roster
@@ -223,7 +245,7 @@ export default function Home() {
             }`}>
               <button
                 onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                className={`p-2 bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl border border-slate-800 hover:border-slate-700 transition duration-150 flex items-center justify-center cursor-pointer ${
+                className={`p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition duration-150 flex items-center justify-center cursor-pointer ${
                   !isExpanded ? "w-full" : ""
                 }`}
                 title={isExpanded ? "Collapse Sidebar" : "Expand Sidebar"}
@@ -236,8 +258,8 @@ export default function Home() {
                   onClick={() => setIsSidebarPinned(!isSidebarPinned)}
                   className={`p-2 rounded-xl border transition duration-150 flex items-center justify-center cursor-pointer ${
                     isSidebarPinned
-                      ? "bg-indigo-600/20 text-indigo-400 border-indigo-500/30 hover:bg-indigo-600/30"
-                      : "bg-slate-900/80 hover:bg-slate-800 text-slate-500 hover:text-slate-400 border border-slate-800 hover:border-slate-700"
+                      ? "bg-sky-600/30 text-sky-300 border-sky-500/50"
+                      : "bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700"
                   }`}
                   title={isSidebarPinned ? "Unpin Sidebar" : "Pin Sidebar"}
                 >
@@ -250,25 +272,39 @@ export default function Home() {
       </div>
 
       {/* Main Workspace Frame */}
-      <main className="flex-grow flex flex-col h-full bg-slate-950 overflow-hidden relative">
+      <main className="flex-grow flex flex-col h-full bg-[#0b0f17] overflow-hidden relative">
         {/* Top bar header */}
-        <header className="h-14 lg:h-16 border-b border-slate-800/80 px-4 md:px-8 flex items-center justify-between bg-slate-950/80 backdrop-blur-xl shrink-0">
+        <header className="h-14 lg:h-16 border-b border-slate-800/80 px-4 md:px-8 flex items-center justify-between bg-[#111827]/90 backdrop-blur-md shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-xl shadow-md">
+              <div className="p-2 bg-gradient-to-tr from-sky-500 to-cyan-500 rounded-xl shadow-md">
                 <Plane className="w-4 h-4 text-white transform -rotate-45" />
               </div>
               <div>
                 <h1 className="text-base font-black tracking-tight text-white leading-none">
-                  CrewSchedule <span className="text-indigo-400 font-bold">Pro</span>
+                  CrewSchedule <span className="text-sky-400 font-bold">Pro</span>
                 </h1>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse" />
-            <span className="text-xs font-bold text-slate-300 hidden sm:inline">Workspace Connected</span>
+            <button
+              onClick={() => {
+                setActiveTab("calendar");
+                setSelectedSequenceId("open-time");
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/20 transition cursor-pointer"
+              title="Open the active Open Time Roster Board"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Open Time Board ({openSequences.length})</span>
+            </button>
+
+            <div className="h-4 w-px bg-slate-800 hidden sm:block" />
+
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/50 animate-pulse" />
+            <span className="text-xs font-bold text-slate-200 hidden sm:inline">Workspace Connected</span>
             <span className="text-[11px] font-bold text-slate-400 sm:hidden">Connected</span>
           </div>
         </header>
@@ -293,17 +329,22 @@ export default function Home() {
                     className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 lg:hidden"
                     onClick={() => setSelectedSequenceId(null)}
                   />
-                  <div className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] flex flex-col bg-slate-900 border-t border-slate-800 rounded-t-3xl p-5 shadow-2xl backdrop-blur-2xl lg:hidden animate-slideUp overflow-y-auto scrollbar-thin">
-                    <div className="flex justify-between items-center mb-3">
-                      <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto" />
+                  <div className="fixed inset-x-0 bottom-0 z-50 h-[92vh] max-h-[92vh] flex flex-col bg-[#151c2c] border-t border-slate-700/80 rounded-t-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-2xl lg:hidden animate-slideUp overflow-hidden">
+                    <div className="flex justify-between items-center pb-3 mb-3 border-b border-slate-700/80 shrink-0">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-1 bg-sky-500 rounded-full" />
+                        <span className="text-sm font-black text-white">Trip & Schedule Inspector</span>
+                      </div>
                       <button
                         onClick={() => setSelectedSequenceId(null)}
-                        className="p-1.5 text-slate-400 hover:text-white rounded-xl bg-slate-800 transition cursor-pointer absolute right-4 top-4"
+                        className="p-1.5 text-slate-300 hover:text-white rounded-xl bg-slate-800 border border-slate-700 transition cursor-pointer"
                       >
                         <X className="w-5 h-5" />
                       </button>
                     </div>
-                    <CalendarSidebar />
+                    <div className="flex-grow overflow-y-auto scrollbar-thin">
+                      <CalendarSidebar />
+                    </div>
                   </div>
                 </>
               )}
@@ -330,7 +371,7 @@ export default function Home() {
             <div className="fixed inset-x-0 bottom-0 z-50 max-h-[80vh] bg-slate-900 border-t border-slate-800 rounded-t-3xl p-6 shadow-2xl backdrop-blur-2xl lg:hidden animate-slideUp overflow-y-auto">
               <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+                  <SlidersHorizontal className="w-4 h-4 text-sky-400" />
                   Additional Aviation Tools
                 </h3>
                 <button
@@ -360,13 +401,13 @@ export default function Home() {
                       }}
                       className={`flex flex-col items-start p-3.5 rounded-2xl border text-left transition cursor-pointer ${
                         isActive
-                          ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                          ? "bg-sky-600 text-white border-sky-500 shadow-md"
                           : "bg-slate-950/80 text-slate-300 border-slate-800 hover:border-slate-700"
                       }`}
                     >
-                      <Icon className={`w-5 h-5 mb-2 ${isActive ? "text-white" : "text-indigo-400"}`} />
+                      <Icon className={`w-5 h-5 mb-2 ${isActive ? "text-white" : "text-sky-400"}`} />
                       <span className="text-xs font-bold">{item.name}</span>
-                      <span className={`text-[10px] mt-0.5 ${isActive ? "text-indigo-200" : "text-slate-500"}`}>
+                      <span className={`text-[10px] mt-0.5 ${isActive ? "text-sky-200" : "text-slate-500"}`}>
                         {item.desc}
                       </span>
                     </button>
@@ -380,7 +421,7 @@ export default function Home() {
                     loadDemoData();
                     setShowMoreMobileMenu(false);
                   }}
-                  className="flex-1 py-2.5 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30 rounded-xl text-xs font-bold"
+                  className="flex-1 py-2.5 bg-gradient-to-r from-sky-500/20 to-cyan-500/20 text-sky-300 border border-sky-500/30 rounded-xl text-xs font-bold"
                 >
                   Load Demo Data
                 </button>
@@ -422,10 +463,10 @@ export default function Home() {
                   }
                 }}
                 className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition duration-150 cursor-pointer ${
-                  isActive ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+                  isActive ? "text-sky-400 font-bold" : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? "text-indigo-400" : "text-slate-400"}`} />
+                <Icon className={`w-5 h-5 ${isActive ? "text-sky-400" : "text-slate-400"}`} />
                 <span className="text-[10px] tracking-tight">{item.name}</span>
               </button>
             );
