@@ -1,11 +1,98 @@
 import { SequenceTrip, PayRates, VacationPeriod } from "../types";
 
 export const DEFAULT_PAY_RATES: PayRates = {
-  hourlyRate: 172.5, // $/hr for a typical airline pilot/flight crew
+  hourlyRate: 215.0, // $/hr
+  overtimeMultiplier: 1.5,
   perDiemRate: 2.75, // $/hr for Time Away From Base
+  intlPerDiemRate: 3.50,
   minDailyGuaranteeMinutes: 300, // 5.0 hours minimum credit per day
-  tafbHours: 0, // Calculated dynamically
+  monthlyGuaranteeHours: 75.0,
+  deadheadPayRatio: 1.0,
+  holdingPayRate: 45.0,
+  tafbHours: 0,
+
+  crewRole: "FO",
+  equipment: "E175",
+  homeBase: "ORD",
+
+  legalityStandard: "FAR117",
+  minRestHours: 10.0,
+  maxFdpHours: 13.0,
+  maxDailyFlightHours: 9.0,
+  max28DayFlightHours: 100.0,
+
+  reportBufferMins: 45,
+  releaseBufferMins: 15,
 };
+
+export const DEFAULT_SUBSCRIBED_CALENDARS = [
+  {
+    id: "cal-opentime-48h",
+    name: "48-Hour Open Time Priority Feed",
+    url: "https://crewschedule.pro/feed/opentime-48h.ics",
+    color: "amber",
+    enabled: true,
+    lastSyncedAt: "Today at 18:00",
+    eventsCount: 1,
+  },
+  {
+    id: "cal-spouse-01",
+    name: "Spouse Schedule (B737 Captain)",
+    url: "https://crewschedule.pro/feed/spouse-9912.ics",
+    color: "purple",
+    enabled: true,
+    lastSyncedAt: "Today at 16:45",
+    eventsCount: 2,
+  },
+  {
+    id: "cal-personal-02",
+    name: "Personal Google Calendar",
+    url: "https://calendar.google.com/calendar/ical/user%40gmail.com/public/basic.ics",
+    color: "teal",
+    enabled: true,
+    lastSyncedAt: "Today at 17:10",
+    eventsCount: 1,
+  },
+];
+
+export const DEFAULT_PERSONAL_EVENTS = [
+  {
+    id: "evt-opentime-48h",
+    calendarId: "cal-opentime-48h",
+    title: "48-Hour Open Time Window (ORD)",
+    startDate: "2026-07-27",
+    endDate: "2026-07-29",
+    startTime: "00:00",
+    endTime: "23:59",
+    location: "ORD Base Open Time",
+    notes: "CBA 48-Hour Priority Open Time Pickup Window (July 27 - July 29)",
+    color: "amber",
+  },
+  {
+    id: "evt-01",
+    calendarId: "cal-spouse-01",
+    title: "Spouse Sequence #22841 (ORD->MIA)",
+    startDate: "2026-07-28",
+    endDate: "2026-07-29",
+    startTime: "08:00",
+    endTime: "19:00",
+    location: "MIA Layover",
+    notes: "Spouse pairing flight",
+    color: "purple",
+  },
+  {
+    id: "evt-02",
+    calendarId: "cal-personal-02",
+    title: "Family Dinner & Anniversary",
+    startDate: "2026-08-01",
+    endDate: "2026-08-01",
+    startTime: "18:30",
+    endTime: "21:00",
+    location: "Gibson's Steakhouse ORD",
+    notes: "Anniversary dinner",
+    color: "teal",
+  },
+];
 
 // Generate realistic sequences for July/August 2026
 export const MOCK_SEQUENCES: SequenceTrip[] = [

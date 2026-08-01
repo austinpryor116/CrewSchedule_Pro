@@ -92,12 +92,12 @@ export default function CompliancePanel() {
   return (
     <div className="space-y-6 animate-fadeIn font-sans">
       {/* Header */}
-      <div className="pb-6 border-b border-slate-800">
-        <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-2.5">
-          <ShieldCheck className="w-8 h-8 text-emerald-500" />
+      <div className="pb-6 border-b border-slate-200">
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+          <ShieldCheck className="w-8 h-8 text-emerald-600" />
           CBA & FAR Part 117 Audit
         </h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-600">
           Reconcile roster schedules against FAA Part 121 / 117 flight duty limitations and Envoy Air collective bargaining agreements.
         </p>
       </div>
@@ -105,13 +105,13 @@ export default function CompliancePanel() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Cumulative Limits */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-xl space-y-6">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-sky-400" />
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-sky-600" />
                 FAA Part 117 Cumulative Audits
               </h2>
-              <span className="text-[10px] text-slate-500 font-mono">Month Ending July 2026</span>
+              <span className="text-[10px] text-slate-600 font-mono">Month Ending July 2026</span>
             </div>
 
             <div className="space-y-5">
@@ -121,20 +121,20 @@ export default function CompliancePanel() {
                   <div key={rule.id} className="space-y-2">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-slate-300">{rule.name}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{rule.desc}</p>
+                        <p className="text-sm font-bold text-slate-900">{rule.name}</p>
+                        <p className="text-xs text-slate-600 mt-0.5">{rule.desc}</p>
                       </div>
                       <div className="text-left sm:text-right shrink-0">
-                        <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold rounded-lg text-[10px] uppercase">
+                        <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-950 font-bold rounded-lg text-[10px] uppercase">
                           {rule.status}
                         </span>
-                        <p className="text-xs font-mono font-bold text-slate-300 mt-1">
+                        <p className="text-xs font-mono font-bold text-slate-900 mt-1">
                           {rule.active.toFixed(2)} / {rule.limit} {rule.unit}
                         </p>
                       </div>
                     </div>
 
-                    <div className="relative w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-900">
+                    <div className="relative w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-300">
                       <div
                         style={{ width: `${percent}%` }}
                         className={`h-full rounded-full transition-all duration-500 ${
@@ -151,9 +151,9 @@ export default function CompliancePanel() {
 
         {/* Contractual & Rest Panel */}
         <div className="space-y-6">
-          <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-3xl p-6 shadow-xl space-y-6">
-            <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-sky-400" />
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-sky-600" />
               Envoy CBA Contract Checks
             </h2>
 
@@ -161,22 +161,22 @@ export default function CompliancePanel() {
               {cbaRules.map((rule, idx) => (
                 <div
                   key={idx}
-                  className="p-4 bg-slate-950/60 border border-slate-800/50 rounded-2xl space-y-2.5 hover:border-slate-700/50 transition duration-150"
+                  className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 hover:border-slate-300 transition duration-150"
                 >
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-300">{rule.name}</span>
+                    <span className="text-xs font-bold text-slate-900">{rule.name}</span>
                     <span
-                      className={`px-1.5 py-0.2 font-extrabold text-[8px] rounded uppercase border ${
+                      className={`px-2 py-0.5 font-black text-[9px] rounded uppercase border ${
                         rule.status === "Compliant"
-                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                          : "bg-slate-900 border-slate-800 text-slate-500"
+                          ? "bg-emerald-100 border-emerald-300 text-emerald-950"
+                          : "bg-slate-200 border-slate-300 text-slate-700"
                       }`}
                     >
                       {rule.status}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">{rule.desc}</p>
-                  <p className="text-[10px] text-sky-400 font-mono">{rule.detail}</p>
+                  <p className="text-xs text-slate-600 leading-relaxed font-medium">{rule.desc}</p>
+                  <p className="text-[11px] text-sky-700 font-mono font-bold">{rule.detail}</p>
                 </div>
               ))}
             </div>
@@ -185,15 +185,15 @@ export default function CompliancePanel() {
       </div>
 
       {/* Part 121 Fatigue Management Card */}
-      <div className="bg-gradient-to-r from-slate-900/80 to-sky-950/20 border border-slate-800/80 rounded-3xl p-6 shadow-xl flex items-center gap-4">
-        <div className="p-3.5 bg-sky-500/10 text-sky-400 rounded-2xl shrink-0">
+      <div className="bg-sky-50 border border-sky-200 rounded-3xl p-6 shadow-sm flex items-center gap-4">
+        <div className="p-3.5 bg-sky-100 text-sky-700 rounded-2xl shrink-0 border border-sky-300">
           <Moon className="w-6 h-6" />
         </div>
         <div className="space-y-1">
-          <h3 className="text-sm font-bold text-slate-200 flex items-center gap-1.5">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
             FAR 117.5 - Fatigue Countermeasures & Training
           </h3>
-          <p className="text-xs text-slate-500 leading-relaxed max-w-[700px]">
+          <p className="text-xs text-slate-700 leading-relaxed max-w-[700px] font-medium">
             Every flight crew member must undergo fatigue risk management training. In accordance with airline fatigue management systems, if you feel unfit for duty, you have the contractual right and FAR regulatory obligation to file a Fatigue Call.
           </p>
         </div>

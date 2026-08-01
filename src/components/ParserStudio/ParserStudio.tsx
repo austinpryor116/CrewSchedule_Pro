@@ -172,12 +172,12 @@ export default function ParserStudio() {
   return (
     <div className="space-y-6 animate-fadeIn font-sans">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800">
+      <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-200">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white bg-gradient-to-r from-sky-400 via-cyan-400 to-teal-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
             Monthly HI & Schedule Log Parser Studio
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-600">
             Upload your monthly HI schedule PDF, terminal logs, or N4 Open Time text to parse sequences, credit, vacation pay, and sick leave balances.
           </p>
         </div>
@@ -186,31 +186,31 @@ export default function ParserStudio() {
             <>
               <button
                 onClick={loadHI1Text}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition duration-200 text-xs font-semibold shadow-lg cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 rounded-xl transition duration-200 text-xs font-bold shadow-sm cursor-pointer"
               >
-                <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                <FileText className="w-3.5 h-3.5 text-emerald-600" />
                 July HI Log (HI1.pdf)
               </button>
               <button
                 onClick={loadAugText}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition duration-200 text-xs font-semibold shadow-lg cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 rounded-xl transition duration-200 text-xs font-bold shadow-sm cursor-pointer"
               >
-                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                <FileText className="w-3.5 h-3.5 text-amber-600" />
                 August HI Log (HI2.pdf)
               </button>
             </>
           ) : (
             <button
               onClick={loadN4Text}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition duration-200 text-xs font-semibold shadow-lg"
+              className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 rounded-xl transition duration-200 text-xs font-bold shadow-sm cursor-pointer"
             >
-              <FileText className="w-4 h-4 text-amber-400" />
+              <FileText className="w-4 h-4 text-amber-600" />
               Load N4 Open Time Sample
             </button>
           )}
           <button
             onClick={handleClear}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-300 border border-slate-800 rounded-xl transition duration-200 text-xs font-semibold"
+            className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-300 rounded-xl transition duration-200 text-xs font-bold cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />
             Clear
@@ -219,19 +219,19 @@ export default function ParserStudio() {
       </div>
 
       {/* Parse Mode Switcher */}
-      <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-sm text-xs font-semibold">
+      <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 max-w-sm text-xs font-bold">
         <button
           onClick={() => switchMode("roster")}
-          className={`flex-1 py-2 rounded-xl transition duration-150 ${
-            parseMode === "roster" ? "bg-sky-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+          className={`flex-1 py-2 rounded-xl transition duration-150 cursor-pointer ${
+            parseMode === "roster" ? "bg-sky-600 text-white shadow-sm" : "text-slate-700 hover:text-slate-900"
           }`}
         >
           Parse Roster Schedule (HI / HI1 / HI2)
         </button>
         <button
           onClick={() => switchMode("opentime")}
-          className={`flex-1 py-2 rounded-xl transition duration-150 ${
-            parseMode === "opentime" ? "bg-sky-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+          className={`flex-1 py-2 rounded-xl transition duration-150 cursor-pointer ${
+            parseMode === "opentime" ? "bg-sky-600 text-white shadow-sm" : "text-slate-700 hover:text-slate-900"
           }`}
         >
           Parse Open Time (N4)
@@ -246,8 +246,8 @@ export default function ParserStudio() {
         onClick={() => fileInputRef.current?.click()}
         className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 ${
           isDragOver
-            ? "border-sky-400 bg-sky-500/10 scale-[1.01]"
-            : "border-slate-800 hover:border-slate-700 bg-slate-900/40 hover:bg-slate-900/60"
+            ? "border-sky-600 bg-sky-50 scale-[1.01]"
+            : "border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 shadow-sm"
         }`}
       >
         <input
@@ -258,20 +258,20 @@ export default function ParserStudio() {
           className="hidden"
         />
         <div className="flex flex-col items-center justify-center space-y-2">
-          <div className="p-3 bg-sky-500/10 border border-sky-500/20 rounded-2xl text-sky-400">
+          <div className="p-3 bg-sky-100 border border-sky-300 rounded-2xl text-sky-700">
             <Upload className="w-6 h-6 animate-bounce" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-200">
+            <h3 className="text-sm font-bold text-slate-900">
               {uploadedFileName ? `Uploaded: ${uploadedFileName}` : "Drag & Drop your Monthly HI Log (.pdf, .txt)"}
             </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Supports <span className="text-sky-400 font-semibold">HI1.pdf</span>, <span className="text-sky-400 font-semibold">HI2.pdf</span>, <span className="text-sky-400 font-semibold">HSS.pdf</span>, or monospace text logs. Click to browse files.
+            <p className="text-xs text-slate-600 mt-1 font-medium">
+              Supports <span className="text-sky-700 font-bold">HI1.pdf</span>, <span className="text-sky-700 font-bold">HI2.pdf</span>, <span className="text-sky-700 font-bold">HSS.pdf</span>, or monospace text logs. Click to browse files.
             </p>
           </div>
           {isExtracting && (
-            <div className="flex items-center gap-2 text-xs text-sky-400 font-medium pt-2">
-              <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
+            <div className="flex items-center gap-2 text-xs text-sky-700 font-bold pt-2">
+              <span className="w-2 h-2 rounded-full bg-sky-600 animate-ping" />
               Extracting text and parsing PDF coordinates...
             </div>
           )}
@@ -281,13 +281,13 @@ export default function ParserStudio() {
       {/* Parser Workspace */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Input Panel */}
-        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col h-[650px]">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col h-[650px]">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-              <Clipboard className="w-5 h-5 text-sky-400" />
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Clipboard className="w-5 h-5 text-sky-600" />
               Raw Monospace Log Text
             </h2>
-            <span className="text-xs text-slate-500 font-mono">
+            <span className="text-xs text-slate-600 font-mono font-bold">
               {uploadedFileName || "Terminal Monospace Output"}
             </span>
           </div>
@@ -300,16 +300,16 @@ export default function ParserStudio() {
                 ? "Paste raw monthly HI schedule log text or drop your HI PDF file above..."
                 : "Paste raw N4 Open Time log text here..."
             }
-            className="w-full flex-grow bg-slate-950/80 border border-slate-800/80 focus:border-sky-500/80 focus:ring-1 focus:ring-sky-500/80 rounded-xl p-4 text-slate-300 font-mono text-xs leading-relaxed resize-none focus:outline-none transition duration-150 scrollbar-thin"
+            className="w-full flex-grow bg-slate-50 border border-slate-300 focus:border-sky-600 focus:ring-1 focus:ring-sky-600 rounded-xl p-4 text-slate-900 font-mono text-xs font-bold leading-relaxed resize-none focus:outline-none transition duration-150 scrollbar-thin"
           />
 
           <div className="mt-4 flex items-center justify-between">
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-600 font-mono font-bold">
               {inputText.length > 0 ? `${inputText.split("\n").length} lines extracted` : "No text input"}
             </span>
             <button
               onClick={handleManualParse}
-              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white rounded-xl font-bold shadow-lg shadow-sky-600/20 active:scale-95 transition-all text-sm cursor-pointer"
+              className="flex items-center gap-2 px-6 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-bold shadow-sm active:scale-95 transition-all text-sm cursor-pointer"
             >
               <Play className="w-4 h-4 fill-white" />
               Parse Schedule Log
@@ -318,94 +318,94 @@ export default function ParserStudio() {
         </div>
 
         {/* Output Panel */}
-        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 shadow-xl flex flex-col h-[650px]">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col h-[650px]">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-200 flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
               Parsed Schedule & Metadata Analysis
             </h2>
-            <span className="text-xs text-slate-500 font-mono">Structured Audit</span>
+            <span className="text-xs text-slate-600 font-mono font-bold">Structured Audit</span>
           </div>
 
-          <div className="flex-grow bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 overflow-y-auto scrollbar-thin flex flex-col">
+          <div className="flex-grow bg-slate-50 border border-slate-300 rounded-xl p-4 overflow-y-auto scrollbar-thin flex flex-col">
             {errorMsg && (
-              <div className="flex items-start gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-sm mb-4">
-                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-300 rounded-xl text-rose-950 text-sm mb-4">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600" />
                 <div>
                   <h4 className="font-bold">Parsing Issue</h4>
-                  <p className="mt-0.5 text-xs text-rose-400/90">{errorMsg}</p>
+                  <p className="mt-0.5 text-xs text-rose-900 font-medium">{errorMsg}</p>
                 </div>
               </div>
             )}
 
             {successMsg && (
-              <div className="flex items-start gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-sm mb-4">
-                <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-950 text-sm mb-4">
+                <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" />
                 <div>
                   <h4 className="font-bold">Parsing Success</h4>
-                  <p className="mt-0.5 text-xs text-emerald-400/90">{successMsg}</p>
+                  <p className="mt-0.5 text-xs text-emerald-900 font-medium">{successMsg}</p>
                 </div>
               </div>
             )}
 
             {/* Parsed Monthly HI Header Summary Card */}
             {parsedMetadata && (
-              <div className="mb-4 p-4 bg-slate-900/95 border border-sky-500/30 rounded-2xl shadow-xl space-y-3">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="mb-4 p-4 bg-white border border-slate-300 rounded-2xl shadow-sm space-y-3">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 bg-sky-500/10 border border-sky-500/20 rounded-xl text-sky-400">
+                    <div className="p-2 bg-sky-100 border border-sky-300 rounded-xl text-sky-700">
                       <User className="w-4 h-4" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                         {parsedMetadata.pilotName}
-                        <span className="px-2 py-0.5 bg-sky-950 text-sky-400 border border-sky-900/60 rounded text-[10px] font-mono">
+                        <span className="px-2 py-0.5 bg-sky-100 text-sky-900 border border-sky-300 rounded text-[10px] font-mono font-extrabold">
                           Seniority #{parsedMetadata.seniorityNum}
                         </span>
                       </h3>
-                      <p className="text-xs text-slate-400 font-mono mt-0.5">
+                      <p className="text-xs text-slate-600 font-mono mt-0.5 font-bold">
                         Base: {parsedMetadata.base} | Rank: {parsedMetadata.rank} | Equip: {parsedMetadata.equipment} | Emp #{parsedMetadata.empNum}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-1 border border-emerald-900/50 rounded-lg flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" />
+                    <span className="text-xs font-bold text-emerald-900 bg-emerald-100 px-2.5 py-1 border border-emerald-300 rounded-lg flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-700" />
                       {parsedMetadata.monthYearLabel}
                     </span>
                     {parsedMetadata.asOfDateStr && (
-                      <p className="text-[10px] text-slate-500 font-mono mt-1">As of: {parsedMetadata.asOfDateStr}</p>
+                      <p className="text-[10px] text-slate-600 font-mono mt-1 font-bold">As of: {parsedMetadata.asOfDateStr}</p>
                     )}
                   </div>
                 </div>
 
                 {/* Metrics Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
-                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
-                      <Award className="w-3 h-3 text-sky-400" /> Guarantee
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-600 text-[10px] font-sans font-bold">
+                      <Award className="w-3 h-3 text-sky-600" /> Guarantee
                     </div>
-                    <div className="text-slate-100 font-bold text-sm mt-0.5">{parsedMetadata.guaranteeHours.toFixed(2)} hrs</div>
+                    <div className="text-slate-900 font-bold text-sm mt-0.5">{parsedMetadata.guaranteeHours.toFixed(2)} hrs</div>
                   </div>
-                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
-                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
-                      <Clock className="w-3 h-3 text-emerald-400" /> Bid Sel Proj
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-600 text-[10px] font-sans font-bold">
+                      <Clock className="w-3 h-3 text-emerald-600" /> Bid Sel Proj
                     </div>
-                    <div className="text-emerald-400 font-bold text-sm mt-0.5">{parsedMetadata.bidSelProjHours.toFixed(2)} hrs</div>
+                    <div className="text-emerald-700 font-bold text-sm mt-0.5">{parsedMetadata.bidSelProjHours.toFixed(2)} hrs</div>
                   </div>
-                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
-                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
-                      <DollarSign className="w-3 h-3 text-amber-400" /> Vacation Pay
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-600 text-[10px] font-sans font-bold">
+                      <DollarSign className="w-3 h-3 text-amber-600" /> Vacation Pay
                     </div>
-                    <div className="text-amber-400 font-bold text-sm mt-0.5">
+                    <div className="text-amber-700 font-bold text-sm mt-0.5">
                       {parsedMetadata.vacationDaysCount} days {parsedMetadata.vacationCreditHours > 0 ? `(${parsedMetadata.vacationCreditHours.toFixed(2)}h)` : ""}
                     </div>
                   </div>
-                  <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl">
-                    <div className="flex items-center gap-1 text-slate-400 text-[10px] font-sans">
-                      <HeartPulse className="w-3 h-3 text-rose-400" /> Sick Avail
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="flex items-center gap-1 text-slate-600 text-[10px] font-sans font-bold">
+                      <HeartPulse className="w-3 h-3 text-rose-600" /> Sick Avail
                     </div>
-                    <div className="text-slate-100 font-bold text-sm mt-0.5">{parsedMetadata.availSickHours.toFixed(2)} hrs</div>
+                    <div className="text-slate-900 font-bold text-sm mt-0.5">{parsedMetadata.availSickHours.toFixed(2)} hrs</div>
                   </div>
                 </div>
               </div>
@@ -418,52 +418,52 @@ export default function ParserStudio() {
                     {(parsedOutput as SequenceTrip[]).map((seq, idx) => (
                       <div
                         key={seq.id || idx}
-                        className={`p-3.5 bg-slate-900/85 border rounded-xl transition duration-200 ${
+                        className={`p-3.5 border rounded-xl transition duration-200 ${
                           seq.isDropped
-                            ? "border-rose-900/40 bg-rose-950/10"
+                            ? "border-rose-300 bg-rose-50"
                             : seq.isOvertime
-                            ? "border-amber-900/40 bg-amber-950/10"
-                            : "border-slate-800 hover:border-slate-700/80"
+                            ? "border-amber-300 bg-amber-50"
+                            : "border-slate-200 bg-white hover:border-slate-300 shadow-sm"
                         }`}
                       >
                         <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-xs font-bold text-slate-100 flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
                             <span
                               className={`w-2.5 h-2.5 rounded-full ${
-                                seq.isDropped ? "bg-rose-500" : seq.isOvertime ? "bg-amber-500" : "bg-sky-500"
+                                seq.isDropped ? "bg-rose-600" : seq.isOvertime ? "bg-amber-600" : "bg-sky-600"
                               }`}
                             />
                             Seq {seq.sequenceNumber}
                             {seq.isDropped && (
-                              <span className="px-2 py-0.5 bg-rose-950 text-rose-400 border border-rose-900/60 rounded text-[10px] font-mono">
+                              <span className="px-2 py-0.5 bg-rose-100 text-rose-950 border border-rose-300 rounded text-[10px] font-mono font-bold">
                                 {seq.statusTag || "DROPPED"}
                               </span>
                             )}
                             {seq.isOvertime && !seq.isDropped && (
-                              <span className="px-2 py-0.5 bg-amber-950 text-amber-400 border border-amber-900/60 rounded text-[10px] font-mono">
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-950 border border-amber-300 rounded text-[10px] font-mono font-bold">
                                 OT / REASSIGNED
                               </span>
                             )}
                           </span>
-                          <span className="px-2 py-0.5 bg-sky-950/80 text-sky-400 border border-sky-900/50 rounded font-bold text-[10px]">
+                          <span className="px-2 py-0.5 bg-sky-100 text-sky-900 border border-sky-300 rounded font-bold text-[10px]">
                             {seq.base}
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-xs text-slate-400 font-mono">
+                        <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-xs text-slate-700 font-mono">
                           <div>
-                            Dates: <span className="text-slate-200 font-bold">{seq.startDate} to {seq.endDate}</span>
+                            Dates: <span className="text-slate-900 font-bold">{seq.startDate} to {seq.endDate}</span>
                           </div>
                           <div>
-                            Layovers: <span className="text-slate-200 font-bold">{seq.layoverCities.join(", ") || "None"}</span>
+                            Layovers: <span className="text-slate-900 font-bold">{seq.layoverCities.join(", ") || "None"}</span>
                           </div>
                           <div>
-                            Block: <span className="text-slate-200 font-bold">{(seq.totalBlockMinutes / 60).toFixed(2)} hrs</span>
+                            Block: <span className="text-slate-900 font-bold">{(seq.totalBlockMinutes / 60).toFixed(2)} hrs</span>
                           </div>
                           <div>
-                            Credit: <span className="text-emerald-400 font-bold">{(seq.totalCreditMinutes / 60).toFixed(2)} hrs</span>
+                            Credit: <span className="text-emerald-700 font-bold">{(seq.totalCreditMinutes / 60).toFixed(2)} hrs</span>
                           </div>
                           {seq.dropReason && (
-                            <div className="col-span-2 text-[11px] text-rose-400/90 font-sans mt-1 pt-1 border-t border-slate-800/60">
+                            <div className="col-span-2 text-[11px] text-rose-700 font-sans mt-1 pt-1 border-t border-slate-200 font-medium">
                               {seq.dropReason}
                             </div>
                           )}
@@ -476,29 +476,29 @@ export default function ParserStudio() {
                     {(parsedOutput as OpenSequence[]).map((seq, idx) => (
                       <div
                         key={seq.id || idx}
-                        className="p-3.5 bg-slate-900/85 border border-slate-800 rounded-xl hover:border-slate-700/80 transition duration-200"
+                        className="p-3.5 bg-white border border-slate-200 rounded-xl hover:border-slate-300 shadow-sm transition duration-200"
                       >
                         <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-xs font-bold text-slate-100 flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                          <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
                             Open Seq {seq.sequenceNumber}
                           </span>
-                          <span className="px-2 py-0.5 bg-amber-950/80 text-amber-400 border border-amber-900/50 rounded font-bold text-[10px]">
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-950 border border-amber-300 rounded font-bold text-[10px]">
                             OT
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-xs text-slate-400 font-mono">
+                        <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-xs text-slate-700 font-mono">
                           <div>
-                            Start: <span className="text-slate-200 font-bold">{seq.startDate} ({seq.reportTime})</span>
+                            Start: <span className="text-slate-900 font-bold">{seq.startDate} ({seq.reportTime})</span>
                           </div>
                           <div>
-                            End: <span className="text-slate-200 font-bold">{seq.endDate} ({seq.releaseTime})</span>
+                            End: <span className="text-slate-900 font-bold">{seq.endDate} ({seq.releaseTime})</span>
                           </div>
                           <div>
-                            Layovers: <span className="text-slate-200 font-bold">{seq.layoverDescription}</span>
+                            Layovers: <span className="text-slate-900 font-bold">{seq.layoverDescription}</span>
                           </div>
                           <div>
-                            Credit: <span className="text-amber-400 font-bold">{seq.creditHours.toFixed(2)} hrs</span>
+                            Credit: <span className="text-amber-700 font-bold">{seq.creditHours.toFixed(2)} hrs</span>
                           </div>
                         </div>
                       </div>
@@ -507,10 +507,10 @@ export default function ParserStudio() {
                 )}
 
                 {/* Import Action Controller */}
-                <div className="sticky bottom-0 bg-slate-950 p-4 border border-slate-800 rounded-2xl flex flex-col gap-3 shadow-2xl">
+                <div className="sticky bottom-0 bg-white p-4 border border-slate-300 rounded-2xl flex flex-col gap-3 shadow-md">
                   <button
                     onClick={handleImport}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-sky-600 hover:from-emerald-600 hover:to-sky-700 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-sm cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-bold shadow-sm active:scale-95 transition-all text-sm cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     {parseMode === "roster"
@@ -520,10 +520,10 @@ export default function ParserStudio() {
                 </div>
               </div>
             ) : (
-              <div className="flex-grow flex flex-col items-center justify-center text-slate-500 text-center py-12 px-6">
-                <HelpCircle className="w-12 h-12 text-slate-700 mb-3 animate-pulse" />
-                <p className="text-sm font-semibold">No parsed records yet</p>
-                <p className="text-xs text-slate-600 max-w-[280px] mt-1 leading-relaxed">
+              <div className="flex-grow flex flex-col items-center justify-center text-slate-600 text-center py-12 px-6">
+                <HelpCircle className="w-12 h-12 text-slate-400 mb-3 animate-pulse" />
+                <p className="text-sm font-bold text-slate-900">No parsed records yet</p>
+                <p className="text-xs text-slate-600 max-w-[280px] mt-1 leading-relaxed font-medium">
                   {parseMode === "roster"
                     ? "Drag & drop your monthly HI schedule PDF (HI1.pdf, HI2.pdf) or paste terminal output to analyze."
                     : "Paste or load sample N4 open sequence lists and click Parse."}

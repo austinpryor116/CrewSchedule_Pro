@@ -651,24 +651,71 @@ export function calculateSequenceTAFB(seq: SequenceTrip): number {
 }
 
 /**
- * Reconstructs a date string (YYYY-MM-DD) from a month ending abbreviation and day number
+ * Dynamically detects month and year from text (e.g. "13AUG", "AUG", "31AUG26", "MONTH ENDING 31AUG26")
  */
-function constructDateStr(monthEndingStr: string, dayNum: number): string {
-  // E.g., monthEndingStr = "31JUL26"
-  const m = monthEndingStr.match(/\d+([A-Z]{3})(\d{2})/i);
-  if (!m) return formatDate(new Date());
-  
-  const monthAbbr = m[1].toUpperCase();
-  const yearAbbr = m[2];
-  
+export function detectMonthFromText(text: string): { monthNum: number; monthAbbr: string; yearNum: number; monthEnding: string } {
   const months: Record<string, number> = {
     JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11
   };
-  
-  const monthIdx = months[monthAbbr] !== undefined ? months[monthAbbr] : 6;
-  const year = 2000 + parseInt(yearAbbr, 10);
-  
-  const d = new Date(year, monthIdx, dayNum);
+
+  // 1. Check for explicit "MONTH ENDING 31AUG26" or "31AUG26" or "13AUG"
+  const monthEndingMatch = text.match(/(?:MONTH ENDING\s+)?(\d{1,2})([A-Z]{3})(\d{2,4})?/i) || text.match(/\b(\d{1,2})([A-Z]{3})(\d{2,4})?\b/i);
+  if (monthEndingMatch) {
+    const abbr = monthEndingMatch[2].toUpperCase();
+    let yr = monthEndingMatch[3] ? parseInt(monthEndingMatch[3], 10) : new Date().getFullYear();
+    if (yr < 100) yr += 2000;
+
+    if (months[abbr] !== undefined) {
+      const mNum = months[abbr];
+      const lastDay = new Date(yr, mNum + 1, 0).getDate();
+      return { monthNum: mNum, monthAbbr: abbr, yearNum: yr, monthEnding: `${lastDay}${abbr}${String(yr).slice(-2)}` };
+    }
+  }
+
+  // 2. Check for month abbreviation anywhere in text (e.g. AUG, 13AUG, AUG26)
+  const abbrMatch = text.match(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b/i);
+  if (abbrMatch) {
+    const abbr = abbrMatch[1].toUpperCase();
+    if (months[abbr] !== undefined) {
+      const mNum = months[abbr];
+      const yr = new Date().getFullYear();
+      const lastDay = new Date(yr, mNum + 1, 0).getDate();
+      return { monthNum: mNum, monthAbbr: abbr, yearNum: yr, monthEnding: `${lastDay}${abbr}${String(yr).slice(-2)}` };
+    }
+  }
+
+  // 3. Fallback to current real month & year
+  const now = new Date();
+  const mNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const mNum = now.getMonth();
+  const abbr = mNames[mNum];
+  const yr = now.getFullYear();
+  const lastDay = new Date(yr, mNum + 1, 0).getDate();
+  return { monthNum: mNum, monthAbbr: abbr, yearNum: yr, monthEnding: `${lastDay}${abbr}${String(yr).slice(-2)}` };
+}
+
+/**
+ * Reconstructs a date string (YYYY-MM-DD) from a month ending abbreviation and day number
+ */
+function constructDateStr(monthEndingStr: string, dayNum: number): string {
+  // E.g., monthEndingStr = "31JUL26" or "31AUG26"
+  const m = monthEndingStr.match(/\d*([A-Z]{3})(\d{2,4})/i);
+  if (m) {
+    const monthAbbr = m[1].toUpperCase();
+    let yearNum = parseInt(m[2], 10);
+    if (yearNum < 100) yearNum += 2000;
+
+    const months: Record<string, number> = {
+      JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11
+    };
+
+    const monthIdx = months[monthAbbr] !== undefined ? months[monthAbbr] : new Date().getMonth();
+    const d = new Date(yearNum, monthIdx, dayNum);
+    return formatDate(d);
+  }
+
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), dayNum);
   return formatDate(d);
 }
 
@@ -857,7 +904,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
 
 
   // 1. Parse header info
-  let monthEnding = "31JUL26";
+  let monthEnding = "";
   let base = "ORD";
   let equipment = "E75E";
 
@@ -873,6 +920,12 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       base = piMatch[1].toUpperCase();
       equipment = piMatch[2].toUpperCase();
     }
+  }
+
+  // Dynamic fallback: if MONTH ENDING was not in header, detect month from text (e.g. 13AUG -> AUG)
+  if (!monthEnding) {
+    const detected = detectMonthFromText(text);
+    monthEnding = detected.monthEnding;
   }
 
   // 2. Scan lines and group into sequence blocks
@@ -1269,6 +1322,37 @@ export function convertOpenToTrip(ot: OpenSequence): SequenceTrip {
     const legsCount = legsPerDay[idx] || 1;
     const layoverCity = idx < diffDays - 1 ? layovers[idx] || "" : "";
     
+    // Clean ot.releaseTime of any /01 or /02 date suffixes
+    const rawRelease = (ot.releaseTime || "1600").split("/")[0].replace(":", "").trim();
+
+    // Determine realistic report and release times for each duty day to ensure valid rest gaps
+    let reportTime = "0800";
+    let releaseTime = "1600";
+
+    if (idx === 0) {
+      reportTime = (ot.reportTime || "0800").replace(":", "").trim();
+      if (diffDays === 1) {
+        releaseTime = rawRelease;
+      } else {
+        // Multi-day trip: day 1 release is 6 hours after report (or max 23:00)
+        const repH = parseInt(reportTime.substring(0, 2), 10) || 8;
+        const repM = parseInt(reportTime.substring(2, 4), 10) || 0;
+        const relH = Math.min(23, repH + 6);
+        releaseTime = `${String(relH).padStart(2, "0")}${String(repM).padStart(2, "0")}`;
+      }
+    } else if (idx === diffDays - 1) {
+      releaseTime = rawRelease;
+      // Day final: report 2 hours before release or 0600
+      const relH = parseInt(rawRelease.substring(0, 2), 10) || 12;
+      const relM = parseInt(rawRelease.substring(2, 4), 10) || 0;
+      const repH = Math.max(5, relH - 2);
+      reportTime = `${String(repH).padStart(2, "0")}${String(relM).padStart(2, "0")}`;
+    } else {
+      // Intermediate day
+      reportTime = "0900";
+      releaseTime = "1600";
+    }
+
     const legs = Array.from({ length: legsCount }, (_, legIdx) => {
       // Determine origin and destination airport for this leg
       const depAirport = legIdx === 0 
@@ -1282,8 +1366,8 @@ export function convertOpenToTrip(ot: OpenSequence): SequenceTrip {
         flightNumber: `OT-${ot.sequenceNumber}-${legIdx + 1}`,
         depAirport,
         arrAirport,
-        depTime: legIdx === 0 && idx === 0 ? ot.reportTime : "1000",
-        arrTime: legIdx === legsCount - 1 && idx === diffDays - 1 ? ot.releaseTime : "1200",
+        depTime: legIdx === 0 ? reportTime : "1000",
+        arrTime: legIdx === legsCount - 1 ? releaseTime : "1200",
         blockMinutes: Math.round(totalCreditMinutes / (diffDays * legsCount)),
         tailNumber: "E175",
       };
@@ -1291,8 +1375,8 @@ export function convertOpenToTrip(ot: OpenSequence): SequenceTrip {
 
     return {
       dayIndex: idx,
-      reportTime: idx === 0 ? ot.reportTime : "0800",
-      releaseTime: idx === diffDays - 1 ? ot.releaseTime : "1600",
+      reportTime,
+      releaseTime,
       dutyMinutes: 480,
       legs,
       layoverCity,
@@ -1322,9 +1406,10 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
   const lines = text.split("\n");
   const openSequences: OpenSequence[] = [];
   
-  let currentMonth = "07"; // Default to July
-  const currentYear = "2026"; // Default to 2026
-  let currentDay = "20";
+  const detected = detectMonthFromText(text);
+  let currentMonth = String(detected.monthNum + 1).padStart(2, "0");
+  const currentYear = String(detected.yearNum);
+  let currentDay = "01";
   let currentBase = "ORD";
 
   const months: Record<string, string> = {
@@ -1495,13 +1580,15 @@ function evaluateOpenSequenceConflict(
     s.dutyPeriods.forEach((dp) => {
       const dpDate = new Date(startParts[0], startParts[1] - 1, startParts[2] + dp.dayIndex);
       
-      const repH = parseInt(dp.reportTime.substring(0, 2), 10) || 8;
-      const repM = parseInt(dp.reportTime.substring(2, 4), 10) || 0;
-      const start = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), repH, repM);
+      const repClean = (dp.reportTime || "").replace(":", "").trim();
+      const repH = parseInt(repClean.substring(0, 2), 10);
+      const repM = parseInt(repClean.substring(2, 4), 10);
+      const start = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), isNaN(repH) ? 8 : repH, isNaN(repM) ? 0 : repM);
       
-      const relH = parseInt(dp.releaseTime.substring(0, 2), 10) || 16;
-      const relM = parseInt(dp.releaseTime.substring(2, 4), 10) || 0;
-      const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
+      const relClean = (dp.releaseTime || "").replace(":", "").trim();
+      const relH = parseInt(relClean.substring(0, 2), 10);
+      const relM = parseInt(relClean.substring(2, 4), 10);
+      const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), isNaN(relH) ? 16 : relH, isNaN(relM) ? 0 : relM);
       if (end <= start) {
         end.setDate(end.getDate() + 1); // cross-midnight release
       }
@@ -1545,13 +1632,15 @@ function evaluateOpenSequenceConflict(
   otTrip.dutyPeriods.forEach((dp) => {
     const dpDate = new Date(otStartParts[0], otStartParts[1] - 1, otStartParts[2] + dp.dayIndex);
     
-    const repH = parseInt(dp.reportTime.substring(0, 2), 10) || 8;
-    const repM = parseInt(dp.reportTime.substring(2, 4), 10) || 0;
-    const start = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), repH, repM);
+    const repClean = (dp.reportTime || "").replace(":", "").trim();
+    const repH = parseInt(repClean.substring(0, 2), 10);
+    const repM = parseInt(repClean.substring(2, 4), 10);
+    const start = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), isNaN(repH) ? 8 : repH, isNaN(repM) ? 0 : repM);
     
-    const relH = parseInt(dp.releaseTime.substring(0, 2), 10) || 16;
-    const relM = parseInt(dp.releaseTime.substring(2, 4), 10) || 0;
-    const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), relH, relM);
+    const relClean = (dp.releaseTime || "").replace(":", "").trim();
+    const relH = parseInt(relClean.substring(0, 2), 10);
+    const relM = parseInt(relClean.substring(2, 4), 10);
+    const end = new Date(dpDate.getFullYear(), dpDate.getMonth(), dpDate.getDate(), isNaN(relH) ? 16 : relH, isNaN(relM) ? 0 : relM);
     if (end <= start) {
       end.setDate(end.getDate() + 1);
     }
@@ -1602,6 +1691,10 @@ function evaluateOpenSequenceConflict(
     for (let i = 0; i < allDuties.length - 1; i++) {
       const cur = allDuties[i];
       const next = allDuties[i+1];
+      
+      // ONLY evaluate turn connection if this pair involves the open sequence!
+      if (cur.seqId !== ot.id && next.seqId !== ot.id) continue;
+
       const gapMs = next.start.getTime() - cur.end.getTime();
       const station = (cur.arrAirport && cur.arrAirport !== "ANY" ? cur.arrAirport : "ORD").toUpperCase();
       const requiredMins = (stationLimits && stationLimits[station] !== undefined)
@@ -1638,6 +1731,10 @@ function evaluateOpenSequenceConflict(
     for (let i = 0; i < allDuties.length - 1; i++) {
       const cur = allDuties[i];
       const next = allDuties[i+1];
+
+      // ONLY evaluate if this pair involves the open sequence!
+      if (cur.seqId !== ot.id && next.seqId !== ot.id) continue;
+
       const gapMs = next.start.getTime() - cur.end.getTime();
       if (gapMs >= 0 && gapMs < 10 * 60 * 60 * 1000) {
         // Combined Flight Duty Period length
@@ -1679,6 +1776,10 @@ function evaluateOpenSequenceConflict(
     for (let i = 0; i < allDuties.length - 1; i++) {
       const cur = allDuties[i];
       const next = allDuties[i+1];
+
+      // ONLY evaluate rest gaps that border/involve the open sequence!
+      if (cur.seqId !== ot.id && next.seqId !== ot.id) continue;
+
       const gapMs = next.start.getTime() - cur.end.getTime();
       const restHrs = gapMs / (1000 * 60 * 60);
 

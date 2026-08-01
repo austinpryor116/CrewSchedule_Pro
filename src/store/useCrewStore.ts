@@ -1,9 +1,18 @@
 import { create } from "zustand";
-import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry } from "../types";
-import { DEFAULT_PAY_RATES, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT, RAW_N4_DFW_TEXT, MOCK_SEQUENCES, MOCK_AUG_SEQUENCES, MOCK_VACATIONS } from "../lib/demoData";
+import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent } from "../types";
+import { DEFAULT_PAY_RATES, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT, RAW_N4_DFW_TEXT, MOCK_SEQUENCES, MOCK_AUG_SEQUENCES, MOCK_VACATIONS, DEFAULT_SUBSCRIBED_CALENDARS, DEFAULT_PERSONAL_EVENTS } from "../lib/demoData";
 import { RAW_HSS_1_TEXT, RAW_HSS_2_TEXT, RAW_HSS_3_TEXT, RAW_HSS_4_TEXT, RAW_HSS_5_TEXT, RAW_HSS_6_TEXT, RAW_HSS_7_TEXT, RAW_HSS_8_TEXT, RAW_HSS_9_TEXT, RAW_HSS_10_TEXT } from "../lib/hss_extracted_text";
 import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes } from "../lib/parser";
 export { convertOpenToTrip };
+
+export const DEFAULT_OPEN_TIME_PRESETS: OpenTimePreset[] = [
+  { id: "all", name: "All Open Trips" },
+  { id: "fits", name: "Fits Schedule Only", fitsOnly: true },
+  { id: "turns-3h", name: "⚡ Turns > 3.0h Credit", minCreditHours: 3.0, maxTripDays: 1 },
+  { id: "turns-only", name: "☀️ 1-Day Turns Only", maxTripDays: 1 },
+  { id: "layovers-2d", name: "🌙 2-Day Trips", maxTripDays: 2 },
+  { id: "high-credit", name: "🚀 Credit > 8.0h", minCreditHours: 8.0 },
+];
 
 interface CrewState {
   sequences: SequenceTrip[];
@@ -28,12 +37,27 @@ interface CrewState {
   openSequences: OpenSequence[];
   simulatedSequenceIds: string[];
   showOpenTimeOverlay: boolean;
-  openTimeFilter: "all" | "fits" | "simulated" | "conflicts";
+  openTimeFilter: string;
+  openTimePresets: OpenTimePreset[];
+  addOpenTimePreset: (preset: OpenTimePreset) => void;
+  removeOpenTimePreset: (id: string) => void;
+
+  // Calendar Subscription & External Personal Events
+  subscribedCalendars: SubscribedCalendar[];
+  personalEvents: PersonalCalendarEvent[];
+  addSubscribedCalendar: (cal: SubscribedCalendar, events?: PersonalCalendarEvent[]) => void;
+  removeSubscribedCalendar: (id: string) => void;
+  toggleSubscribedCalendar: (id: string) => void;
+  updateSubscribedCalendarColor: (id: string, color: string) => void;
 
   // DTS / Dropped Sequences Visibility State
   showDtsDropped: boolean;
   setShowDtsDropped: (val: boolean) => void;
   toggleShowDtsDropped: () => void;
+
+  // Calendar Tools Modal State
+  isCalendarToolsOpen: boolean;
+  setIsCalendarToolsOpen: (val: boolean) => void;
 
   // Station Turn Limits Settings
   stationTurnLimits: Record<string, number>;
@@ -83,7 +107,7 @@ interface CrewState {
   toggleSimulateSequence: (id: string) => void;
   clearSimulatedSequences: () => void;
   setShowOpenTimeOverlay: (val: boolean) => void;
-  setOpenTimeFilter: (filter: "all" | "fits" | "simulated" | "conflicts") => void;
+  setOpenTimeFilter: (filter: string) => void;
 
   // Station Turn Limits Actions
   setStationTurnLimit: (station: string, limitMinutes: number) => void;
@@ -155,9 +179,14 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   simulatedSequenceIds: [],
   showOpenTimeOverlay: false,
   openTimeFilter: "all",
+  openTimePresets: DEFAULT_OPEN_TIME_PRESETS,
+  subscribedCalendars: DEFAULT_SUBSCRIBED_CALENDARS,
+  personalEvents: DEFAULT_PERSONAL_EVENTS,
   showDtsDropped: true, // Default to true so all roster trips and trades remain visible on calendar
   setShowDtsDropped: (val: boolean) => set({ showDtsDropped: val }),
   toggleShowDtsDropped: () => set((state) => ({ showDtsDropped: !state.showDtsDropped })),
+  isCalendarToolsOpen: false,
+  setIsCalendarToolsOpen: (val: boolean) => set({ isCalendarToolsOpen: val }),
   stationTurnLimits: DEFAULT_STATION_TURN_LIMITS,
   defaultTurnLimit: DEFAULT_TURN_LIMIT,
   highCreditThresholdHours: 15.0,
@@ -496,6 +525,38 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const openSeqsDFW = parseN4OpenTime(RAW_N4_DFW_TEXT);
       const activeOpenSeqs = [...openSeqsORD, ...openSeqsDFW];
 
+      const storedPresets = localStorage.getItem("crewschedule_openpresets");
+      const storedCals = localStorage.getItem("crewschedule_subscribedcals");
+      const storedEvents = localStorage.getItem("crewschedule_personalevents");
+
+      let activeEvents: PersonalCalendarEvent[] = storedEvents ? JSON.parse(storedEvents) : DEFAULT_PERSONAL_EVENTS;
+      let activeCals: SubscribedCalendar[] = storedCals ? JSON.parse(storedCals) : DEFAULT_SUBSCRIBED_CALENDARS;
+
+      // Sanitize 48-hour Open Time events: ensure events starting July 27th end on July 29th (48h/2-day window) instead of July 30th
+      activeEvents = activeEvents.map((evt) => {
+        if (
+          (evt.id === "evt-opentime-48h" || evt.title.toLowerCase().includes("48") || evt.title.toLowerCase().includes("open time") || evt.startDate === "2026-07-27") &&
+          evt.startDate === "2026-07-27" &&
+          evt.endDate === "2026-07-30"
+        ) {
+          return { ...evt, endDate: "2026-07-29" };
+        }
+        if (evt.id === "evt-01" && evt.endDate === "2026-07-30") {
+          return { ...evt, endDate: "2026-07-29" };
+        }
+        return evt;
+      });
+
+      // Ensure default 48-hour open time event is present if missing
+      if (!activeEvents.some((e) => e.id === "evt-opentime-48h")) {
+        const defaultOtEvt = DEFAULT_PERSONAL_EVENTS.find((e) => e.id === "evt-opentime-48h");
+        if (defaultOtEvt) activeEvents.unshift(defaultOtEvt);
+      }
+      if (!activeCals.some((c) => c.id === "cal-opentime-48h")) {
+        const defaultOtCal = DEFAULT_SUBSCRIBED_CALENDARS.find((c) => c.id === "cal-opentime-48h");
+        if (defaultOtCal) activeCals.unshift(defaultOtCal);
+      }
+
       set({
         sequences: sanitizedSeqs,
         vacations: storedVacations ? JSON.parse(storedVacations) : MOCK_VACATIONS,
@@ -507,7 +568,10 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         openSequences: activeOpenSeqs,
         simulatedSequenceIds: storedSim ? JSON.parse(storedSim) : [],
         showOpenTimeOverlay: storedOverlay ? JSON.parse(storedOverlay) : false,
-        openTimeFilter: storedFilter ? (JSON.parse(storedFilter) as CrewState["openTimeFilter"]) : "all",
+        openTimeFilter: storedFilter ? JSON.parse(storedFilter) : "all",
+        openTimePresets: storedPresets ? JSON.parse(storedPresets) : DEFAULT_OPEN_TIME_PRESETS,
+        subscribedCalendars: activeCals,
+        personalEvents: activeEvents,
         stationTurnLimits: storedTurnLimits ? JSON.parse(storedTurnLimits) : DEFAULT_STATION_TURN_LIMITS,
         defaultTurnLimit: storedDefaultTurn ? JSON.parse(storedDefaultTurn) : DEFAULT_TURN_LIMIT,
         highCreditThresholdHours: storedHighCredit ? JSON.parse(storedHighCredit) : 15.0,
@@ -516,6 +580,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
       localStorage.setItem("crewschedule_sequences", JSON.stringify(sanitizedSeqs));
       localStorage.setItem("crewschedule_opensequences", JSON.stringify(activeOpenSeqs));
+      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(activeCals));
+      localStorage.setItem("crewschedule_personalevents", JSON.stringify(activeEvents));
 
       if (!storedSnaps || parsedSnaps.length === 0) {
         get().loadDemoData();
@@ -893,6 +959,69 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     set({ openTimeFilter });
     if (typeof window !== "undefined") {
       localStorage.setItem("crewschedule_openfilter", JSON.stringify(openTimeFilter));
+    }
+  },
+
+  addOpenTimePreset: (preset) => {
+    const updated = [...get().openTimePresets.filter((p) => p.id !== preset.id), preset];
+    set({ openTimePresets: updated, openTimeFilter: preset.id });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_openpresets", JSON.stringify(updated));
+      localStorage.setItem("crewschedule_openfilter", JSON.stringify(preset.id));
+    }
+  },
+
+  removeOpenTimePreset: (id) => {
+    const updated = get().openTimePresets.filter((p) => p.id !== id);
+    const nextFilter = get().openTimeFilter === id ? "all" : get().openTimeFilter;
+    set({ openTimePresets: updated, openTimeFilter: nextFilter });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_openpresets", JSON.stringify(updated));
+      localStorage.setItem("crewschedule_openfilter", JSON.stringify(nextFilter));
+    }
+  },
+
+  addSubscribedCalendar: (cal, newEvents = []) => {
+    const updatedCals = [...get().subscribedCalendars.filter((c) => c.id !== cal.id), cal];
+    const updatedEvents = [...get().personalEvents.filter((e) => e.calendarId !== cal.id), ...newEvents];
+    set({ subscribedCalendars: updatedCals, personalEvents: updatedEvents });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
+      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updatedEvents));
+    }
+  },
+
+  removeSubscribedCalendar: (id) => {
+    const updatedCals = get().subscribedCalendars.filter((c) => c.id !== id);
+    const updatedEvents = get().personalEvents.filter((e) => e.calendarId !== id);
+    set({ subscribedCalendars: updatedCals, personalEvents: updatedEvents });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
+      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updatedEvents));
+    }
+  },
+
+  toggleSubscribedCalendar: (id) => {
+    const updatedCals = get().subscribedCalendars.map((c) =>
+      c.id === id ? { ...c, enabled: !c.enabled } : c
+    );
+    set({ subscribedCalendars: updatedCals });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
+    }
+  },
+
+  updateSubscribedCalendarColor: (id, color) => {
+    const updatedCals = get().subscribedCalendars.map((c) =>
+      c.id === id ? { ...c, color } : c
+    );
+    const updatedEvents = get().personalEvents.map((e) =>
+      e.calendarId === id ? { ...e, color } : e
+    );
+    set({ subscribedCalendars: updatedCals, personalEvents: updatedEvents });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
+      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updatedEvents));
     }
   },
 

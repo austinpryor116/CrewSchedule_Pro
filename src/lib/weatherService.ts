@@ -143,6 +143,9 @@ export interface LiveSigmetAirmet {
   validUntil: string;
   coords: [number, number][]; // [lat, lon]
   decodedSummary: string;
+  seriesId?: string;
+  movementDir?: number;
+  movementSpd?: number;
 }
 
 /**
@@ -685,11 +688,82 @@ export async function fetchLiveSigmetsAndAirmets(): Promise<LiveSigmetAirmet[]> 
           validUntil,
           coords,
           decodedSummary,
+          seriesId,
+          movementDir: typeof item.movementDir === "number" ? item.movementDir : undefined,
+          movementSpd: typeof item.movementSpd === "number" ? item.movementSpd : undefined,
         });
       });
     }
 
     return results;
+  } catch (e) {
+    return [];
+  }
+}
+
+export interface LiveLightningStrike {
+  id: string;
+  lat: number;
+  lng: number;
+  type: "CG" | "CC" | "IC";
+  station?: string;
+  strikeRate: number;
+  peakCurrent: string;
+  ageMinutes?: number;
+  polarity?: "+" | "-";
+  qcVerified?: boolean;
+  remark?: string;
+  time: string;
+}
+
+export interface RadarFrame {
+  time: number;
+  path: string;
+  label: string;
+}
+
+export interface LiveTurbulenceReport {
+  id: string;
+  lat: number;
+  lng: number;
+  fltLvl: number;
+  aircraftType: string;
+  severity: "LGT" | "MOD" | "SVR" | "EXTRM" | "NEG";
+  edr: number;
+  rawText: string;
+  obsTime: string;
+  ageMinutes: number;
+  stationId?: string;
+}
+
+export async function fetchLiveTurbulenceReports(): Promise<LiveTurbulenceReport[]> {
+  try {
+    const proxyRes = await fetch("/api/weather/turbulence");
+    if (proxyRes.ok) {
+      const json = await proxyRes.json();
+      if (json.success && Array.isArray(json.reports)) {
+        return json.reports;
+      }
+    }
+    return [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Fetches real-time lightning strike locations and telemetry from NOAA METAR sensors.
+ */
+export async function fetchLiveLightningStrikes(): Promise<LiveLightningStrike[]> {
+  try {
+    const res = await fetch("/api/weather/lightning");
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.strikes)) {
+        return json.strikes;
+      }
+    }
+    return [];
   } catch (e) {
     return [];
   }

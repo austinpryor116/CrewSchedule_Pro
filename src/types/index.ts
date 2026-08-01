@@ -34,6 +34,7 @@ export interface VacationPeriod {
   endDate: string;   // YYYY-MM-DD
   code: string;      // e.g. "VA"
   description: string;
+  creditHours?: number;
 }
 
 export interface MonthlyHIMetadata {
@@ -92,9 +93,71 @@ export interface DaySegment {
 
 export interface PayRates {
   hourlyRate: number;
+  overtimeMultiplier?: number; // e.g. 1.5x, 1.75x, 2.0x
   perDiemRate: number;
+  intlPerDiemRate?: number; // International Per Diem $/hr
   minDailyGuaranteeMinutes: number; // e.g., 300 minutes (5.0 hours)
+  monthlyGuaranteeHours?: number; // e.g., 75.0 hours MMG
+  deadheadPayRatio?: number; // e.g., 1.0 (100%) or 0.75 (75%)
+  holdingPayRate?: number; // e.g., 45.00 $/hr
   tafbHours: number; // Time Away From Base
+
+  // Crew Profile & Role Settings
+  crewRole?: "CA" | "FO" | "CHECK_PILOT" | "LFA" | "FA";
+  equipment?: string;
+  homeBase?: string;
+
+  // FAR & Contract Legality Parameters
+  legalityStandard?: "FAR117" | "FA_REST";
+  minRestHours?: number; // e.g., 10.0 hours
+  maxFdpHours?: number; // e.g., 13.0 hours
+  maxDailyFlightHours?: number; // e.g., 9.0 hours
+  max28DayFlightHours?: number; // e.g., 100.0 hours
+
+  // Operational Buffer Parameters
+  reportBufferMins?: number; // e.g., 45 mins
+  releaseBufferMins?: number; // e.g., 15 mins
+}
+
+export interface OpenTimePreset {
+  id: string;
+  name: string; // e.g., "⚡ Morning Turns > 3.5h", "🌴 MIA/SAN Layovers"
+  minCreditHours?: number; // e.g., 3.5
+  maxCreditHours?: number;
+  minBlockHours?: number;
+  maxTripDays?: number; // 1 = Turns only, 2, 3, 4
+  reportAfterTime?: string; // Typable string e.g. "06:00" or "0600"
+  reportBeforeTime?: string; // Typable string e.g. "11:30" or "1130"
+  reportWindow?: string; // Legacy or free-text report window
+  releaseBeforeTime?: string; // Typable string e.g. "19:30" or "1930"
+  maxLegsPerDay?: number;
+  preferredLayoverCity?: string; // Typable free-text e.g. "MIA", "SAN", "BOS", "TURNS"
+  fitsOnly?: boolean; // Only show 0 conflict trips
+  baseFilter?: string; // "ALL", "ORD", "DFW", "MIA", "PHX"
+  payMultiplier?: number;
+}
+
+export interface SubscribedCalendar {
+  id: string;
+  name: string; // e.g., "Spouse Flight Schedule", "Google Personal Calendar", "Family Events"
+  url?: string; // webcal:// or https://...ics
+  color: string; // "purple" | "rose" | "teal" | "amber" | "indigo"
+  enabled: boolean;
+  lastSyncedAt?: string;
+  eventsCount: number;
+}
+
+export interface PersonalCalendarEvent {
+  id: string;
+  calendarId: string;
+  title: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  startTime?: string; // HH:MM
+  endTime?: string; // HH:MM
+  location?: string;
+  notes?: string;
+  color: string;
 }
 
 export interface PayCalculations {

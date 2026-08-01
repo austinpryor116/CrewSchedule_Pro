@@ -6,19 +6,43 @@ import { SequenceTrip, FlightLeg, DutyPeriod } from "../../types";
 import { X, Plane, Clock, Calendar, Home, Plus, ShieldCheck, ShieldAlert, CheckCircle, AlertCircle } from "lucide-react";
 import { checkOpenSequenceConflict } from "../../lib/parser";
 
-export default function SequenceInspector() {
+interface SequenceInspectorProps {
+  isEmbedded?: boolean;
+}
+
+export default function SequenceInspector({ isEmbedded = false }: SequenceInspectorProps = {}) {
   const selectedId = useCrewStore((state) => state.selectedSequenceId);
   const setSelectedId = useCrewStore((state) => state.setSelectedSequenceId);
   const sequences = useCrewStore((state) => state.sequences);
   const openSequences = useCrewStore((state) => state.openSequences);
   const simulatedIds = useCrewStore((state) => state.simulatedSequenceIds);
+  const vacations = useCrewStore((state) => state.vacations);
   const toggleSimulate = useCrewStore((state) => state.toggleSimulateSequence);
 
-  // Find selected trip (could be active roster, simulated, or ghost open time)
+  // Find selected trip (could be active roster, vacation, simulated, or ghost open time)
   const seq: SequenceTrip | null = useMemo(() => {
     if (!selectedId) return null;
     const activeSeq = sequences.find((s) => s.id === selectedId);
     if (activeSeq) return activeSeq;
+
+    const vac = vacations.find((v) => v.id === selectedId);
+    if (vac) {
+      return {
+        id: vac.id,
+        sequenceNumber: "VACATION",
+        startDate: vac.startDate,
+        endDate: vac.endDate,
+        base: "ORD",
+        equipment: "VAC",
+        totalBlockMinutes: 0,
+        totalCreditMinutes: Math.round((vac.creditHours || 24.5) * 60),
+        layoverCities: ["VACATION"],
+        dutyPeriods: [],
+        colorTag: "emerald",
+        statusTag: "VA",
+      };
+    }
+
     const openSeq = openSequences.find((s) => s.id === selectedId);
     if (openSeq) {
       const converted = convertOpenToTrip(openSeq);
@@ -28,7 +52,7 @@ export default function SequenceInspector() {
       return { ...converted, isGhost: true };
     }
     return null;
-  }, [selectedId, sequences, openSequences, simulatedIds]);
+  }, [selectedId, sequences, vacations, openSequences, simulatedIds]);
 
   const stationTurnLimits = useCrewStore((state) => state.stationTurnLimits);
   const defaultTurnLimit = useCrewStore((state) => state.defaultTurnLimit);
@@ -45,10 +69,10 @@ export default function SequenceInspector() {
 
   if (!seq) {
     return (
-      <div className="bg-[#151c2c] border border-slate-700/80 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center text-center h-full min-h-[400px]">
-        <Plane className="w-12 h-12 text-sky-400 stroke-1 mb-3 animate-pulse" />
-        <h3 className="text-lg font-bold text-white">No Sequence Inspected</h3>
-        <p className="text-xs text-slate-300 max-w-[260px] mt-1.5 leading-relaxed font-medium">
+      <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm flex flex-col items-center justify-center text-center h-full min-h-[400px]">
+        <Plane className="w-12 h-12 text-sky-600 stroke-1 mb-3 animate-pulse" />
+        <h3 className="text-lg font-bold text-slate-900">No Sequence Inspected</h3>
+        <p className="text-xs text-slate-600 max-w-[260px] mt-1.5 leading-relaxed font-medium">
           Select any sequence in the Calendar grid to review detailed flight lines, hotel coordinates, and layovers.
         </p>
       </div>
@@ -65,40 +89,51 @@ export default function SequenceInspector() {
   const isDropped = seq.isDropped || seq.statusTag === "DROP" || seq.statusTag === "DTS DROP";
 
   return (
-    <div className="bg-[#151c2c] border border-slate-700/80 rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col h-full animate-fadeIn lg:max-h-[820px] overflow-y-auto scrollbar-thin relative">
+    <div
+      className={
+        isEmbedded
+          ? "flex flex-col text-slate-900 w-full"
+          : "bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-md flex flex-col h-full animate-fadeIn lg:max-h-[820px] overflow-y-auto scrollbar-thin relative text-slate-900"
+      }
+    >
       {/* Header section */}
-      <div className="flex justify-between items-start pb-4 border-b border-slate-700/80 mb-4">
+      <div className="flex justify-between items-start pb-4 border-b border-slate-200 mb-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-xl font-black ${isDropped ? "line-through text-slate-400" : "text-white"}`}>
-              Sequence {seq.sequenceNumber}
+            <span className={`text-xl font-black ${isDropped ? "line-through text-slate-500" : "text-slate-900"}`}>
+              {seq.sequenceNumber === "VACATION" ? "Vacation Block" : `Sequence ${seq.sequenceNumber}`}
             </span>
-            <span className="px-2 py-0.5 bg-sky-950/80 border border-sky-500/40 text-sky-300 font-mono text-[10px] font-bold rounded-lg">
+            <span className="px-2 py-0.5 bg-sky-100 border border-sky-300 text-sky-900 font-mono text-[10px] font-bold rounded-lg">
               {seq.base}
             </span>
+            {(seq.statusTag === "VA" || seq.sequenceNumber === "VACATION") && (
+              <span className="px-2.5 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-950 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
+                SCHEDULED VACATION (VA)
+              </span>
+            )}
             {isDropped && (
-              <span className="px-2.5 py-0.5 bg-rose-950/80 border border-rose-500/40 text-rose-300 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
+              <span className="px-2.5 py-0.5 bg-rose-100 border border-rose-300 text-rose-900 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
                 DROPPED (DTS)
               </span>
             )}
             {seq.statusTag === "TT" && (
-              <span className="px-2.5 py-0.5 bg-amber-950/80 border border-amber-500/40 text-amber-300 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
+              <span className="px-2.5 py-0.5 bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
                 TRIP TRADE (TT)
               </span>
             )}
             {seq.statusTag === "RA" && (
-              <span className="px-2.5 py-0.5 bg-rose-950/80 border border-rose-500/40 text-rose-300 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
+              <span className="px-2.5 py-0.5 bg-rose-100 border border-rose-300 text-rose-900 font-extrabold text-[10px] rounded-lg shadow-sm flex items-center gap-1">
                 REASSIGNMENT (RA)
               </span>
             )}
             {seq.isOvertime && (
-              <span className="px-2.5 py-0.5 bg-amber-950/80 border border-amber-500/40 text-amber-300 font-extrabold text-[10px] rounded-lg shadow-sm">
+              <span className="px-2.5 py-0.5 bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[10px] rounded-lg shadow-sm">
                 OVERTIME (OT)
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-300 mt-1 flex items-center gap-1.5 font-medium">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+          <p className="text-xs text-slate-600 mt-1 flex items-center gap-1.5 font-medium">
+            <Calendar className="w-3.5 h-3.5 text-slate-500" />
             {seq.startDate} to {seq.endDate}
           </p>
         </div>
@@ -111,34 +146,36 @@ export default function SequenceInspector() {
               }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold font-sans shadow transition duration-150 flex items-center gap-1.5 cursor-pointer ${
                 seq.isSimulated
-                  ? "bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 hover:border-slate-600"
-                  : "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500"
+                  ? "bg-slate-100 hover:bg-slate-200 text-rose-700 border border-slate-300"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600"
               }`}
             >
               {seq.isSimulated ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
               {seq.isSimulated ? "Drop Simulated Pickup" : "Simulate Pickup"}
             </button>
           ) : null}
-          <button
-            onClick={() => setSelectedId(null)}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition duration-150"
-            title="Close Inspector"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {!isEmbedded && (
+            <button
+              onClick={() => setSelectedId(null)}
+              className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition duration-150"
+              title="Close Inspector"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* DTS Dropped Sequence Banner Callout */}
       {isDropped && (
-        <div className="mb-4 p-3.5 bg-rose-950/40 border border-rose-500/40 rounded-2xl flex items-start gap-3 text-xs text-rose-200 shadow-md animate-fadeIn">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+        <div className="mb-4 p-3.5 bg-rose-50 border border-rose-300 rounded-2xl flex items-start gap-3 text-xs text-rose-950 shadow-sm animate-fadeIn">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
           <div>
-            <div className="font-bold text-rose-300 text-sm">DROPPED SEQUENCE — DTS OVERLAP</div>
-            <div className="text-[11px] text-rose-200/90 mt-1 leading-relaxed">
+            <div className="font-bold text-rose-900 text-sm">DROPPED SEQUENCE — DTS OVERLAP</div>
+            <div className="text-[11px] text-rose-950 mt-1 leading-relaxed">
               {seq.dropReason || "This sequence touches your scheduled vacation block (Aug 01 - Aug 07) and has been dropped by Crew Schedule under DTS rules."}
             </div>
-            <div className="mt-1.5 text-[10px] font-mono text-rose-400 font-bold bg-rose-950/60 px-2 py-0.5 rounded border border-rose-900/60 inline-block">
+            <div className="mt-1.5 text-[10px] font-mono text-rose-900 font-bold bg-rose-100 px-2 py-0.5 rounded border border-rose-300 inline-block">
               Active Status: Inactive / Dropped (0.00h active flight credit)
             </div>
           </div>
@@ -148,15 +185,15 @@ export default function SequenceInspector() {
       {/* Summary figures */}
 
       <div className="grid grid-cols-2 gap-3 mb-6 font-mono text-xs">
-        <div className="bg-[#0b0f17] p-3 rounded-2xl border border-slate-700/80 shadow-inner">
-          <p className="text-[10px] text-slate-400 font-sans font-bold">Total Block Time</p>
-          <p className="text-md font-bold text-white mt-0.5">
+        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+          <p className="text-[10px] text-slate-600 font-sans font-bold">Total Block Time</p>
+          <p className="text-md font-bold text-slate-900 mt-0.5">
             {Math.floor(seq.totalBlockMinutes / 60)}h {seq.totalBlockMinutes % 60}m
           </p>
         </div>
-        <div className="bg-[#0b0f17] p-3 rounded-2xl border border-slate-700/80 shadow-inner">
-          <p className="text-[10px] text-slate-400 font-sans font-bold">Total Credit Time</p>
-          <p className="text-md font-bold text-emerald-400 mt-0.5">
+        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+          <p className="text-[10px] text-slate-600 font-sans font-bold">Total Credit Time</p>
+          <p className="text-md font-bold text-emerald-700 mt-0.5">
             {Math.floor(seq.totalCreditMinutes / 60)}h {seq.totalCreditMinutes % 60}m
           </p>
         </div>
@@ -164,26 +201,26 @@ export default function SequenceInspector() {
 
       {/* FAA Legality Audit Breakdown */}
       {conflictResult && (
-        <div className="mb-6 bg-slate-950/40 p-4.5 rounded-2xl border border-slate-800 space-y-4">
-          <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-sky-400" />
+        <div className="mb-6 bg-slate-50 p-4.5 rounded-2xl border border-slate-200 space-y-4">
+          <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-sky-600" />
             FAA Part 117 Legality Audit
           </h4>
 
           {conflictResult.hasConflict ? (
-            <div className="p-3 bg-rose-950/20 border border-rose-900/40 rounded-xl text-xs text-rose-300 leading-relaxed font-sans flex items-start gap-2">
-              <ShieldAlert className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+            <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-950 leading-relaxed font-sans flex items-start gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <strong className="font-bold">Roster Conflict Detected:</strong>
-                <p className="mt-1 text-[11px] text-rose-400/90">{conflictResult.reason}</p>
+                <strong className="font-bold text-rose-900">Roster Conflict Detected:</strong>
+                <p className="mt-1 text-[11px] text-rose-900">{conflictResult.reason}</p>
               </div>
             </div>
           ) : (
-            <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl text-xs text-emerald-300 leading-relaxed font-sans flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+            <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-950 leading-relaxed font-sans flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
               <div>
-                <strong className="font-bold">Legality Check Passed:</strong>
-                <p className="mt-0.5 text-[11px] text-emerald-400/90">This sequence is fully legal to pick up on your current roster.</p>
+                <strong className="font-bold text-emerald-900">Legality Check Passed:</strong>
+                <p className="mt-0.5 text-[11px] text-emerald-900">This sequence is fully legal to pick up on your current roster.</p>
               </div>
             </div>
           )}
@@ -194,30 +231,30 @@ export default function SequenceInspector() {
                 key={idx}
                 className={`p-3 rounded-xl border text-xs font-sans space-y-1 ${
                   audit.passed
-                    ? "bg-slate-900/40 border-slate-850 text-slate-300"
-                    : "bg-rose-950/10 border-rose-900/30 text-slate-300"
+                    ? "bg-white border-slate-200 text-slate-800"
+                    : "bg-rose-50 border-rose-200 text-slate-800"
                 }`}
               >
                 <div className="flex justify-between items-center">
-                  <span className="font-bold flex items-center gap-1.5 text-slate-200">
+                  <span className="font-bold flex items-center gap-1.5 text-slate-900">
                     {audit.passed ? (
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span className="w-2 h-2 rounded-full bg-emerald-600" />
                     ) : (
-                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
                     )}
                     {audit.name}
                   </span>
                   <span
                     className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${
                       audit.passed
-                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                        ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                        : "bg-rose-100 text-rose-900 border border-rose-300"
                     }`}
                   >
                     {audit.passed ? "PASS" : "FAIL"}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 leading-normal">{audit.details}</p>
+                <p className="text-[10px] text-slate-600 leading-normal">{audit.details}</p>
               </div>
             ))}
           </div>
@@ -226,8 +263,8 @@ export default function SequenceInspector() {
 
       {/* Duty Periods List */}
       <div className="space-y-6 flex-grow">
-        <h4 className="text-xs font-black uppercase text-slate-500 tracking-wider mb-2 flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 text-sky-400" />
+        <h4 className="text-xs font-black uppercase text-slate-600 tracking-wider mb-2 flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-sky-600" />
           Duty Period Timeline
         </h4>
 
@@ -237,16 +274,16 @@ export default function SequenceInspector() {
           return (
             <div
               key={dp.dayIndex}
-              className="p-4 bg-[#1a2336] border border-slate-700/80 rounded-2xl space-y-4 shadow-lg"
+              className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 shadow-sm"
             >
               {/* Duty Day Header */}
-              <div className="flex justify-between items-center pb-2 border-b border-slate-700/80">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-extrabold text-white">
+                  <span className="text-xs font-extrabold text-slate-900">
                     Duty Day {dp.dayIndex + 1}
                   </span>
                   {(dp.isOvertime || dp.legs.some((l: FlightLeg) => l.isOvertime)) && (
-                    <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase">
+                    <span className="px-2 py-0.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-black uppercase">
                       OVERTIME (OT)
                     </span>
                   )}
@@ -255,61 +292,61 @@ export default function SequenceInspector() {
 
               {/* Time displays */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-mono">
-                <div className="p-1.5 bg-[#0b0f17] rounded border border-slate-700/80 flex flex-col justify-between">
-                  <p className="text-[9px] text-slate-400 font-sans font-bold">Report</p>
+                <div className="p-1.5 bg-white rounded border border-slate-200 flex flex-col justify-between">
+                  <p className="text-[9px] text-slate-600 font-sans font-bold">Report</p>
                   <div className="mt-0.5 font-bold space-y-0.5">
-                    <p className="text-slate-400 text-[10px]">
-                      <span className="text-[8px] text-sky-400/80 mr-1 uppercase">S</span>
+                    <p className="text-slate-800 text-[10px]">
+                      <span className="text-[8px] text-sky-600 mr-1 uppercase">S</span>
                       {formatTime(dp.reportTime)}
                     </p>
                     {dp.actualReportTime !== undefined && (
-                      <p className="text-emerald-400 text-[10px]">
-                        <span className="text-[8px] text-emerald-500 mr-1 uppercase">A</span>
+                      <p className="text-emerald-700 text-[10px]">
+                        <span className="text-[8px] text-emerald-700 mr-1 uppercase">A</span>
                         {formatTime(dp.actualReportTime)}
                       </p>
                     )}
                   </div>
                 </div>
-                <div className="p-1.5 bg-slate-950/40 rounded border border-slate-900/60 flex flex-col justify-between">
-                  <p className="text-[9px] text-slate-500 font-sans">Release</p>
+                <div className="p-1.5 bg-white rounded border border-slate-200 flex flex-col justify-between">
+                  <p className="text-[9px] text-slate-600 font-sans font-bold">Release</p>
                   <div className="mt-0.5 font-bold space-y-0.5">
-                    <p className="text-slate-400 text-[10px]">
-                      <span className="text-[8px] text-sky-400/80 mr-1 uppercase">S</span>
+                    <p className="text-slate-800 text-[10px]">
+                      <span className="text-[8px] text-sky-600 mr-1 uppercase">S</span>
                       {formatTime(dp.releaseTime)}
                     </p>
                     {dp.actualReleaseTime !== undefined && (
-                      <p className="text-emerald-400 text-[10px]">
-                        <span className="text-[8px] text-emerald-500 mr-1 uppercase">A</span>
+                      <p className="text-emerald-700 text-[10px]">
+                        <span className="text-[8px] text-emerald-700 mr-1 uppercase">A</span>
                         {formatTime(dp.actualReleaseTime)}
                       </p>
                     )}
                   </div>
                 </div>
-                <div className="p-1.5 bg-slate-950/40 rounded border border-slate-900/60 flex flex-col justify-between">
-                  <p className="text-[9px] text-slate-500 font-sans">Duty Length</p>
+                <div className="p-1.5 bg-white rounded border border-slate-200 flex flex-col justify-between">
+                  <p className="text-[9px] text-slate-600 font-sans font-bold">Duty Length</p>
                   <div className="mt-0.5 font-bold space-y-0.5">
-                    <p className="text-slate-400 text-[10px]">
-                      <span className="text-[8px] text-sky-400/80 mr-1 uppercase">S</span>
+                    <p className="text-slate-800 text-[10px]">
+                      <span className="text-[8px] text-sky-600 mr-1 uppercase">S</span>
                       {Math.floor(dp.dutyMinutes / 60)}h {dp.dutyMinutes % 60}m
                     </p>
                     {dp.actualDutyMinutes !== undefined && (
-                      <p className="text-emerald-400 text-[10px]">
-                        <span className="text-[8px] text-emerald-500 mr-1 uppercase">A</span>
+                      <p className="text-emerald-700 text-[10px]">
+                        <span className="text-[8px] text-emerald-700 mr-1 uppercase">A</span>
                         {Math.floor(dp.actualDutyMinutes / 60)}h {dp.actualDutyMinutes % 60}m
                       </p>
                     )}
                   </div>
                 </div>
-                <div className="p-1.5 bg-slate-950/40 rounded border border-slate-900/60 flex flex-col justify-between">
-                  <p className="text-[9px] text-slate-500 font-sans">Block Time</p>
+                <div className="p-1.5 bg-white rounded border border-slate-200 flex flex-col justify-between">
+                  <p className="text-[9px] text-slate-600 font-sans font-bold">Block Time</p>
                   <div className="mt-0.5 font-bold space-y-0.5">
-                    <p className="text-slate-400 text-[10px]">
-                      <span className="text-[8px] text-sky-400/80 mr-1 uppercase">S</span>
+                    <p className="text-slate-800 text-[10px]">
+                      <span className="text-[8px] text-sky-600 mr-1 uppercase">S</span>
                       {Math.floor(dp.legs.reduce((acc: number, l: FlightLeg) => acc + l.blockMinutes, 0) / 60)}h {dp.legs.reduce((acc: number, l: FlightLeg) => acc + l.blockMinutes, 0) % 60}m
                     </p>
                     {dp.actualBlockMinutes !== undefined && (
-                      <p className="text-emerald-400 text-[10px]">
-                        <span className="text-[8px] text-emerald-500 mr-1 uppercase">A</span>
+                      <p className="text-emerald-700 text-[10px]">
+                        <span className="text-[8px] text-emerald-700 mr-1 uppercase">A</span>
                         {Math.floor(dp.actualBlockMinutes / 60)}h {dp.actualBlockMinutes % 60}m
                       </p>
                     )}
@@ -323,26 +360,26 @@ export default function SequenceInspector() {
                   dp.legs.map((leg: FlightLeg, idx: number) => (
                     <div
                       key={leg.flightNumber + idx}
-                      className="p-3 bg-slate-950/50 rounded-xl border border-slate-900/80 flex justify-between items-center text-xs font-mono"
+                      className="p-3 bg-white rounded-xl border border-slate-200 flex justify-between items-center text-xs font-mono"
                     >
                       <div className="flex items-center gap-2.5">
                         <div className={`p-1 rounded-lg border ${
                           leg.isDeadhead
-                            ? "bg-amber-950/80 text-amber-400 border-amber-900/40"
-                            : "bg-sky-950/80 text-sky-400 border-sky-900/40"
+                            ? "bg-amber-100 text-amber-900 border-amber-300"
+                            : "bg-sky-100 text-sky-900 border-sky-300"
                         }`}>
                           <Plane className="w-3.5 h-3.5" />
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <p className="font-bold text-slate-300">{leg.flightNumber}</p>
+                            <p className="font-bold text-slate-900">{leg.flightNumber}</p>
                             {leg.isDeadhead && (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-black uppercase">
+                              <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
                                 DH
                               </span>
                             )}
                             {leg.isOvertime && (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-black uppercase">
+                              <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-black uppercase">
                                 OT
                               </span>
                             )}
@@ -351,22 +388,22 @@ export default function SequenceInspector() {
                       </div>
 
                       <div className="text-right space-y-0.5">
-                        <p className="font-bold text-slate-300">
+                        <p className="font-bold text-slate-900">
                           {leg.depAirport} → {leg.arrAirport}
                         </p>
                         {leg.actualDepTime ? (
                           <div className="text-[10px] space-y-0.5">
-                            <p className="text-slate-400">
-                              <span className="text-[8px] font-bold text-sky-400/90 mr-1 uppercase">SKD</span>
+                            <p className="text-slate-600">
+                              <span className="text-[8px] font-bold text-sky-700 mr-1 uppercase">SKD</span>
                               {leg.depTime} - {leg.arrTime} ({Math.floor(leg.blockMinutes / 60)}h {leg.blockMinutes % 60}m)
                             </p>
-                            <p className="text-emerald-400 font-bold">
-                              <span className="text-[8px] font-extrabold text-emerald-500 mr-1 uppercase">ACT</span>
+                            <p className="text-emerald-700 font-bold">
+                              <span className="text-[8px] font-extrabold text-emerald-800 mr-1 uppercase">ACT</span>
                               {leg.actualDepTime} - {leg.actualArrTime} ({Math.floor((leg.actualBlockMinutes ?? 0) / 60)}h {(leg.actualBlockMinutes ?? 0) % 60}m)
                             </p>
                           </div>
                         ) : (
-                          <p className="text-[10px] text-slate-500">
+                          <p className="text-[10px] text-slate-600">
                             {leg.depTime} - {leg.arrTime} ({Math.floor(leg.blockMinutes / 60)}h {leg.blockMinutes % 60}m)
                           </p>
                         )}
@@ -382,12 +419,12 @@ export default function SequenceInspector() {
 
               {/* Layover / Hotel Info */}
               {hasLayover && (
-                <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl text-xs space-y-1">
-                  <div className="flex items-center gap-1.5 text-amber-400 font-bold">
-                    <Home className="w-3.5 h-3.5" />
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold">
+                    <Home className="w-3.5 h-3.5 text-amber-700" />
                     <span>Layover: {dp.layoverCity}</span>
                   </div>
-                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                  <p className="text-slate-700 text-[11px] leading-relaxed">
                     {dp.layoverHotelInfo}
                   </p>
                 </div>

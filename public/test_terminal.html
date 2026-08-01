@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebSabre Live Canvas Terminal Simulation</title>
+  <style>
+    body {
+      background: #090d16;
+      color: #38bdf8;
+      font-family: monospace;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+    }
+    h2 { margin: 0; font-size: 16px; }
+    .term-box {
+      border: 2px solid #1e293b;
+      border-radius: 12px;
+      background: #000;
+      padding: 10px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    canvas {
+      background: #000;
+      display: block;
+      border: 1px solid #0f172a;
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      max-width: 640px;
+    }
+    input {
+      flex: 1;
+      background: #020617;
+      border: 1px solid #334155;
+      color: #4ade80;
+      padding: 8px 12px;
+      font-family: monospace;
+      border-radius: 6px;
+    }
+    button {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      font-weight: bold;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h2>WebSabre Live Canvas Terminal Target</h2>
+
+  <div class="term-box">
+    <canvas id="sabreTerm" width="640" height="360"></canvas>
+  </div>
+
+  <div class="input-row">
+    <input id="sabreInput" type="text" value="HI1" placeholder="Type DECS Command (e.g. HI1, N4, HIFIT)..." />
+    <button id="sabreSend" onclick="renderTerminalScreen()">Send Command</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('sabreTerm');
+    const ctx = canvas.getContext('2d');
+
+    const screens = {
+      HI1: [
+        "HI1",
+        "SEQ 17894  BASE ORD  SEL 502  ORG SCH DOM E75",
+        "D/P 1  27JUL  ORD 1506 DTW 1741  DTW 1811 ORD 1858  ORD 2014 CAE 2319",
+        "LAYOVER CAE  Courtyard Columbia Downtown  TEL 803-799-7800",
+        "D/P 2  28JUL  CAE 1713 ORD 1844",
+        "SKD TL 7.58  ACT TL 6.48  CREDIT 10.32",
+        "END OF HI1 DISPLAY"
+      ],
+      N4: [
+        "ORD E75 CA   OPEN SEQUENCES                    AS OF 27JUL/1107",
+        "27JUL DOM",
+        "SEQ     TIME ORIG TERM    LEGS     LAYOVER      NAV  DIVS",
+        "NONE FOUND",
+        "28JUL DOM",
+        " 17357   8.52 0830 0910/30 1-2-1    VPS-CMH-",
+        "29JUL DOM",
+        " 21510   8.28 1000 1610/30 1-3      CMI-",
+        "END OF N4 DISPLAY"
+      ],
+      HIFIT: [
+        "HIFIT/17894/27JUL/ORD",
+        "FIT FOR DUTY CONFIRMED - CAPT PILOT (009914)",
+        "STATUS: SIGNED IN FOR SEQ 17894 AT 14:21 CDT",
+        "LEGALITY VERIFIED: FAR PART 117 COMPLIANT"
+      ]
+    };
+
+    function renderTerminalScreen() {
+      const inputVal = document.getElementById('sabreInput').value.trim().toUpperCase() || "HI1";
+      const lines = screens[inputVal] || [
+        inputVal,
+        "DECS COMMAND EXECUTED: " + inputVal,
+        "RESPONSE: OK - DISPLAY BUFFER GENERATED",
+        "END OF TRANSMISSION"
+      ];
+
+      // Clear Canvas
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Render lines with fillText
+      ctx.font = "14px monospace";
+      ctx.fillStyle = "#4ade80"; // Bright terminal green
+
+      lines.forEach((lineText, idx) => {
+        const y = 24 + (idx * 20);
+        // Reverse style simulation for header
+        if (idx === 0) {
+          ctx.fillStyle = "#ffffff"; // Reverse video header
+        } else if (lineText.includes("LAYOVER")) {
+          ctx.fillStyle = "#fbbf24"; // Amber text
+        } else {
+          ctx.fillStyle = "#4ade80";
+        }
+        ctx.fillText(lineText, 10, y);
+      });
+    }
+
+    // Initial render
+    window.onload = renderTerminalScreen;
+  </script>
+</body>
+</html>

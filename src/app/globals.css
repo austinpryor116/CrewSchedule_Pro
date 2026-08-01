@@ -1,41 +1,68 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b0f17; /* High Contrast Deep Charcoal Slate */
-  --foreground: #f8fafc; /* Crisp Bright White Text */
-  --card: #151c2c;       /* Rich Slate Card Container */
-  --border: #283548;     /* Defined Slate Border */
-  --accent: #0ea5e9;     /* Vibrant Electric Sky Blue */
-  --accent-cyan: #06b6d4;/* Cyan */
+  --background: #f8fafc; /* Crisp Bright Slate Background */
+  --foreground: #0f172a; /* Deep Charcoal High Contrast Text */
+  --card: #ffffff;       /* Pure White Card Container */
+  --border: #cbd5e1;     /* Defined Crisp Light Border */
+  --accent: #0284c7;     /* High Contrast Sky Blue Accent */
+  --accent-cyan: #0891b2;/* Rich Cyan */
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+}
+
+/* Mobile Safe Area Insets & Layout Utilities */
+.pb-safe {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+.mb-safe-nav {
+  margin-bottom: calc(4.5rem + env(safe-area-inset-bottom));
 }
 
 /* Custom Scrollbar Styles */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(226, 232, 240, 0.6);
   border-radius: 999px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(56, 189, 248, 0.25);
+  background: rgba(2, 132, 199, 0.35);
   border-radius: 999px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: rgba(56, 189, 248, 0.5);
+  background: rgba(2, 132, 199, 0.65);
 }
 
-/* Smooth Fade-in Animations */
+/* Smooth Mobile Sheet Slide-Up Animations */
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(100%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -50,16 +77,20 @@ body {
 @keyframes scaleIn {
   from {
     opacity: 0;
-    transform: scale(0.96) translate(-50%, -100%);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
-    transform: scale(1) translate(-50%, -100%);
+    transform: scale(1);
   }
 }
 
+.animate-slideUp {
+  animation: slideUpSheet 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 .animate-fadeIn {
-  animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-scaleIn {
@@ -68,33 +99,44 @@ body {
 
 /* Custom visual utilities */
 .bg-slate-850 {
-  background-color: rgb(21, 30, 47);
+  background-color: #ffffff;
 }
 
-/* Dark Mode Leaflet Popup Overrides */
+/* Light Mode Leaflet Popup Overrides */
 .leaflet-popup-content-wrapper,
 .leaflet-popup-store {
-  background-color: #0f172a !important; /* Deep Slate 900 */
-  color: #f8fafc !important;             /* White Text */
-  border: 1px solid rgba(56, 189, 248, 0.4) !important; /* Sky Blue Border */
+  background-color: #ffffff !important; /* Pure White */
+  color: #0f172a !important;             /* High Contrast Text */
+  border: 1px solid #cbd5e1 !important;  /* Light Border */
   border-radius: 14px !important;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.8), 0 8px 10px -6px rgba(0, 0, 0, 0.8) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
   padding: 2px !important;
 }
 
 .leaflet-popup-tip {
-  background-color: #0f172a !important;
-  border-left: 1px solid rgba(56, 189, 248, 0.4) !important;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.4) !important;
+  background-color: #ffffff !important;
+  border-left: 1px solid #cbd5e1 !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+
+/* Prevent Leaflet SVG vector path focus outline / black box when clicked */
+.leaflet-container path:focus,
+.leaflet-container svg:focus,
+.leaflet-interactive:focus,
+.leaflet-container path,
+.leaflet-container svg {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .leaflet-container a.leaflet-popup-close-button {
-  color: #94a3b8 !important;
+  color: #64748b !important;
   padding: 8px 10px 0 0 !important;
   font-size: 16px !important;
 }
 
 .leaflet-container a.leaflet-popup-close-button:hover {
-  color: #f8fafc !important;
+  color: #0f172a !important;
 }
+
 
