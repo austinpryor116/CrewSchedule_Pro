@@ -547,54 +547,21 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedLogbook = localStorage.getItem("crewschedule_logbook");
 
       let sanitizedSeqs = storedSeqs ? deduplicateSequences(JSON.parse(storedSeqs)) : [];
-      if (!sanitizedSeqs || sanitizedSeqs.length === 0) {
-        sanitizedSeqs = MOCK_SEQUENCES;
-      }
-      const jul27Trip = MOCK_SEQUENCES.find((s) => s.sequenceNumber === "17894");
-      if (jul27Trip) {
-        sanitizedSeqs = deduplicateSequences([jul27Trip, ...sanitizedSeqs.filter((s) => s.sequenceNumber !== "17894")]);
-      }
+
       const parsedSnaps: ScheduleSnapshot[] = storedSnaps ? JSON.parse(storedSnaps) : [];
       const parsedLogbook: LogbookEntry[] = storedLogbook ? JSON.parse(storedLogbook) : [];
-      const openSeqsORD = parseN4OpenTime(RAW_N4_TEXT);
-      const openSeqsDFW = parseN4OpenTime(RAW_N4_DFW_TEXT);
-      const activeOpenSeqs = [...openSeqsORD, ...openSeqsDFW];
+      const activeOpenSeqs: SequenceTrip[] = [];
 
       const storedPresets = localStorage.getItem("crewschedule_openpresets");
       const storedCals = localStorage.getItem("crewschedule_subscribedcals");
       const storedEvents = localStorage.getItem("crewschedule_personalevents");
 
-      let activeEvents: PersonalCalendarEvent[] = storedEvents ? JSON.parse(storedEvents) : DEFAULT_PERSONAL_EVENTS;
-      const activeCals: SubscribedCalendar[] = storedCals ? JSON.parse(storedCals) : DEFAULT_SUBSCRIBED_CALENDARS;
-
-      // Sanitize 48-hour Open Time events: ensure events starting July 27th end on July 29th (48h/2-day window) instead of July 30th
-      activeEvents = activeEvents.map((evt) => {
-        if (
-          (evt.id === "evt-opentime-48h" || evt.title.toLowerCase().includes("48") || evt.title.toLowerCase().includes("open time") || evt.startDate === "2026-07-27") &&
-          evt.startDate === "2026-07-27" &&
-          evt.endDate === "2026-07-30"
-        ) {
-          return { ...evt, endDate: "2026-07-29" };
-        }
-        if (evt.id === "evt-01" && evt.endDate === "2026-07-30") {
-          return { ...evt, endDate: "2026-07-29" };
-        }
-        return evt;
-      });
-
-      // Ensure default 48-hour open time event is present if missing
-      if (!activeEvents.some((e) => e.id === "evt-opentime-48h")) {
-        const defaultOtEvt = DEFAULT_PERSONAL_EVENTS.find((e) => e.id === "evt-opentime-48h");
-        if (defaultOtEvt) activeEvents.unshift(defaultOtEvt);
-      }
-      if (!activeCals.some((c) => c.id === "cal-opentime-48h")) {
-        const defaultOtCal = DEFAULT_SUBSCRIBED_CALENDARS.find((c) => c.id === "cal-opentime-48h");
-        if (defaultOtCal) activeCals.unshift(defaultOtCal);
-      }
+      let activeEvents: PersonalCalendarEvent[] = storedEvents ? JSON.parse(storedEvents) : [];
+      const activeCals: SubscribedCalendar[] = storedCals ? JSON.parse(storedCals) : [];
 
       set({
         sequences: sanitizedSeqs,
-        vacations: storedVacations ? JSON.parse(storedVacations) : MOCK_VACATIONS,
+        vacations: storedVacations ? JSON.parse(storedVacations) : [],
         monthlyHIMetadata: storedMeta ? JSON.parse(storedMeta) : null,
         snapshots: parsedSnaps,
         logbookEntries: parsedLogbook,
@@ -618,9 +585,6 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(activeCals));
       localStorage.setItem("crewschedule_personalevents", JSON.stringify(activeEvents));
 
-      if (!storedSnaps || parsedSnaps.length === 0) {
-        get().loadDemoData();
-      }
 
       // Auto-generate logbook entries on initial hydration if logbook is empty
       if (!storedLogbook || parsedLogbook.length === 0) {
@@ -959,12 +923,22 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       selectedSequenceId: null,
       consoleLogs: [],
       simulatedSequenceIds: [],
+      openSequences: [],
+      vacations: [],
+      snapshots: [],
+      monthlyHIMetadata: null,
     });
     if (typeof window !== "undefined") {
       localStorage.removeItem("crewschedule_sequences");
       localStorage.removeItem("crewschedule_logbook");
       localStorage.removeItem("crewschedule_payrates");
       localStorage.removeItem("crewschedule_simulatedids");
+      localStorage.removeItem("crewschedule_opensequences");
+      localStorage.removeItem("crewschedule_vacations");
+      localStorage.removeItem("crewschedule_snapshots");
+      localStorage.removeItem("crewschedule_hi_metadata");
+      localStorage.removeItem("crewschedule_subscribedcals");
+      localStorage.removeItem("crewschedule_personalevents");
     }
   },
 
