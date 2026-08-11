@@ -1920,6 +1920,8 @@ function evaluateOpenSequenceConflict(
  * Parses detailed HSS PDF text format (individual sequence legs and details)
  */
 export function parseHssSchedule(text: string): SequenceTrip[] {
+  const detected = detectMonthFromText(text);
+  const monthEnding = detected.monthEnding || "31JUL26";
   const sequences: SequenceTrip[] = [];
   const lines = text.split(/\r?\n/);
   

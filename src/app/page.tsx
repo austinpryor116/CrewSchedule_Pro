@@ -34,7 +34,6 @@ export default function Home() {
   
   const activeTab = useCrewStore((state) => state.activeTab);
   const setActiveTab = useCrewStore((state) => state.setActiveTab);
-  const loadDemoData = useCrewStore((state) => state.loadDemoData);
   const clearAll = useCrewStore((state) => state.clearAll);
   const sequences = useCrewStore((state) => state.sequences);
   const openSequences = useCrewStore((state) => state.openSequences);
@@ -174,16 +173,7 @@ export default function Home() {
             </div>
 
             <div className="pt-3 border-t border-slate-200 flex gap-2">
-              <button
-                onClick={() => {
-                  loadDemoData();
-                  setShowToolsModal(false);
-                }}
-                className="flex-1 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Load Demo Data
-              </button>
+
               <button
                 onClick={() => {
                   clearAll();

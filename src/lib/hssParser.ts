@@ -1,5 +1,5 @@
 import { FlightLeg, DutyPeriod, SequenceTrip } from "../types";
-import { v4 as uuidv4 } from "uuid";
+
 
 /**
  * Helper to convert DECS time like "1.59" into minutes (119).

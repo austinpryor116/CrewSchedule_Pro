@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry } from "../types";
-import { DEFAULT_PAY_RATES, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT, RAW_N4_DFW_TEXT, MOCK_SEQUENCES, MOCK_AUG_SEQUENCES, MOCK_VACATIONS, DEFAULT_SUBSCRIBED_CALENDARS, DEFAULT_PERSONAL_EVENTS } from "../lib/demoData";
-import { RAW_HSS_1_TEXT, RAW_HSS_2_TEXT, RAW_HSS_3_TEXT, RAW_HSS_4_TEXT, RAW_HSS_5_TEXT, RAW_HSS_6_TEXT, RAW_HSS_7_TEXT, RAW_HSS_8_TEXT, RAW_HSS_9_TEXT, RAW_HSS_10_TEXT } from "../lib/hss_extracted_text";
+import { DEFAULT_PAY_RATES } from "../lib/demoData";
+
 import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes } from "../lib/parser";
 export { convertOpenToTrip };
 
@@ -98,7 +98,7 @@ interface CrewState {
   addLogicLog: (entry: Omit<LogicLogEntry, "id" | "timestamp">) => void;
   clearLogicLogs: () => void;
   setActiveTab: (tab: string) => void;
-  loadDemoData: () => void;
+
   clearAll: () => void;
   
   // Snapshot Actions
@@ -195,8 +195,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   showOpenTimeOverlay: false,
   openTimeFilter: "all",
   openTimePresets: DEFAULT_OPEN_TIME_PRESETS,
-  subscribedCalendars: DEFAULT_SUBSCRIBED_CALENDARS,
-  personalEvents: DEFAULT_PERSONAL_EVENTS,
+  subscribedCalendars: [],
+  personalEvents: [],
   showDtsDropped: true, // Default to true so all roster trips and trades remain visible on calendar
   setShowDtsDropped: (val: boolean) => set({ showDtsDropped: val }),
   toggleShowDtsDropped: () => set((state) => ({ showDtsDropped: !state.showDtsDropped })),
@@ -550,7 +550,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
       const parsedSnaps: ScheduleSnapshot[] = storedSnaps ? JSON.parse(storedSnaps) : [];
       const parsedLogbook: LogbookEntry[] = storedLogbook ? JSON.parse(storedLogbook) : [];
-      const activeOpenSeqs: SequenceTrip[] = [];
+      const activeOpenSeqs: OpenSequence[] = [];
 
       const storedPresets = localStorage.getItem("crewschedule_openpresets");
       const storedCals = localStorage.getItem("crewschedule_subscribedcals");
@@ -740,180 +740,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-  loadDemoData: () => {
-    // Parse the default roster (HI1 summary text)
-    const baseSeqs = parseRawSchedule(RAW_HI1_TEXT);
-    
-    // Parse all detailed HSS texts
-    const hssTexts = [
-      RAW_HSS_1_TEXT,
-      RAW_HSS_2_TEXT,
-      RAW_HSS_3_TEXT,
-      RAW_HSS_4_TEXT,
-      RAW_HSS_5_TEXT,
-      RAW_HSS_6_TEXT,
-      RAW_HSS_7_TEXT,
-      RAW_HSS_8_TEXT,
-      RAW_HSS_9_TEXT,
-      RAW_HSS_10_TEXT,
-    ];
-    
-    const hssSeqs: SequenceTrip[] = [];
-    hssTexts.forEach(text => {
-      try {
-        const parsed = parseRawSchedule(text);
-        hssSeqs.push(...parsed);
-      } catch (e) {
-        console.error("Failed to parse HSS text:", e);
-      }
-    });
-    
-    // Merge: substitute summary-level sequences with detailed HSS versions
-    const mergedSeqs = baseSeqs.map(s => {
-      if (s.sequenceNumber === "17270") {
-        return {
-          ...s,
-          statusTag: "TT",
-          isDropped: true,
-          dropReason: "Traded Off — Switched off schedule for Sequence 17894 starting July 27th",
-        };
-      }
-      const detailed = hssSeqs.find(h => h.sequenceNumber === s.sequenceNumber);
-      if (detailed) {
-        return {
-          ...detailed,
-          id: s.id,
-          isOvertime: s.isOvertime,
-          statusTag: s.statusTag,
-          actualBlockMinutes: s.actualBlockMinutes ?? detailed.actualBlockMinutes,
-        };
-      }
-      return s;
-    });
 
-    // Append any extra detailed HSS sequences (e.g. 17894, 17333, 21566) not present in baseSeqs
-    hssSeqs.forEach(h => {
-      if (!mergedSeqs.some(m => m.sequenceNumber === h.sequenceNumber)) {
-        mergedSeqs.push(h);
-      }
-    });
-
-    const finalJulySeqs = mergedSeqs;
-
-    // Create August 2026 Demo Sequences (HI1 (3).pdf) with complete duty periods
-    const augSeqs: SequenceTrip[] = MOCK_AUG_SEQUENCES;
-
-    // Snapshot 1: July 17 Base Schedule (HI1.pdf)
-    const baseSnapshot: ScheduleSnapshot = {
-      id: "snap-jul17",
-      asOfDateStr: "17JUL26/2151",
-      uploadedAt: "2026-07-17T21:51:00Z",
-      sourceFileName: "HI1.pdf",
-      monthLabel: "JUL26",
-      sequences: finalJulySeqs.map((s) => (s.sequenceNumber === "17495" ? { ...s, statusTag: "SH" } : s)),
-      rawText: RAW_HI1_TEXT,
-      diffs: [],
-      projectedCreditHours: 75.42,
-      flownBlockHours: 64.48,
-    };
-
-    // Snapshot 2: July 22 Schedule with Reassignment on Seq 17495 (HI1 (1).pdf & HI1 (2).pdf)
-    const reassignedSeqs = finalJulySeqs.map((s) =>
-      s.sequenceNumber === "17495"
-        ? { ...s, statusTag: "RA", totalCreditMinutes: 1172 } // 19.54h
-        : s
-    );
-    const raDiffs = diffScheduleSnapshots(baseSnapshot.sequences, reassignedSeqs);
-
-    const reassignmentSnapshot: ScheduleSnapshot = {
-      id: "snap-jul22-ra",
-      asOfDateStr: "22JUL26/1534",
-      uploadedAt: "2026-07-22T15:34:00Z",
-      sourceFileName: "HI1 (1).pdf / HI1 (2).pdf",
-      monthLabel: "JUL26",
-      sequences: reassignedSeqs,
-      rawText: RAW_HI1_TEXT,
-      diffs: raDiffs.length > 0 ? raDiffs : [
-        {
-          id: "diff-ra-17495",
-          type: "REASSIGNMENT",
-          sequenceNumber: "17495",
-          description: "Reassignment (RA) flagged on Sequence 17495. Day 21 block changed (5.06h actual vs 7.45h credit). Total credit increased to 19.54h.",
-          oldValue: "SH (Original Schedule)",
-          newValue: "RA (Reassigned - 19.54h credit)",
-          creditDeltaMinutes: 138, // +2.30h credit delta
-          severity: "alert",
-        },
-      ],
-      projectedCreditHours: 75.42,
-      flownBlockHours: 68.44,
-    };
-
-    // Snapshot 3: August 2026 Schedule (HI1 (3).pdf)
-    const augSnapshot: ScheduleSnapshot = {
-      id: "snap-aug22",
-      asOfDateStr: "22JUL26/1536",
-      uploadedAt: "2026-07-22T15:36:00Z",
-      sourceFileName: "HI1 (3).pdf",
-      monthLabel: "AUG26",
-      sequences: augSeqs,
-      rawText: RAW_HI1_AUG_TEXT,
-      diffs: [
-        {
-          id: "diff-aug-month",
-          type: "TRIP_ADDED",
-          sequenceNumber: "14731",
-          description: "August 2026 monthly bid line loaded. Vacation on Aug 01-07. Dropped trip 15156 on Aug 06-09.",
-          newValue: "75.76h projected credit",
-          severity: "info",
-        },
-      ],
-      projectedCreditHours: 75.76,
-      flownBlockHours: 68.44,
-    };
-
-    const initialSnapshots = [augSnapshot, reassignmentSnapshot, baseSnapshot];
-
-    // Combine demo sequences for July and August
-    const allDemoSeqs = deduplicateSequences([...reassignedSeqs, ...augSeqs]);
-
-
-
-    // Parse open sequences (N4 text for both ORD and DFW)
-    const openSeqsORD = parseN4OpenTime(RAW_N4_TEXT);
-    const openSeqsDFW = parseN4OpenTime(RAW_N4_DFW_TEXT);
-    const openSeqs = [...openSeqsORD, ...openSeqsDFW];
-    
-    // Calculate total TAFB for rates
-    const totalTafb = allDemoSeqs.reduce((acc, s) => acc + calculateSequenceTAFB(s), 0);
-    const updatedRates = {
-      ...DEFAULT_PAY_RATES,
-      tafbHours: totalTafb,
-    };
-    
-    // Select Sequence 17495 by default
-    const targetSeq = allDemoSeqs.find(s => s.sequenceNumber === "17495") || allDemoSeqs[0];
-    
-    set({
-      sequences: allDemoSeqs,
-      vacations: MOCK_VACATIONS,
-      snapshots: initialSnapshots,
-      activeSnapshotId: reassignmentSnapshot.id,
-      openSequences: openSeqs,
-      payRates: updatedRates,
-      selectedSequenceId: targetSeq ? targetSeq.id : null,
-    });
-    
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(allDemoSeqs));
-      localStorage.setItem("crewschedule_vacations", JSON.stringify(MOCK_VACATIONS));
-      localStorage.setItem("crewschedule_snapshots", JSON.stringify(initialSnapshots));
-      localStorage.setItem("crewschedule_opensequences", JSON.stringify(openSeqs));
-      localStorage.setItem("crewschedule_payrates", JSON.stringify(updatedRates));
-    }
-
-    get().autoGenerateLogbookFromRoster();
-  },
 
   clearAll: () => {
     set({
@@ -1105,7 +932,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   getRosterMetrics: () => {
     const seqs = get().getEffectiveSequences();
-    return computeRosterMetrics(seqs, RAW_HI1_TEXT);
+    const rawText = get().snapshots[0]?.rawText || "";
+    return computeRosterMetrics(seqs, rawText);
   },
 
   getBlockAndOtStats: () => {

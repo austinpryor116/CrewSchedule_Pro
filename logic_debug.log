@@ -2556,3 +2556,56 @@
 [2026-08-10T23:54:25.334Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
 [2026-08-10T23:54:25.334Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":3352}
 [2026-08-10T23:54:25.335Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.511Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":2520}
+[2026-08-11T01:45:26.511Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.511Z] [LOGIC:PARSER] Identified sequence number on line: 17352 {"day":6,"statusTag":"SKD"}
+[2026-08-11T01:45:26.512Z] [LOGIC:PARSER] Identified sequence number on line: 21649 {"day":6,"statusTag":"TT"}
+[2026-08-11T01:45:26.512Z] [LOGIC:PARSER] Sequence transition detected from 17352 to 21649 
+[2026-08-11T01:45:26.512Z] [LOGIC:PARSER] Saving new sequence 17352 {"days":[6,7,8],"statusTag":"TT","credit":"14.01"}
+[2026-08-11T01:45:26.512Z] [LOGIC:PARSER] Saving new sequence 21649 {"days":[6,7,8],"statusTag":"TT","credit":"17.34"}
+[2026-08-11T01:45:26.513Z] [LOGIC:PARSER] Identified sequence number on line: 17475 {"day":11,"statusTag":"SKD"}
+[2026-08-11T01:45:26.513Z] [LOGIC:PARSER] Identified sequence number on line: 18080 {"day":11,"statusTag":"SKD"}
+[2026-08-11T01:45:26.513Z] [LOGIC:PARSER] Sequence transition detected from 17475 to 18080 
+[2026-08-11T01:45:26.513Z] [LOGIC:PARSER] Saving new sequence 17475 {"days":[11,12,13,14],"statusTag":"SKD","credit":"18.22"}
+[2026-08-11T01:45:26.514Z] [LOGIC:PARSER] Identified sequence number on line: 18080 {"day":11,"statusTag":"SKD"}
+[2026-08-11T01:45:26.514Z] [LOGIC:PARSER] Saving new sequence 18080 {"days":[11,12,13,14],"statusTag":"SKD","credit":"15.37"}
+[2026-08-11T01:45:26.514Z] [LOGIC:PARSER] Identified sequence number on line: 21514 {"day":15,"statusTag":"SKD"}
+[2026-08-11T01:45:26.514Z] [LOGIC:PARSER] Saving new sequence 21514 {"days":[15],"statusTag":"OT","credit":"5.09"}
+[2026-08-11T01:45:26.515Z] [LOGIC:PARSER] Identified sequence number on line: 21614 {"day":17,"statusTag":"SKD"}
+[2026-08-11T01:45:26.515Z] [LOGIC:PARSER] Saving new sequence 21614 {"days":[17],"statusTag":"SKD","credit":"7.27"}
+[2026-08-11T01:45:26.515Z] [LOGIC:PARSER] Identified sequence number on line: 21614 {"day":17,"statusTag":"SKD"}
+[2026-08-11T01:45:26.515Z] [LOGIC:PARSER] Identified sequence number on line: 21596 {"day":18,"statusTag":"OT"}
+[2026-08-11T01:45:26.515Z] [LOGIC:PARSER] Sequence transition detected from 21614 to 21596 
+[2026-08-11T01:45:26.516Z] [LOGIC:PARSER] Merging additional days into sequence 21614 {"addedDays":[17],"credit":"2.58"}
+[2026-08-11T01:45:26.516Z] [LOGIC:PARSER] Identified sequence number on line: 17495 {"day":18,"statusTag":"SKD"}
+[2026-08-11T01:45:26.516Z] [LOGIC:PARSER] Sequence transition detected from 21596 to 17495 
+[2026-08-11T01:45:26.516Z] [LOGIC:PARSER] Saving new sequence 21596 {"days":[18],"statusTag":"SKD","credit":"1.09"}
+[2026-08-11T01:45:26.516Z] [LOGIC:PARSER] Saving new sequence 17495 {"days":[18,19,20,21],"statusTag":"SKD","credit":"17.23"}
+[2026-08-11T01:45:26.517Z] [LOGIC:PARSER] Identified sequence number on line: 21566 {"day":23,"statusTag":"SKD"}
+[2026-08-11T01:45:26.517Z] [LOGIC:PARSER] Saving new sequence 21566 {"days":[23],"statusTag":"OT","credit":"3.58"}
+[2026-08-11T01:45:26.517Z] [LOGIC:PARSER] Identified sequence number on line: 17333 {"day":24,"statusTag":"SKD"}
+[2026-08-11T01:45:26.517Z] [LOGIC:PARSER] Saving new sequence 17333 {"days":[24,25,26],"statusTag":"SKD","credit":"13.33"}
+[2026-08-11T01:45:26.518Z] [LOGIC:PARSER] Identified sequence number on line: 17894 {"day":27,"statusTag":"SKD"}
+[2026-08-11T01:45:26.518Z] [LOGIC:PARSER] Saving new sequence 17894 {"days":[27,28],"statusTag":"TT","credit":"10.45"}
+[2026-08-11T01:45:26.518Z] [LOGIC:PARSER] Identified sequence number on line: 17270 {"day":30,"statusTag":"SKD"}
+[2026-08-11T01:45:26.518Z] [LOGIC:PARSER] Saving new sequence 17270 {"days":[30,31],"statusTag":"SKD","credit":"9.25"}
+[2026-08-11T01:45:26.518Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":1506}
+[2026-08-11T01:45:26.518Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.519Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":1862}
+[2026-08-11T01:45:26.519Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.519Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":615}
+[2026-08-11T01:45:26.519Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.519Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":835}
+[2026-08-11T01:45:26.520Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.520Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":1859}
+[2026-08-11T01:45:26.520Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.520Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":461}
+[2026-08-11T01:45:26.520Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.521Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":600}
+[2026-08-11T01:45:26.521Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.522Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":673}
+[2026-08-11T01:45:26.522Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.522Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":1951}
+[2026-08-11T01:45:26.522Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
+[2026-08-11T01:45:26.523Z] [LOGIC:PARSER] Starting parseHI1Schedule {"textLength":938}
+[2026-08-11T01:45:26.523Z] [LOGIC:PARSER] Extracted vacations from HI1 {"vacationCount":0}
