@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useCrewStore } from "../store/useCrewStore";
 import CalendarView from "../components/Calendar/CalendarView";
-import CalendarSidebar from "../components/Calendar/CalendarSidebar";
 import ParserStudio from "../components/ParserStudio/ParserStudio";
 import PayCalculator from "../components/PayCalculator/PayCalculator";
 import CompliancePanel from "../components/Compliance/CompliancePanel";
@@ -12,7 +11,6 @@ import BriefingView from "../components/Briefing/BriefingView";
 import RevisionStudio from "../components/RevisionHistory/RevisionStudio";
 import LogbookStudio from "../components/Logbook/LogbookStudio";
 import PortalBrowserStudio from "../components/PortalBrowser/PortalBrowserStudio";
-import MacroActionBar from "../components/MacroActionBar";
 
 import {
   Calendar as CalendarIcon,
@@ -20,21 +18,14 @@ import {
   Plane,
   RotateCcw,
   Sparkles,
-  Award,
   Clock,
   ShieldCheck,
-  Pin,
-  ChevronLeft,
-  ChevronRight,
   Settings,
   History,
-  Sun,
-  AlertCircle,
   BookOpen,
   Globe,
   X,
   SlidersHorizontal,
-  Layers,
 } from "lucide-react";
 
 export default function Home() {
@@ -55,9 +46,7 @@ export default function Home() {
   const droppedSeqsCount = sequences.filter((s) => s.isDropped || s.statusTag === "DROP" || s.statusTag === "DTS DROP").length;
 
   // Sidebar states for desktop
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isSidebarPinned, setIsSidebarPinned] = useState(true);
-  const [showMoreMobileMenu, setShowMoreMobileMenu] = useState(false);
+  // Modal / Menu States
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   useEffect(() => {
@@ -75,7 +64,6 @@ export default function Home() {
     );
   }
 
-  const isExpanded = !isSidebarCollapsed;
 
   const mainNavItems = [
     { id: "calendar", name: "Schedule", icon: CalendarIcon },
@@ -100,11 +88,21 @@ export default function Home() {
     <main className="w-screen h-screen flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans relative">
       {/* Main Full-Screen Workspace Tab View */}
       <div className="flex-grow overflow-hidden relative">
-        {activeTab === "calendar" && <CalendarView />}
-        {activeTab === "briefing" && <BriefingView />}
-        {activeTab !== "calendar" && activeTab !== "briefing" && (
+        <div className={`h-full w-full ${activeTab === "calendar" ? "block" : "hidden"}`}>
+          <CalendarView />
+        </div>
+        <div className={`h-full w-full ${activeTab === "briefing" ? "block" : "hidden"}`}>
+          <BriefingView />
+        </div>
+        
+        {/* Keep Portal alive in the DOM so the iframe doesn't lose session/login state */}
+        <div className={`h-full w-full overflow-y-auto p-4 sm:p-6 pb-24 scrollbar-thin ${activeTab === "portal" ? "block relative" : "absolute opacity-0 pointer-events-none -z-50 invisible"}`}>
+          <PortalBrowserStudio />
+        </div>
+
+        {/* Other tabs can unmount normally */}
+        {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "portal" && (
           <div className="h-full w-full overflow-y-auto p-4 sm:p-6 pb-24 scrollbar-thin">
-            {activeTab === "portal" && <PortalBrowserStudio />}
             {activeTab === "logbook" && <LogbookStudio />}
             {activeTab === "revisions" && <RevisionStudio />}
             {activeTab === "import" && <ParserStudio />}

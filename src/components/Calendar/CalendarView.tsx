@@ -23,7 +23,7 @@ function parseLocalDateString(dateStr: string): Date {
 }
 
 export default function CalendarView() {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 6, 20)); // Centered on July 20, 2026
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<"month" | "week">("month");
   const [filterMode, setFilterMode] = useState<"all" | "trips" | "off" | "high-credit">("all");
   const [hoveredSeqId, setHoveredSeqId] = useState<string | null>(null);
@@ -141,6 +141,7 @@ export default function CalendarView() {
     return () => document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
+  const monthlyHIMetadata = useCrewStore((state) => state.monthlyHIMetadata);
   const rawSequences = useCrewStore((state) => state.sequences);
   const vacations = useCrewStore((state) => state.vacations);
   const openSequences = useCrewStore((state) => state.openSequences);
@@ -161,6 +162,27 @@ export default function CalendarView() {
   const stationTurnLimits = useCrewStore((state) => state.stationTurnLimits);
   const defaultTurnLimit = useCrewStore((state) => state.defaultTurnLimit);
   const highCreditThresholdHours = useCrewStore((state) => state.highCreditThresholdHours);
+
+  // Update calendar to match the metadata month
+  const prevMetadataRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (monthlyHIMetadata?.monthEnding) {
+      if (prevMetadataRef.current === monthlyHIMetadata.monthEnding) return;
+      prevMetadataRef.current = monthlyHIMetadata.monthEnding;
+      
+      const m = monthlyHIMetadata.monthEnding.match(/\d*([A-Z]{3})(\d{2,4})/i);
+      if (m) {
+        const monthAbbr = m[1].toUpperCase();
+        let yearNum = parseInt(m[2], 10);
+        if (yearNum < 100) yearNum += 2000;
+        const months: Record<string, number> = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
+        const monthIdx = months[monthAbbr];
+        if (monthIdx !== undefined) {
+          setCurrentDate(new Date(yearNum, monthIdx, 20));
+        }
+      }
+    }
+  }, [monthlyHIMetadata]);
 
 
   const sequences = useMemo(() => {
@@ -1008,12 +1030,12 @@ export default function CalendarView() {
                         {dutyPeriod.legs.map((leg) => (
                           <div
                             key={leg.flightNumber}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800"
+                            className={`flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold ${leg.isCancelled ? 'text-red-600/70 line-through' : 'text-slate-800'}`}
                           >
-                            <Plane className="w-3 h-3 text-sky-600" />
-                            <span>{leg.flightNumber}</span>
-                            <span className="text-slate-600">({leg.depAirport}→{leg.arrAirport})</span>
-                            <span className="text-[10px] text-slate-500">{leg.depTime}-{leg.arrTime}</span>
+                            <Plane className={`w-3 h-3 ${leg.isCancelled ? 'text-red-400' : 'text-sky-600'}`} />
+                            <span>{leg.flightNumber}{leg.isCancelled && " (CXLD)"}</span>
+                            <span className={leg.isCancelled ? 'text-red-500/70' : 'text-slate-600'}>({leg.depAirport}→{leg.arrAirport})</span>
+                            <span className={`text-[10px] ${leg.isCancelled ? 'text-red-400/70' : 'text-slate-500'}`}>{leg.depTime}-{leg.arrTime}</span>
                           </div>
                         ))}
                       </div>

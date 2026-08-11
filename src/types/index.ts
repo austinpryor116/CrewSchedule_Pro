@@ -1,3 +1,11 @@
+export interface LogicLogEntry {
+  id: string;
+  timestamp: string;
+  category: "PARSER" | "DECS_API" | "CALENDAR" | "SYSTEM";
+  message: string;
+  details?: any;
+}
+
 export interface FlightLeg {
   flightNumber: string;
   depAirport: string;
@@ -5,12 +13,14 @@ export interface FlightLeg {
   depTime: string; // HHMM format, e.g. "0800"
   arrTime: string; // HHMM format, e.g. "1430"
   blockMinutes: number;
+  groundMinutes?: number; // Time on ground before NEXT flight
   tailNumber?: string;
   actualBlockMinutes?: number;
   actualDepTime?: string;
   actualArrTime?: string;
   isDeadhead?: boolean;
   isOvertime?: boolean;
+  isCancelled?: boolean;
 }
 
 export interface DutyPeriod {
@@ -18,6 +28,8 @@ export interface DutyPeriod {
   reportTime: string; // HHMM format, e.g. "0715"
   releaseTime: string; // HHMM format, e.g. "1515"
   dutyMinutes: number;
+  payCreditMinutes?: number; // Extracted from D/P SKD
+  odlMinutes?: number; // Extracted from ODL 
   legs: FlightLeg[];
   layoverCity: string;
   layoverHotelInfo: string;

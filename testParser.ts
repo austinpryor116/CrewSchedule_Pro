@@ -1,0 +1,30 @@
+import { parseRawSchedule } from "./src/lib/parser";
+
+const text = `MONTH ENDING 30AUG26 AS OF 10AUG26/1640                    SC-Y
+PRYOR AR            01361 742840 ORD  441-CA E75E
+H 812-399-2574
+V 8123992574
+D EXP 0.00   I EXP 0.00
+GUAR 72.00 FLT TIME 672 HOURS/ 50.02 365 DAY/ 749.47
+PTL TRIP TRD 0 DROP 0
+BID SEL PROJ FOR: E75E 49.12 E70E 23.02
+BID SEL PROJ 72.14
+FLT DUTY PERIOD TIME  168 HOURS/  0.00  672 HOURS/ 93.35
+AVBL SK 24.17    YTD SK ACRL 0.00      SK USED MTD 0.00
+LONG TERM SK AVAIL 0.00      LONG TERM SK USED MTD 0.00
+SHORT TERM SICK PAYOUT ACCRUAL 21.00
+SK TIME AVAIL FOR M/U 0.00
+PREV MONTH ACCRUAL AVAILABLE
+PREV MONTH LONG TERM ACCRUAL AVAIL
+SK M/U MTD 0.00              BYPASS SK ACCRUAL - NO
+TTL SK USED YTD 18.58        TTL SK USED PREV YEAR 50.53
+ DD ST RMV ADD SEQ    FLT    FLT   SKED  STTL   ACT  GRTR  GTTL
+ 01  1 VC      24     0000   2400
+ 02  1 VC      24     0000   2400
+ 03  1 VC      24     0000   2400
+ 04  1 VC      24     0000   2400                              ?`;
+
+console.log("Parsing...");
+const result = parseRawSchedule(text);
+console.log("Result sequences:", result.length);
+console.log(JSON.stringify(result, null, 2));

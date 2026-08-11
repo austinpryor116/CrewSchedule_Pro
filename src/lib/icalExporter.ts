@@ -17,7 +17,7 @@ function formatIcsDateTime(dateStr: string, timeStr?: string): string {
 export function generateRosterIcs(sequences: SequenceTrip[], payRates?: PayRates): string {
   const nowUtc = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
   
-  let ics = [
+  const ics = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//CrewSchedule Pro//Airline Roster Calendar//EN",

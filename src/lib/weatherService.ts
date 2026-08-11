@@ -406,7 +406,7 @@ export function decodeMetarData(metar: any, datisText?: string, atisLetter?: str
   const letterIdx = (reportDate.getUTCHours() + Math.floor(reportDate.getUTCMinutes() / 30) + stationHash) % 26;
   const utcTimeStr = `${String(reportDate.getUTCHours()).padStart(2, "0")}${String(reportDate.getUTCMinutes()).padStart(2, "0")}Z`;
 
-  let chosenLetter = atisLetter ? atisLetter.toUpperCase() : atisLetters[letterIdx];
+  const chosenLetter = atisLetter ? atisLetter.toUpperCase() : atisLetters[letterIdx];
   let atisCodeStr = `D-ATIS Info ${chosenLetter} (${utcTimeStr})`;
 
   let atisDataObj: AtisDetails | undefined = undefined;

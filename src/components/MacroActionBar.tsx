@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { PFKeyMacroBuilder } from "../lib/pfKeys";
 import { executeMacroSequence } from "../lib/automationEngine";
+import { typeMacroOnDecsScreen } from "../lib/keyboardSimEngine";
+import { HssSequenceModal } from "./HssSequenceModal";
 import { useCrewStore } from "../store/useCrewStore";
 import {
   Terminal,
@@ -11,20 +13,20 @@ import {
   Hotel,
   LogOut,
   RefreshCw,
-  ShoppingBag,
   ChevronDown,
   ChevronUp,
-  X,
-  Play,
   Activity,
   Layers,
-  Sparkles,
+  ShoppingBag,
+  X,
+  Play,
 } from "lucide-react";
 
 export default function MacroActionBar() {
   const consoleLogs = useCrewStore((state) => state.consoleLogs);
   const clearConsoleLogs = useCrewStore((state) => state.clearConsoleLogs);
   const sequences = useCrewStore((state) => state.sequences);
+  const isTypingOnDecs = useCrewStore((state) => state.isTypingOnDecs);
 
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -46,13 +48,18 @@ export default function MacroActionBar() {
     seat: "CA",
   });
 
-  // Execute a macro string directly
+  const [customCodeInput, setCustomCodeInput] = useState("HSS/17495/27JUL");
+  const [isHssModalOpen, setHssModalOpen] = useState(false);
+
+  // Execute a macro string directly by typing character-by-character on open DECS screen
   const runMacro = async (macroString: string, label: string) => {
+    if (!macroString.trim()) return;
     setIsExecuting(true);
     setIsLogOpen(true);
     try {
-      await executeMacroSequence(macroString, 350, {
-        onStepExecute: () => {},
+      await typeMacroOnDecsScreen(macroString, {
+        charDelayMs: 30,
+        stepDelayMs: 250,
       });
     } catch (err) {
       console.error(`Macro execution failed for ${label}:`, err);
@@ -85,6 +92,36 @@ export default function MacroActionBar() {
     runMacro(macroStr, "Sign Out");
   };
 
+  const handlePullHI1 = () => {
+    runMacro("HI1^", "Pull HI1 Schedule");
+  };
+
+  const handlePullHI2 = () => {
+    runMacro("HI2^", "Pull HI2 Schedule");
+  };
+
+  const handleHssLookup = () => {
+    setHssModalOpen(true);
+  };
+
+  const handle26BCommute = () => {
+    runMacro("26B/27JUL/DFW/ORD^", "26B Commute Listing");
+  };
+
+  const handleJpRelease = () => {
+    runMacro("JP*1749/27JUL^", "JP* Dispatch Release");
+  };
+
+  const handleTripSignIn = () => {
+    const macroStr = PFKeyMacroBuilder.tripSignIn("742840");
+    runMacro(macroStr, "Trip Sign In");
+  };
+
+  const handleDecsLogin = () => {
+    const macroStr = PFKeyMacroBuilder.decsLogin("742840", "sara202");
+    runMacro(macroStr, "DECS Login");
+  };
+
   // Submit Handlers for Modals
   const handleTradeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,8 +147,15 @@ export default function MacroActionBar() {
     runMacro(macroStr, "Open Time Pickup");
   };
 
+  const handleCustomCodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customCodeInput.trim()) {
+      runMacro(customCodeInput.trim(), "Custom DECS Code");
+    }
+  };
+
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 transition-all duration-200 font-sans">
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 transition-all duration-200 font-sans space-y-3">
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
         <div className="flex items-center gap-2.5">
@@ -122,11 +166,11 @@ export default function MacroActionBar() {
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               DECS Quick-Action Macro Bar
               <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded-md bg-sky-100 text-sky-950 border border-sky-300">
-                ^E Engine Ready
+                ^E Typing Engine Ready
               </span>
             </h3>
             <p className="text-xs text-slate-600 font-medium">
-              One-tap DECS terminal macro automation & parametric trade execution
+              Physical keyboard typing automation into active DECS terminal screen
             </p>
           </div>
         </div>
@@ -146,15 +190,48 @@ export default function MacroActionBar() {
         </button>
       </div>
 
+      {/* Interactive Custom DECS Code Runner Bar */}
+      <form onSubmit={handleCustomCodeSubmit} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+        <span className="text-xs font-mono font-bold text-slate-600 pl-2 shrink-0">DECS Code:</span>
+        <input
+          type="text"
+          value={customCodeInput}
+          onChange={(e) => setCustomCodeInput(e.target.value)}
+          placeholder="Enter custom DECS code (e.g. HSS/17495/27JUL or 26B/27JUL/DFW/ORD)..."
+          className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-900 font-bold focus:outline-none focus:border-sky-500"
+        />
+        <button
+          type="submit"
+          disabled={isExecuting || !customCodeInput.trim()}
+          className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
+        >
+          <Play className="w-3.5 h-3.5 fill-current" />
+          <span>Type & Execute Code</span>
+        </button>
+      </form>
+
       {/* Action Buttons Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 mt-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+        {/* DECS Login */}
+        <button
+          onClick={() => runMacro("//MQ^BSIP742840^SARA202^", "DECS Login")}
+          disabled={isExecuting}
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 hover:border-emerald-500 hover:bg-emerald-100 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+            <Zap className="w-4 h-4 fill-white" />
+          </div>
+          <span className="text-xs font-bold text-slate-900 group-hover:text-emerald-900 text-center">🔑 DECS Login</span>
+          <span className="text-[10px] text-slate-500 font-mono">//MQ➔BSIP➔Pass</span>
+        </button>
+
         {/* Fit For Duty */}
         <button
           onClick={handleFitForDuty}
           disabled={isExecuting}
-          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
         >
-          <CheckCircle2 className="w-5 h-5 text-sky-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <CheckCircle2 className="w-4 h-4 text-sky-600 group-hover:scale-110 transition duration-150 mb-1" />
           <span className="text-xs font-bold text-slate-900">Fit For Duty</span>
           <span className="text-[9px] text-slate-600 font-mono font-bold">HIFIT/17495</span>
         </button>
@@ -163,9 +240,9 @@ export default function MacroActionBar() {
         <button
           onClick={handleReserveProffer}
           disabled={isExecuting}
-          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-amber-300 hover:bg-amber-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-amber-300 hover:bg-amber-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
         >
-          <Layers className="w-5 h-5 text-amber-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <Layers className="w-4 h-4 text-amber-600 group-hover:scale-110 transition duration-150 mb-1" />
           <span className="text-xs font-bold text-slate-900">Reserve Proffer</span>
           <span className="text-[9px] text-slate-600 font-mono font-bold">HI31 RAP 1&2</span>
         </button>
@@ -174,20 +251,64 @@ export default function MacroActionBar() {
         <button
           onClick={handleDallasHotel}
           disabled={isExecuting}
-          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
         >
-          <Hotel className="w-5 h-5 text-emerald-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <Hotel className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition duration-150 mb-1" />
           <span className="text-xs font-bold text-slate-900">DFW Hotel Req</span>
           <span className="text-[9px] text-slate-600 font-mono font-bold">RF 200DFW</span>
+        </button>
+
+        {/* Pull HI1 */}
+        <button
+          onClick={handlePullHI1}
+          disabled={isExecuting}
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          <Terminal className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <span className="text-xs font-bold text-slate-900">HI1 Schedule</span>
+          <span className="text-[9px] text-slate-600 font-mono font-bold">HI1^</span>
+        </button>
+
+        {/* HSS Lookup */}
+        <button
+          onClick={handleHssLookup}
+          disabled={isExecuting}
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-teal-300 hover:bg-teal-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          <Zap className="w-4 h-4 text-teal-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <span className="text-xs font-bold text-slate-900">HSS Pairing</span>
+          <span className="text-[9px] text-slate-600 font-mono font-bold invisible">Placeholder</span>
+        </button>
+
+        {/* 26B Commute */}
+        <button
+          onClick={handle26BCommute}
+          disabled={isExecuting}
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          <Activity className="w-4 h-4 text-blue-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <span className="text-xs font-bold text-slate-900">26B Commute</span>
+          <span className="text-[9px] text-slate-600 font-mono font-bold">26B/DFW/ORD</span>
+        </button>
+
+        {/* JP* Release */}
+        <button
+          onClick={handleJpRelease}
+          disabled={isExecuting}
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-orange-300 hover:bg-orange-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          <Zap className="w-4 h-4 text-orange-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <span className="text-xs font-bold text-slate-900">JP* Release</span>
+          <span className="text-[9px] text-slate-600 font-mono font-bold">JP*1749</span>
         </button>
 
         {/* Sign Out */}
         <button
           onClick={handleSignOut}
           disabled={isExecuting}
-          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
         >
-          <LogOut className="w-5 h-5 text-rose-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <LogOut className="w-4 h-4 text-rose-600 group-hover:scale-110 transition duration-150 mb-1" />
           <span className="text-xs font-bold text-slate-900">Sign Out</span>
           <span className="text-[9px] text-slate-600 font-mono font-bold">BSO^E</span>
         </button>
@@ -196,9 +317,9 @@ export default function MacroActionBar() {
         <button
           onClick={() => setActiveModal("trade")}
           disabled={isExecuting}
-          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
         >
-          <RefreshCw className="w-5 h-5 text-cyan-600 group-hover:rotate-45 transition duration-200 mb-1" />
+          <RefreshCw className="w-4 h-4 text-cyan-600 group-hover:rotate-45 transition duration-200 mb-1" />
           <span className="text-xs font-bold text-slate-900">Trip Trade</span>
           <span className="text-[9px] text-slate-600 font-mono font-bold">HIY/HTS</span>
         </button>
@@ -207,11 +328,22 @@ export default function MacroActionBar() {
         <button
           onClick={() => setActiveModal("pickup")}
           disabled={isExecuting}
-          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-purple-300 hover:bg-purple-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-purple-300 hover:bg-purple-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
         >
-          <ShoppingBag className="w-5 h-5 text-purple-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <ShoppingBag className="w-4 h-4 text-purple-600 group-hover:scale-110 transition duration-150 mb-1" />
           <span className="text-xs font-bold text-slate-900">Open Time Pickup</span>
           <span className="text-[9px] text-slate-600 font-mono font-bold">HTO/B</span>
+        </button>
+
+        {/* DECS Login */}
+        <button
+          onClick={handleDecsLogin}
+          disabled={isExecuting}
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-400 hover:bg-slate-100 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          <Terminal className="w-4 h-4 text-slate-700 group-hover:scale-110 transition duration-150 mb-1" />
+          <span className="text-xs font-bold text-slate-900">DECS Host Login</span>
+          <span className="text-[9px] text-slate-600 font-mono font-bold">//MQ^BSIP</span>
         </button>
       </div>
 
@@ -436,6 +568,12 @@ export default function MacroActionBar() {
           </div>
         </div>
       )}
+
+      {/* HSS Sequence Modal */}
+      <HssSequenceModal 
+        isOpen={isHssModalOpen} 
+        onClose={() => setHssModalOpen(false)} 
+      />
     </div>
   );
 }

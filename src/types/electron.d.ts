@@ -6,6 +6,8 @@ export interface ElectronAPI {
   sendMacro: (macroString: string) => Promise<{ success: boolean; macro?: string; error?: string }>;
   injectCanvasInterceptor: () => Promise<{ success: boolean }>;
   flushSabreBuffer: () => Promise<any[]>;
+  fetchRemoteUrl: (url: string) => Promise<{ success: boolean; text?: string; status?: number; error?: string }>;
+  writeDebugLog: (logText: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   onTerminalResponse: (callback: (response: string) => void) => void;
 }
 

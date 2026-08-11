@@ -1,0 +1,32 @@
+import { parseRawSchedule } from './src/lib/parser';
+const text = `MONTH ENDING 30AUG26 AS OF 04AUG26/1116 SC-Y
+PRYOR AR 01361 742840 ORD 441-CA E75E
+ 18 1 24 0000 2400
+ 19 1 24 0000 2400
+ 20 1 14962 -4145 -4145
+ -3811 6.43
+MONTH ENDING 30AUG26 AS OF 04AUG26/1116 SC-Y
+PRYOR AR 01361 742840 ORD 441-CA E75E
+ 18 1 24 0000 2400
+ 19 1 24 0000 2400
+ 21 1 -3778 -3859 4.32
+ 22 1 -4179 -3873
+ -3873 -3512 4.49
+ 23 1 -3352 -3689
+ -3573 6.25 22.29
+ 14962 EXP TAFB 73.44 RIC 2 FSM 2 MAF 3
+ ACT TOTAL 0.00
+ 24 1 24 0000 2400
+ 25 1 24 0000 2400
+ 26 1 24 0000 2400
+ 27 1 15101 -3626 -3594
+ -3771 4.48
+ 28 1 -4330 -3559 2.29
+ 29 1 -3708 -4144 3.20
+ 30 1 -3673 -3552
+ -3552 5.49 16.26
+ 15101 EXP TAFB 70.35 SPI 3 MLI 1 GSO 3
+ ACT TOTAL 0.00
+ END OF DISPLAY`;
+const result = parseRawSchedule(text);
+console.log(result.map(s => ({seq: s.sequenceNumber, start: s.startDate, end: s.endDate, dropped: s.isDropped, dropReason: s.dropReason})));

@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   fetchRemoteUrl: (url) => ipcRenderer.invoke("fetch-remote-url", url),
 
   /**
+   * Automatically writes/appends runtime diagnostic logs to decs_debug.log
+   */
+  writeDebugLog: (logText) => ipcRenderer.invoke("write-debug-log", logText),
+
+  /**
    * Subscribes to terminal response events returned from main process / portal
    */
   onTerminalResponse: (callback) => {

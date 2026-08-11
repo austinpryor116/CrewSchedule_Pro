@@ -303,22 +303,27 @@ export async function GET(request: NextRequest) {
       <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="utf-8">
           <style>
-            body { background: #090d16; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; padding: 40px; }
-            .card { max-width: 560px; margin: 0 auto; background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 32px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
-            h2 { color: #818cf8; margin-top: 0; }
-            code { background: #0f172a; padding: 4px 8px; border-radius: 6px; color: #38bdf8; font-family: monospace; word-break: break-all; }
-            .btn { display: inline-block; background: #4f46e5; color: white; padding: 10px 18px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 16px; margin-right: 12px; }
-            .btn-secondary { background: #334155; color: #cbd5e1; }
+            body { background: #090d16; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; padding: 30px; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+            .card { max-width: 520px; width: 100%; background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 28px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); text-align: center; }
+            h3 { color: #38bdf8; margin-top: 0; font-size: 18px; }
+            code { background: #0f172a; padding: 4px 8px; border-radius: 6px; color: #38bdf8; font-family: monospace; font-size: 12px; word-break: break-all; }
+            .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+            .btn { display: inline-flex; align-items: center; gap: 6px; background: #0284c7; color: white; padding: 10px 18px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 12px; transition: background 0.2s; }
+            .btn:hover { background: #0369a1; }
+            .btn-secondary { background: #334155; color: #f8fafc; border: 1px solid #475569; }
+            .btn-secondary:hover { background: #475569; }
           </style>
         </head>
         <body>
           <div class="card">
-            <h2>Connection Refused or Blocked</h2>
-            <p>Target URL: <code>${parsedUrl.toString()}</code></p>
-            <p style="color: #94a3b8; font-size: 14px;">The target web server refused direct proxy connection or restricted embedded framing. Error details: ${error?.message || "Network Error"}</p>
-            <a href="/api/proxy?url=${encodeURIComponent(searchFallbackUrl)}" class="btn">Search on DuckDuckGo</a>
-            <a href="${parsedUrl.toString()}" target="_blank" class="btn btn-secondary">Open Directly in New Tab</a>
+            <h3>Web Proxy Navigation</h3>
+            <p style="color: #94a3b8; font-size: 13px;">Target URL: <code>${parsedUrl.toString()}</code></p>
+            <div class="btn-group">
+              <a href="/api/proxy?url=${encodeURIComponent(searchFallbackUrl)}" class="btn">Search Web</a>
+              <a href="${parsedUrl.toString()}" target="_blank" class="btn btn-secondary">Open Directly in New Tab ↗</a>
+            </div>
           </div>
         </body>
       </html>

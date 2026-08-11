@@ -82,7 +82,7 @@ async function runTests() {
 
   // TEST 4: End-to-End Macro Engine Step Execution with Simulated Canvas Buffer
   console.log("\n--- TEST SUITE 4: Async Macro Engine & Smart Listener ---");
-  let simulatedStep = 0;
+  const simulatedStep = 0;
   const simulatedResponses: CanvasBuffer[] = [
     [
       [{ chr: "H", col: 0, row: 0 }, { chr: "I", col: 1, row: 0 }, { chr: "1", col: 2, row: 0, CR: true }],

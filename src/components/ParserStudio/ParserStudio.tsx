@@ -6,7 +6,8 @@ import { parseRawSchedule, parseN4OpenTime, extractVacationsFromHI1, parseMonthl
 import { readUploadedFileAsText } from "../../lib/pdfExtractor";
 import { RAW_DEMO_TEXT, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT } from "../../lib/demoData";
 import { SequenceTrip, OpenSequence, MonthlyHIMetadata, VacationPeriod } from "../../types";
-import { Clipboard, Play, AlertCircle, FileText, CheckCircle2, RotateCcw, HelpCircle, Upload, ShieldCheck, Calendar, User, Award, Clock, DollarSign, HeartPulse } from "lucide-react";
+import { Clipboard, Play, AlertCircle, FileText, CheckCircle2, RotateCcw, HelpCircle, Upload, ShieldCheck, Calendar, User, Award, Clock, DollarSign, HeartPulse, Stethoscope } from "lucide-react";
+import { LogicTraceModal } from "../LogicTraceModal";
 
 export default function ParserStudio() {
   const [parseMode, setParseMode] = useState<"roster" | "opentime">("roster");
@@ -19,6 +20,7 @@ export default function ParserStudio() {
   const [uploadedFileName, setUploadedFileName] = useState<string>("");
   const [isExtracting, setIsExtracting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isTraceModalOpen, setIsTraceModalOpen] = useState(false);
 
   const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
   const setOpenSequences = useCrewStore((state) => state.setOpenSequences);
@@ -171,6 +173,7 @@ export default function ParserStudio() {
 
   return (
     <div className="space-y-6 animate-fadeIn font-sans">
+      {isTraceModalOpen && <LogicTraceModal onClose={() => setIsTraceModalOpen(false)} />}
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-200">
         <div>
@@ -197,6 +200,13 @@ export default function ParserStudio() {
               >
                 <FileText className="w-3.5 h-3.5 text-amber-600" />
                 August HI Log (HI2.pdf)
+              </button>
+              <button
+                onClick={() => setIsTraceModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white border border-transparent rounded-xl transition duration-200 text-xs font-bold shadow-sm cursor-pointer"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                View Logic Trace
               </button>
             </>
           ) : (

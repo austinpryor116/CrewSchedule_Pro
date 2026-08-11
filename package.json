@@ -4,18 +4,21 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node -e \"require('fs').rmSync('.next', {recursive:true, force:true})\" && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "electron:start": "npx electron .",
     "electron:dev": "node electron/start.js",
-    "electron:build": "next build && npx electron-builder"
+    "electron:build": "next build && npx electron-builder",
+    "backup": "node scripts/backup-gdrive.js",
+    "gdrive": "node scripts/backup-gdrive.js"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
     "lucide-react": "^1.25.0",
     "next": "16.2.10",
+    "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^6.1.200",
     "react": "19.2.4",
     "react-dom": "19.2.4",

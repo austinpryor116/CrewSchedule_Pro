@@ -52,7 +52,7 @@ export class CanvasBufferDecoder {
       for (let c = 0; c < maxCol; c++) {
         const charObj = row[c];
 
-        if (charObj && typeof charObj.chr === "string") {
+        if (charObj && typeof charObj.chr === "string" && charObj.chr !== "\x00" && charObj.chr !== "\u0000" && charObj.chr.charCodeAt(0) !== 0) {
           lineStr += charObj.chr;
           hasCharInRow = true;
           if (charObj.CR) {

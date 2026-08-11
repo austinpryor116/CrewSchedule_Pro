@@ -129,8 +129,8 @@ export async function executeCommand(
 ): Promise<string> {
   if (!macroString) return "";
 
-  // 1. Split macroString by ^E token (ENTER key)
-  const steps = macroString.split("^E").filter((s) => s !== undefined);
+  // 1. Split macroString by ^ or ^E token (ENTER key)
+  const steps = macroString.split(/\^E?/).filter((s) => s !== undefined);
   const timeoutMs = options?.timeoutMs || 5000;
 
   let lastBuffer: CanvasBuffer = [];

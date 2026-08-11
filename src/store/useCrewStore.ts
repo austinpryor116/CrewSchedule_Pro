@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent } from "../types";
+import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry } from "../types";
 import { DEFAULT_PAY_RATES, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT, RAW_N4_DFW_TEXT, MOCK_SEQUENCES, MOCK_AUG_SEQUENCES, MOCK_VACATIONS, DEFAULT_SUBSCRIBED_CALENDARS, DEFAULT_PERSONAL_EVENTS } from "../lib/demoData";
 import { RAW_HSS_1_TEXT, RAW_HSS_2_TEXT, RAW_HSS_3_TEXT, RAW_HSS_4_TEXT, RAW_HSS_5_TEXT, RAW_HSS_6_TEXT, RAW_HSS_7_TEXT, RAW_HSS_8_TEXT, RAW_HSS_9_TEXT, RAW_HSS_10_TEXT } from "../lib/hss_extracted_text";
 import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes } from "../lib/parser";
@@ -22,6 +22,7 @@ interface CrewState {
   selectedSequenceId: string | null;
   automationConfig: AutomationConfig;
   consoleLogs: string[];
+  logicLogs: LogicLogEntry[];
   activeTab: string;
   isHydrated: boolean;
   
@@ -59,6 +60,16 @@ interface CrewState {
   isCalendarToolsOpen: boolean;
   setIsCalendarToolsOpen: (val: boolean) => void;
 
+  // Live DECS Screen Terminal State
+  decsScreenOutput: string;
+  decsCurrentInput: string;
+  isTypingOnDecs: boolean;
+  setDecsScreenOutput: (output: string | ((prev: string) => string)) => void;
+  setDecsCurrentInput: (input: string) => void;
+  setIsTypingOnDecs: (isTyping: boolean) => void;
+  appendDecsTerminalLine: (line: string) => void;
+  clearDecsScreenOutput: () => void;
+
   // Station Turn Limits Settings
   stationTurnLimits: Record<string, number>;
   defaultTurnLimit: number;
@@ -69,6 +80,7 @@ interface CrewState {
   setSequences: (sequences: SequenceTrip[]) => void;
   addSequences: (newSeqs: SequenceTrip[]) => void;
   updateSequence: (updated: SequenceTrip) => void;
+  mergeHssIntoSequence: (sequenceNumber: string, hssData: any) => void;
   deleteSequence: (id: string) => void;
   setMonthlyHIMetadata: (meta: MonthlyHIMetadata | null) => void;
   importMonthlyHISchedule: (
@@ -83,6 +95,8 @@ interface CrewState {
   updateAutomationConfig: (cfg: Partial<AutomationConfig>) => void;
   addConsoleLog: (log: string) => void;
   clearConsoleLogs: () => void;
+  addLogicLog: (entry: Omit<LogicLogEntry, "id" | "timestamp">) => void;
+  clearLogicLogs: () => void;
   setActiveTab: (tab: string) => void;
   loadDemoData: () => void;
   clearAll: () => void;
@@ -170,6 +184,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   selectedSequenceId: null,
   automationConfig: DEFAULT_AUTOMATION_CONFIG,
   consoleLogs: [],
+  logicLogs: [],
   activeTab: "calendar",
   isHydrated: false,
   snapshots: [],
@@ -187,6 +202,23 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   toggleShowDtsDropped: () => set((state) => ({ showDtsDropped: !state.showDtsDropped })),
   isCalendarToolsOpen: false,
   setIsCalendarToolsOpen: (val: boolean) => set({ isCalendarToolsOpen: val }),
+
+  decsScreenOutput: "",
+  decsCurrentInput: "",
+  isTypingOnDecs: false,
+  setDecsScreenOutput: (output) =>
+    set((state) => ({
+      decsScreenOutput: typeof output === "function" ? output(state.decsScreenOutput) : output,
+    })),
+  setDecsCurrentInput: (decsCurrentInput) => set({ decsCurrentInput }),
+  setIsTypingOnDecs: (isTypingOnDecs) => set({ isTypingOnDecs }),
+  appendDecsTerminalLine: (line) =>
+    set((state) => ({
+      decsScreenOutput: state.decsScreenOutput ? state.decsScreenOutput + "\n" + line : line,
+    })),
+  clearDecsScreenOutput: () =>
+    set({ decsScreenOutput: "" }),
+
   stationTurnLimits: DEFAULT_STATION_TURN_LIMITS,
   defaultTurnLimit: DEFAULT_TURN_LIMIT,
   highCreditThresholdHours: 15.0,
@@ -515,6 +547,9 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedLogbook = localStorage.getItem("crewschedule_logbook");
 
       let sanitizedSeqs = storedSeqs ? deduplicateSequences(JSON.parse(storedSeqs)) : [];
+      if (!sanitizedSeqs || sanitizedSeqs.length === 0) {
+        sanitizedSeqs = MOCK_SEQUENCES;
+      }
       const jul27Trip = MOCK_SEQUENCES.find((s) => s.sequenceNumber === "17894");
       if (jul27Trip) {
         sanitizedSeqs = deduplicateSequences([jul27Trip, ...sanitizedSeqs.filter((s) => s.sequenceNumber !== "17894")]);
@@ -530,7 +565,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedEvents = localStorage.getItem("crewschedule_personalevents");
 
       let activeEvents: PersonalCalendarEvent[] = storedEvents ? JSON.parse(storedEvents) : DEFAULT_PERSONAL_EVENTS;
-      let activeCals: SubscribedCalendar[] = storedCals ? JSON.parse(storedCals) : DEFAULT_SUBSCRIBED_CALENDARS;
+      const activeCals: SubscribedCalendar[] = storedCals ? JSON.parse(storedCals) : DEFAULT_SUBSCRIBED_CALENDARS;
 
       // Sanitize 48-hour Open Time events: ensure events starting July 27th end on July 29th (48h/2-day window) instead of July 30th
       activeEvents = activeEvents.map((evt) => {
@@ -673,6 +708,26 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     get().autoGenerateLogbookFromRoster();
   },
 
+  mergeHssIntoSequence: (sequenceNumber: string, hssData: any) => {
+    const seqs = get().sequences.map((s) => {
+      // Find the matching sequence by sequenceNumber (ignoring case)
+      if (s.sequenceNumber.toLowerCase() === sequenceNumber.toLowerCase()) {
+        return {
+          ...s,
+          dutyPeriods: hssData.dutyPeriods, // Use rich duty periods parsed from HSS
+          totalBlockMinutes: hssData.totalBlockMinutes, // Update exact block time
+        };
+      }
+      return s;
+    });
+
+    set({ sequences: seqs });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_sequences", JSON.stringify(seqs));
+    }
+    get().autoGenerateLogbookFromRoster();
+  },
+
   deleteSequence: (id) => {
     const seqs = get().sequences.filter((s) => s.id !== id);
     set({ sequences: seqs });
@@ -702,18 +757,24 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     }
   },
 
-  addConsoleLog: (log) => {
-    const time = new Date().toLocaleTimeString();
-    set((state) => ({ consoleLogs: [...state.consoleLogs, `[${time}] ${log}`] }));
-  },
+  addConsoleLog: (log) =>
+    set((state) => ({
+      consoleLogs: [...state.consoleLogs, `[${new Date().toLocaleTimeString()}] ${log}`].slice(-200),
+    })),
+  clearConsoleLogs: () => set({ consoleLogs: [] }),
 
-  clearConsoleLogs: () => {
-    set({ consoleLogs: [] });
-  },
+  addLogicLog: (entry) =>
+    set((state) => {
+      const newEntry: LogicLogEntry = {
+        ...entry,
+        id: Math.random().toString(36).substring(2, 9),
+        timestamp: new Date().toISOString()
+      };
+      return { logicLogs: [...state.logicLogs, newEntry].slice(-1000) };
+    }),
+  clearLogicLogs: () => set({ logicLogs: [] }),
 
-  setActiveTab: (activeTab) => {
-    set({ activeTab });
-  },
+  setActiveTab: (tab) => set({ activeTab: tab }),
 
   loadDemoData: () => {
     // Parse the default roster (HI1 summary text)
