@@ -335,18 +335,26 @@ export async function captureMultiPageDecsText(
       break;
     }
 
-    useCrewStore.getState().addConsoleLog(
-      `[MULTI-PAGE COLLECTOR] Page ${pageCount} captured. Sending "MD" (Move Down) for next page...`
-    );
+    let nextCmd = "MD^";
+    if (upperText.includes("MORE? (ENTER Y)") || upperText.includes("MORE (Y/N)") || upperText.includes("MORE? (Y/N)")) {
+      nextCmd = "Y^";
+      useCrewStore.getState().addConsoleLog(
+        `[MULTI-PAGE COLLECTOR] Page ${pageCount} captured. Sending "Y" for next page...`
+      );
+    } else {
+      useCrewStore.getState().addConsoleLog(
+        `[MULTI-PAGE COLLECTOR] Page ${pageCount} captured. Sending "MD" (Move Down) for next page...`
+      );
+    }
 
-    // Flush canvas capture buffer in webview before sending MD
+    // Flush canvas capture buffer in webview before sending command
     const webviews = document.querySelectorAll("webview") as unknown as any[];
     for (let i = 0; i < webviews.length; i++) {
       webviews[i]?.executeJavaScript("window._flushSabreBuffer && window._flushSabreBuffer()").catch(() => {});
     }
 
     const beforeMDText = currentScreenText;
-    await typeMacroOnDecsScreen("MD^", {
+    await typeMacroOnDecsScreen(nextCmd, {
       charDelayMs: 35,
       preEnterDelayMs: 200,
       pressEnter: true,

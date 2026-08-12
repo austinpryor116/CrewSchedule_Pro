@@ -169,7 +169,10 @@ const deduplicateSequences = (seqs: SequenceTrip[]): SequenceTrip[] => {
   if (!Array.isArray(seqs)) return [];
   const map = new Map<string, SequenceTrip>();
   seqs.forEach((s) => {
-    if (s && s.sequenceNumber) {
+    if (s && s.sequenceNumber && s.startDate) {
+      const key = `${s.sequenceNumber}-${s.startDate}`;
+      map.set(key, s);
+    } else if (s && s.sequenceNumber) {
       map.set(s.sequenceNumber, s);
     }
   });
@@ -457,7 +460,22 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   importMonthlyHISchedule: (newSeqs, newVacs, metadata, sourceFileName, rawText) => {
     const state = get();
-    const mergedSeqs = deduplicateSequences([...newSeqs]);
+    
+    // Find the months covered by the new pull (YYYY-MM)
+    const importedMonths = new Set<string>();
+    newSeqs.forEach(s => {
+      if (s.startDate) {
+        importedMonths.add(s.startDate.substring(0, 7));
+      }
+    });
+
+    // Keep existing sequences that are NOT in the imported months
+    const preservedSeqs = state.sequences.filter(s => {
+      if (!s.startDate) return false;
+      return !importedMonths.has(s.startDate.substring(0, 7));
+    });
+
+    const mergedSeqs = deduplicateSequences([...preservedSeqs, ...newSeqs]);
     
     set({ monthlyHIMetadata: metadata });
     if (typeof window !== "undefined" && metadata) {
@@ -674,8 +692,11 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   mergeHssIntoSequence: (sequenceNumber: string, hssData: any) => {
     const seqs = get().sequences.map((s) => {
-      // Find the matching sequence by sequenceNumber (ignoring case)
-      if (s.sequenceNumber.toLowerCase() === sequenceNumber.toLowerCase()) {
+      // Find the matching sequence by sequenceNumber AND matching month/year if available
+      const isSameSeqNum = s.sequenceNumber.toLowerCase() === sequenceNumber.toLowerCase();
+      const isSameMonth = !hssData.startDate || !s.startDate || s.startDate.substring(0, 7) === hssData.startDate.substring(0, 7);
+      
+      if (isSameSeqNum && isSameMonth) {
         return {
           ...s,
           dutyPeriods: hssData.dutyPeriods, // Use rich duty periods parsed from HSS

@@ -1999,24 +1999,28 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
     if (trimmed.startsWith("SEQ ")) {
       const seqMatch = trimmed.match(/^SEQ\s+(\d{5})\s+BASE\s+([A-Z]{3})\s+.*DOM\s+(\w+)/) ||
                        trimmed.match(/^SEQ\s+(\d{5})\s+BASE\s+([A-Z]{3})\s+.*E75/);
-      if (seqMatch || trimmed.match(/^SEQ\s+(\d{5})/)) {
+      const simpleSeqMatch = trimmed.match(/^SEQ\s+(\d{5})/);
+      const newSeqNum = seqMatch ? seqMatch[1] : (simpleSeqMatch ? simpleSeqMatch[1] : null);
+      
+      if (newSeqNum) {
+        if (sequenceNumber === newSeqNum) {
+          // This is a page-break header for the sequence we're already parsing.
+          continue;
+        }
+
         if (sequenceNumber && daysMap.size > 0) {
           saveCurrentHssSeq();
         }
+        
         daysMap = new Map<number, HssDayData>();
         lastDayNum = -1;
         totalCreditMinutes = 0;
         layoverCities = [];
         
+        sequenceNumber = newSeqNum;
         if (seqMatch) {
-          sequenceNumber = seqMatch[1];
           base = seqMatch[2];
           equipment = seqMatch[3] || "E75";
-        } else {
-          const simpleSeqMatch = trimmed.match(/^SEQ\s+(\d{5})/);
-          if (simpleSeqMatch) {
-            sequenceNumber = simpleSeqMatch[1];
-          }
         }
       }
     }
@@ -2068,17 +2072,23 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       }
       
       const dayData = daysMap.get(dayNum)!;
-      dayData.legs.push({
-        flightNumber: formattedFltNum,
-        depAirport,
-        arrAirport,
-        depTime: depTime.substring(0, 2) + ":" + depTime.substring(2, 4),
-        arrTime: arrTime.substring(0, 2) + ":" + arrTime.substring(2, 4),
-        blockMinutes,
-        isDeadhead,
-        isOvertime: isLegOvertime,
-        isCancelled,
-      });
+      const legExists = dayData.legs.some(
+        (l) => l.flightNumber === formattedFltNum && l.depAirport === depAirport && l.depTime === depTime.substring(0, 2) + ":" + depTime.substring(2, 4)
+      );
+
+      if (!legExists) {
+        dayData.legs.push({
+          flightNumber: formattedFltNum,
+          depAirport,
+          arrAirport,
+          depTime: depTime.substring(0, 2) + ":" + depTime.substring(2, 4),
+          arrTime: arrTime.substring(0, 2) + ":" + arrTime.substring(2, 4),
+          blockMinutes,
+          isDeadhead,
+          isOvertime: isLegOvertime,
+          isCancelled,
+        });
+      }
       lastDayNum = dayNum;
     }
 
