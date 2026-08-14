@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { Plane, Wind, CloudRain, CloudSnow, AlertTriangle, Shield, ShieldAlert, Navigation, Eye, Cloud, Thermometer, RefreshCw, Calendar, CheckCircle2, Zap, Radio, Layers, SlidersHorizontal, Map, ChevronDown, ChevronUp, Plus, Trash2, X, Filter } from "lucide-react";
 import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
@@ -507,13 +508,13 @@ export default function BriefingView() {
             </button>
 
           {/* Mobile Bottom Sheet Map Layers & Settings Menu Drawer */}
-          {showLayersMenu && (
+          {showLayersMenu && typeof document !== "undefined" && createPortal(
             <>
               <div
                 className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
                 onClick={() => setShowLayersMenu(false)}
               />
-              <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white/95 backdrop-blur-2xl border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-slideUp max-h-[85vh] overflow-y-auto scrollbar-thin pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+              <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white/95 backdrop-blur-2xl border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-slideUp max-h-[80vh] overflow-y-auto scrollbar-thin pb-[max(2rem,calc(env(safe-area-inset-bottom,0px)+1.5rem))]">
                 <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-2 shrink-0 sm:hidden" />
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                   <div className="flex items-center gap-2">
@@ -788,7 +789,8 @@ export default function BriefingView() {
                   </div>
                 </div>
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
 
@@ -831,13 +833,13 @@ export default function BriefingView() {
             </div>
 
             {/* Mobile Bottom Sheet Flight Plan Waypoints Editor */}
-            {showFplDrawer && (
+            {showFplDrawer && typeof document !== "undefined" && createPortal(
               <>
                 <div
                   className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
                   onClick={() => setShowFplDrawer(false)}
                 />
-                <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white/95 backdrop-blur-2xl border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl space-y-3 animate-slideUp max-h-[85vh] overflow-y-auto scrollbar-thin pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+                <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white/95 backdrop-blur-2xl border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl space-y-3 animate-slideUp max-h-[80vh] overflow-y-auto scrollbar-thin pb-[max(2rem,calc(env(safe-area-inset-bottom,0px)+1.5rem))]">
                   <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-2 shrink-0 sm:hidden" />
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                     <span className="text-xs font-black text-slate-900 uppercase tracking-wider">Flight Plan Route Editor</span>
@@ -914,7 +916,8 @@ export default function BriefingView() {
                     </button>
                   </div>
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
 
@@ -1038,13 +1041,13 @@ export default function BriefingView() {
       )}
 
       {/* 4. Full Dispatch Briefing Mobile Slide-Up Sheet Modal */}
-      {showBriefingSheet && (
+      {showBriefingSheet && typeof document !== "undefined" && createPortal(
         <>
           <div
             className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
             onClick={() => setShowBriefingSheet(false)}
           />
-          <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-2xl mx-auto h-[90vh] max-h-[90vh] bg-white border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl flex flex-col animate-slideUp overflow-hidden pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+          <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-2xl mx-auto h-[88vh] max-h-[88vh] bg-white border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl flex flex-col animate-slideUp overflow-hidden pb-[max(2rem,calc(env(safe-area-inset-bottom,0px)+1.5rem))]">
             {/* Mobile Drag Handle */}
             <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-2 shrink-0 sm:hidden" />
 
@@ -1153,7 +1156,8 @@ export default function BriefingView() {
               </div>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* 5. Floating Nearby Reporting Airports List (Opened by tapping anywhere on the map) */}
