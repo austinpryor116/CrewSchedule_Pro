@@ -1,5 +1,6 @@
 import { SequenceTrip, DutyPeriod, FlightLeg, PayRates, PayCalculations, RosterMetrics, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata } from "../types";
 import { LogicLogger } from "./logicLogger";
+import { getMaxFdpHours, getMaxFlightTimeHours } from "./far117Engine";
 
 
 /**
@@ -55,6 +56,70 @@ export function parseAviationTime(timeStr: string): number {
   }
   // Fallback for flat numbers
   return Math.round(parseFloat(timeStr) * 60);
+}
+
+/**
+ * Helper to determine if a rank, crew role, or seat code represents Captain / PIC.
+ * Defaults to true (Captain) if unspecified or unrecognized.
+ */
+export function isCaptainRank(rankOrRole?: string | null): boolean {
+  if (!rankOrRole) return true;
+  const clean = rankOrRole.toUpperCase().trim();
+  if (
+    clean === "FO" ||
+    clean === "F/O" ||
+    clean.includes("FIRST OFFICER") ||
+    clean === "SIC" ||
+    clean === "FA" ||
+    clean === "LFA" ||
+    clean.includes("ATTENDANT") ||
+    clean.includes("INFLIGHT") ||
+    clean.includes("CABIN")
+  ) {
+    return false;
+  }
+  if (
+    clean === "CAPT" ||
+    clean === "CA" ||
+    clean.includes("CAPTAIN") ||
+    clean === "CHECK_PILOT" ||
+    clean.includes("CHECK AIRMAN") ||
+    clean.includes("PILOT IN COMMAND") ||
+    clean === "PIC"
+  ) {
+    return true;
+  }
+  return true;
+}
+
+/**
+ * Helper to determine if a crew role represents Flight Attendant / Inflight Crew.
+ */
+export function isFlightAttendantRole(rankOrRole?: string | null): boolean {
+  if (!rankOrRole) return false;
+  const clean = rankOrRole.toUpperCase().trim();
+  return (
+    clean === "FA" ||
+    clean === "LFA" ||
+    clean.includes("ATTENDANT") ||
+    clean.includes("INFLIGHT") ||
+    clean.includes("CABIN")
+  );
+}
+
+/**
+ * Helper to determine if a crew role represents First Officer / SIC.
+ */
+export function isFirstOfficerRole(rankOrRole?: string | null): boolean {
+  if (!rankOrRole) return false;
+  const clean = rankOrRole.toUpperCase().trim();
+  return (
+    clean === "FO" ||
+    clean === "F/O" ||
+    clean.includes("FIRST OFFICER") ||
+    clean === "SIC" ||
+    clean.includes("SECOND IN COMMAND")
+  );
 }
 
 /**
@@ -1712,9 +1777,9 @@ function evaluateOpenSequenceConflict(
     details: turnConnectionDetails,
   });
 
-  // Check C: FAR 117.11 FDP & Daily Flight Time Limits (Turn Extensions)
+  // Check C: FAR 117.13 Table B (FDP) & FAR 117.11 Table A (Flight Time Limits)
   let limitCheckFailed = false;
-  let limitCheckDetails = "Verified: Same-day turn extensions remain within legal FDP (13.0h) and Flight Time (9.0h) limits.";
+  let limitCheckDetails = "Verified: Duty periods and same-day turn extensions comply with 14 CFR Part 117 Table B FDP and Table A flight limits.";
   if (!directOverlapFailed) {
     for (let i = 0; i < allDuties.length - 1; i++) {
       const cur = allDuties[i];
@@ -1729,19 +1794,25 @@ function evaluateOpenSequenceConflict(
         const combinedFdpHrs = (next.end.getTime() - cur.start.getTime()) / (1000 * 60 * 60);
         const combinedFlightHrs = (cur.blockMinutes + next.blockMinutes) / 60;
 
-        if (combinedFdpHrs > 13.0) {
+        // Dynamic Table B FDP limit based on scheduled start time and segment count
+        const reportHHMM = cur.start.toTimeString().substring(0, 5).replace(":", "");
+        const combinedSegments = 2; // Turn extension combines legs
+        const tableBLimit = getMaxFdpHours(reportHHMM, combinedSegments);
+        const tableALimit = getMaxFlightTimeHours(reportHHMM);
+
+        if (combinedFdpHrs > tableBLimit.maxFdpHours) {
           limitCheckFailed = true;
-          limitCheckDetails = `Combined Flight Duty Period (FDP) of ${combinedFdpHrs.toFixed(1)} hours exceeds the maximum 13.0-hour limit for turn extensions.`;
+          limitCheckDetails = `Combined FDP of ${combinedFdpHrs.toFixed(1)} hours exceeds the ${tableBLimit.ruleCitation} max limit of ${tableBLimit.maxFdpHours.toFixed(1)} hours.`;
           if (!firstConflictReason) {
-            firstConflictReason = `FDP limit exceeded: Combined FDP is ${combinedFdpHrs.toFixed(1)} hrs (max 13.0 hrs).`;
+            firstConflictReason = `FDP limit exceeded: Combined FDP is ${combinedFdpHrs.toFixed(1)} hrs (max ${tableBLimit.maxFdpHours.toFixed(1)} hrs per FAR 117 Table B).`;
           }
           break;
         }
-        if (combinedFlightHrs > 9.0) {
+        if (combinedFlightHrs > tableALimit.maxFlightHours) {
           limitCheckFailed = true;
-          limitCheckDetails = `Combined Flight/Block Time of ${combinedFlightHrs.toFixed(1)} hours exceeds the maximum 9.0-hour daily flight time limit.`;
+          limitCheckDetails = `Combined Flight Time of ${combinedFlightHrs.toFixed(1)} hours exceeds the ${tableALimit.ruleCitation} max limit of ${tableALimit.maxFlightHours.toFixed(1)} hours.`;
           if (!firstConflictReason) {
-            firstConflictReason = `Flight time limit exceeded: Combined flight time is ${combinedFlightHrs.toFixed(1)} hrs (max 9.0 hrs).`;
+            firstConflictReason = `Flight time limit exceeded: Combined flight time is ${combinedFlightHrs.toFixed(1)} hrs (max ${tableALimit.maxFlightHours.toFixed(1)} hrs per FAR 117 Table A).`;
           }
           break;
         }
@@ -1751,7 +1822,7 @@ function evaluateOpenSequenceConflict(
     limitCheckDetails = "Skipped: Cannot compute FDP and flight time limits due to direct overlap.";
   }
   auditTrail.push({
-    name: "FAR 117.11 FDP & Daily Flight Limits",
+    name: "FAR 117 Table B FDP & Table A Flight Limits",
     passed: !directOverlapFailed && !limitCheckFailed,
     reason: limitCheckFailed ? "FDP/Flight Time Exceeded" : undefined,
     details: limitCheckDetails,
@@ -1775,7 +1846,10 @@ function evaluateOpenSequenceConflict(
         // Evaluate if this can be legally classified as a same-day turn extension
         const combinedFdpHrs = (next.end.getTime() - cur.start.getTime()) / (1000 * 60 * 60);
         const combinedFlightHrs = (cur.blockMinutes + next.blockMinutes) / 60;
-        const isLegalTurnConnection = gapMs >= 40 * 60 * 1000 && combinedFdpHrs <= 13.0 && combinedFlightHrs <= 9.0;
+        const reportHHMM = cur.start.toTimeString().substring(0, 5).replace(":", "");
+        const tableBLimit = getMaxFdpHours(reportHHMM, 2);
+        const tableALimit = getMaxFlightTimeHours(reportHHMM);
+        const isLegalTurnConnection = gapMs >= 40 * 60 * 1000 && combinedFdpHrs <= tableBLimit.maxFdpHours && combinedFlightHrs <= tableALimit.maxFlightHours;
 
         if (!isLegalTurnConnection) {
           restFailed = true;
@@ -1930,6 +2004,13 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
   let equipment = "E75";
   let layoverCities: string[] = [];
   
+  // Extract rank (CAPT, CA, FO, etc)
+  let rank: string | undefined;
+  const rankMatch = text.match(/^\s*(CAPT|CA|FO)\b/m);
+  if (rankMatch) {
+    rank = rankMatch[1];
+  }
+  
   // Track duty periods
   interface HssDayData {
     dayNum: number;
@@ -1974,9 +2055,13 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       });
     });
     
+    const colors = ["sky", "emerald", "amber", "rose", "cyan", "sky"];
+    const colorTag = colors[parseInt(sequenceNumber || "0", 10) % colors.length];
+
     sequences.push({
       id: `${sequenceNumber}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       sequenceNumber,
+      rank,
       startDate,
       endDate,
       base,
@@ -1985,8 +2070,9 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       totalCreditMinutes: totalCreditMinutes > 0 ? totalCreditMinutes : totalBlockMins + 60,
       layoverCities,
       dutyPeriods,
-      statusTag: "",
-      colorTag: "sky",
+      statusTag: ["21514", "21614", "21566"].includes(sequenceNumber) ? "OT" : (sequenceNumber === "21649" ? "TT" : "SKD"),
+      colorTag: ["21514", "21614", "21566"].includes(sequenceNumber) ? "amber" : colorTag,
+      isOvertime: ["21514", "21614", "21566"].includes(sequenceNumber),
       isDropped: false
     });
   };
@@ -2190,99 +2276,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
     }
   }
   
-  if (daysMap.size === 0) return [];
-  
-  // Sort days chronologically
-  const sortedDays = Array.from(daysMap.values()).sort((a, b) => a.dayNum - b.dayNum);
-  
-  // Build duty periods
-  const dutyPeriods: DutyPeriod[] = sortedDays.map((dayData, idx) => {
-    // Total block minutes of legs
-    const _blockMins = dayData.legs.reduce((sum, leg) => sum + leg.blockMinutes, 0);
-    const actualBlockMins = dayData.legs.reduce((sum, leg) => sum + (leg.actualBlockMinutes ?? 0), 0);
-    
-    // Set layover hotel info
-    const hotelInfo = dayData.layoverCity ? `${dayData.layoverCity} Station Layover Hotel` : "";
-    
-    // Scheduled Report is FDPT Start
-    const repTime = dayData.reportTime.replace(":", "");
-    
-    // Scheduled Release is last leg arrival + 15 mins. If not available, fallback to FDPT End + 15 mins.
-    let relTime = "";
-    if (dayData.legs.length > 0) {
-      const lastLeg = dayData.legs[dayData.legs.length - 1];
-      relTime = addMinutesToTime(lastLeg.arrTime.replace(":", ""), 15);
-    } else {
-      relTime = addMinutesToTime(dayData.releaseTime.replace(":", ""), 15);
-    }
-    
-    // Actual Report/Release
-    const actualReportTime = repTime;
-    let actualReleaseTime = "";
-    if (dayData.legs.length > 0) {
-      const lastLeg = dayData.legs[dayData.legs.length - 1];
-      if (lastLeg.actualArrTime) {
-        actualReleaseTime = addMinutesToTime(lastLeg.actualArrTime.replace(":", ""), 15);
-      } else if (actualBlockMins > 0) {
-        actualReleaseTime = addMinutesToTime(lastLeg.arrTime.replace(":", ""), 15);
-      }
-    } else if (actualBlockMins > 0) {
-      actualReleaseTime = addMinutesToTime(dayData.releaseTime.replace(":", ""), 15);
-    }
-    
-    const finalDutyMinutes = dayData.scheduledDutyMinutes ?? calculateBlockMinutes(repTime, relTime);
-    
-    return {
-      dayIndex: idx,
-      reportTime: repTime,
-      releaseTime: relTime,
-      dutyMinutes: finalDutyMinutes,
-      legs: dayData.legs,
-      layoverCity: dayData.layoverCity,
-      layoverHotelInfo: hotelInfo,
-      actualBlockMinutes: actualBlockMins > 0 ? actualBlockMins : undefined,
-      actualDutyMinutes: dayData.actualDutyMinutes,
-      actualReportTime: actualBlockMins > 0 ? actualReportTime : undefined,
-      actualReleaseTime: actualReleaseTime || undefined,
-      isOvertime: ["21514", "21614", "21566"].includes(sequenceNumber),
-    };
-  });
-  
-  // Calculate total block minutes
-  const totalBlockMinutes = dutyPeriods.reduce((sum, dp) => {
-    return sum + dp.legs.reduce((legsSum, leg) => legsSum + leg.blockMinutes, 0);
-  }, 0);
-  
-  if (totalCreditMinutes === 0) {
-    // Fallback: sum day credits
-    totalCreditMinutes = sortedDays.reduce((sum, d) => sum + d.dutyCreditMinutes, 0);
-  }
-  
-  // Construct start date / end date (July 2026 as default base month)
-  const startDayNum = sortedDays[0].dayNum;
-  const endDayNum = sortedDays[sortedDays.length - 1].dayNum;
-  const startDate = `2026-07-${String(startDayNum).padStart(2, "0")}`;
-  const endDate = `2026-07-${String(endDayNum).padStart(2, "0")}`;
-  
-  const colors = ["sky", "emerald", "amber", "rose", "cyan", "sky"];
-  const colorTag = colors[parseInt(sequenceNumber || "0", 10) % colors.length];
-  
-  sequences.push({
-    id: `${sequenceNumber}-${Date.now()}`,
-    sequenceNumber,
-    startDate,
-    endDate,
-    base,
-    equipment,
-    totalBlockMinutes,
-    totalCreditMinutes,
-    layoverCities,
-    dutyPeriods,
-    colorTag: ["21514", "21614", "21566"].includes(sequenceNumber) ? "amber" : colorTag,
-    isOvertime: ["21514", "21614", "21566"].includes(sequenceNumber),
-    statusTag: sequenceNumber === "21649" ? "TT" : (["21514", "21614", "21566"].includes(sequenceNumber) ? "OT" : "SKD"),
-  });
-  
+  saveCurrentHssSeq();
   return sequences;
 }
 

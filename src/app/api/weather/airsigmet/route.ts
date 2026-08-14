@@ -3,13 +3,13 @@ import { NextResponse } from "next/server";
 export async function GET() {
   try {
     const [iceRes, turbHiRes, turbLoRes, llwsRes, ifrRes, isigRes, airSigRes] = await Promise.all([
-      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=ICE", { next: { revalidate: 60 } }).catch(() => null),
-      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=TURB-HI", { next: { revalidate: 60 } }).catch(() => null),
-      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=TURB-LO", { next: { revalidate: 60 } }).catch(() => null),
-      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=LLWS", { next: { revalidate: 60 } }).catch(() => null),
-      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=IFR", { next: { revalidate: 60 } }).catch(() => null),
-      fetch("https://aviationweather.gov/api/data/isigmet?format=geojson", { next: { revalidate: 60 } }).catch(() => null),
-      fetch("https://aviationweather.gov/api/data/airsigmet?format=json", { next: { revalidate: 60 } }).catch(() => null),
+      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=ICE", { next: { revalidate: 300 } }).catch(() => null),
+      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=TURB-HI", { next: { revalidate: 300 } }).catch(() => null),
+      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=TURB-LO", { next: { revalidate: 300 } }).catch(() => null),
+      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=LLWS", { next: { revalidate: 300 } }).catch(() => null),
+      fetch("https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=IFR", { next: { revalidate: 300 } }).catch(() => null),
+      fetch("https://aviationweather.gov/api/data/isigmet?format=geojson", { next: { revalidate: 300 } }).catch(() => null),
+      fetch("https://aviationweather.gov/api/data/airsigmet?format=json", { next: { revalidate: 300 } }).catch(() => null),
     ]);
 
     const itemsList: any[] = [];

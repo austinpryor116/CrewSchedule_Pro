@@ -273,18 +273,18 @@ export default function BriefingView() {
   const [turbulenceAltBand, setTurbulenceAltBand] = useState<"ALL" | "LOW" | "MID" | "HIGH">("ALL");
   const [liveTurbulence, setLiveTurbulence] = useState<LiveTurbulenceReport[]>([]);
 
-  // Fetch Live Weather
-  const loadLiveWeather = useCallback(async () => {
+  // Fetch Live Weather (Cached for 5 minutes unless forceRefresh is true)
+  const loadLiveWeather = useCallback(async (forceRefresh: boolean = false) => {
     if (!depCode || !arrCode) return;
     setIsFetchingWeather(true);
 
     try {
       const [depRes, arrRes, hazardsRes, ltgRes, turbRes] = await Promise.all([
-        fetchLiveStationWeather(depCode),
-        fetchLiveStationWeather(arrCode),
-        fetchLiveSigmetsAndAirmets(),
-        fetchLiveLightningStrikes(),
-        fetchLiveTurbulenceReports(),
+        fetchLiveStationWeather(depCode, forceRefresh),
+        fetchLiveStationWeather(arrCode, forceRefresh),
+        fetchLiveSigmetsAndAirmets(forceRefresh),
+        fetchLiveLightningStrikes(forceRefresh),
+        fetchLiveTurbulenceReports(forceRefresh),
       ]);
 
       setDepWeather(depRes.metar);
@@ -306,10 +306,14 @@ export default function BriefingView() {
   }, [depCode, arrCode, selectedAirportCode]);
 
   useEffect(() => {
-    loadLiveWeather();
+    loadLiveWeather(false);
+    // Poll strictly once every 5 minutes (300,000ms), and only when tab/window is visible
     const interval = setInterval(() => {
-      loadLiveWeather();
-    }, 30000);
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return; // Suspend background polling when minimized or inactive
+      }
+      loadLiveWeather(false);
+    }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [loadLiveWeather]);
 
@@ -317,6 +321,7 @@ export default function BriefingView() {
   const enrouteHazards = useMemo(() => {
     const depCoords = getAirportCoordsSync(depCode);
     const arrCoords = getAirportCoordsSync(arrCode);
+    if (!depCoords || !arrCoords) return [];
     return liveHazards.filter((hazard) =>
       isHazardInCorridor(hazard, depCoords, arrCoords, corridorNm)
     );
@@ -501,300 +506,289 @@ export default function BriefingView() {
               )}
             </button>
 
-          {/* ForeFlight Pop-Out Layers & Settings Menu Drawer */}
+          {/* Mobile Bottom Sheet Map Layers & Settings Menu Drawer */}
           {showLayersMenu && (
-            <div className="absolute top-12 left-0 w-80 sm:w-96 bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-3xl p-4 shadow-2xl z-50 space-y-4 animate-slideDown max-h-[calc(100vh-120px)] overflow-y-auto scrollbar-thin">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <SlidersHorizontal className="w-4 h-4 text-sky-600" />
-                  <h3 className="text-sm font-black text-slate-900">Map Overlays & Layers</h3>
-                </div>
-                <button
-                  onClick={() => setShowLayersMenu(false)}
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Aeronautical Weather Overlays */}
-              <div className="space-y-2">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Aeronautical Weather & Satellite</span>
-                
-                <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
+            <>
+              <div
+                className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
+                onClick={() => setShowLayersMenu(false)}
+              />
+              <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white/95 backdrop-blur-2xl border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl space-y-4 animate-slideUp max-h-[85vh] overflow-y-auto scrollbar-thin pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+                <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-2 shrink-0 sm:hidden" />
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                   <div className="flex items-center gap-2">
-                    <CloudRain className="w-4 h-4 text-emerald-600" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">NWS WSR-88D Base Reflectivity (N0Q)</span>
-                      <span className="text-[10px] text-slate-500">Real-time 0.5° tilt Doppler radar sweep returns</span>
-                    </div>
+                    <SlidersHorizontal className="w-4 h-4 text-sky-600" />
+                    <h3 className="text-sm font-black text-slate-900">Map Overlays & Layers</h3>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={showRadar}
-                    onChange={(e) => setShowRadar(e.target.checked)}
-                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
-                  />
-                </label>
-
-                {/* Turbulence Toggle & Altitude Band Sub-Selector */}
-                <div className="space-y-1">
-                  <label className="flex items-center justify-between p-2.5 bg-amber-50/80 hover:bg-amber-100/80 rounded-2xl border border-amber-200 cursor-pointer transition">
-                    <div className="flex items-center gap-2">
-                      <Wind className="w-4 h-4 text-amber-600 animate-bounce" />
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 block">Live NOAA EDR Turbulence</span>
-                        <span className="text-[10px] text-slate-500">Aircraft EDR G-force reports & PIREP bumps</span>
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={showTurbulence}
-                      onChange={(e) => setShowTurbulence(e.target.checked)}
-                      className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
-                    />
-                  </label>
-
-                  {showTurbulence && (
-                    <div className="ml-3 p-2 bg-amber-500/10 border border-amber-200 rounded-2xl space-y-1">
-                      <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider block">EDR Cruise Altitude Filter</span>
-                      <div className="grid grid-cols-4 gap-1 text-center">
-                        {[
-                          { id: "ALL", label: "All" },
-                          { id: "LOW", label: "FL180-280" },
-                          { id: "MID", label: "FL290-350" },
-                          { id: "HIGH", label: "FL360-450" }
-                        ].map((b) => (
-                          <button
-                            key={b.id}
-                            onClick={() => setTurbulenceAltBand(b.id as any)}
-                            className={`py-1 text-[10.5px] font-bold rounded-xl transition cursor-pointer ${
-                              turbulenceAltBand === b.id ? "bg-amber-600 text-white shadow-2xs" : "bg-white text-slate-700 hover:bg-amber-100"
-                            }`}
-                          >
-                            {b.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <button
+                    onClick={() => setShowLayersMenu(false)}
+                    className="p-1.5 text-slate-500 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 cursor-pointer active-press"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
 
-                {/* Lightning Toggle & Timeframe Decay Sub-Selector */}
-                <div className="space-y-1">
+                {/* Aeronautical Weather Overlays */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Aeronautical Weather & Satellite</span>
+                  
                   <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
                     <div className="flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-amber-500 animate-pulse" />
+                      <CloudRain className="w-4 h-4 text-emerald-600" />
                       <div>
-                        <span className="text-xs font-bold text-slate-900 block">Live Lightning Strikes</span>
-                        <span className="text-[10px] text-slate-500">Real-time strike flash clusters & rates</span>
+                        <span className="text-xs font-bold text-slate-900 block">NWS WSR-88D Base Reflectivity (N0Q)</span>
+                        <span className="text-[10px] text-slate-500">Real-time 0.5° tilt Doppler radar sweep returns</span>
                       </div>
                     </div>
                     <input
                       type="checkbox"
-                      checked={showLightning}
-                      onChange={(e) => setShowLightning(e.target.checked)}
+                      checked={showRadar}
+                      onChange={(e) => setShowRadar(e.target.checked)}
                       className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
                     />
                   </label>
 
-                  {showLightning && (
-                    <div className="ml-3 p-2 bg-slate-100 border border-slate-200 rounded-2xl space-y-1">
-                      <span className="text-[10px] font-black uppercase text-slate-600 tracking-wider block">Strike Timeframe Decay</span>
-                      <div className="grid grid-cols-4 gap-1 text-center">
-                        {[
-                          { val: 2, label: "2m" },
-                          { val: 5, label: "5m" },
-                          { val: 10, label: "10m" },
-                          { val: 15, label: "15m" }
-                        ].map((t) => (
-                          <button
-                            key={t.val}
-                            onClick={() => setLightningMaxAge(t.val)}
-                            className={`py-1 text-[10.5px] font-bold rounded-xl transition cursor-pointer ${
-                              lightningMaxAge === t.val ? "bg-amber-500 text-white shadow-2xs" : "bg-white text-slate-700 hover:bg-slate-200"
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                  {/* Turbulence Toggle & Altitude Band Sub-Selector */}
+                  <div className="space-y-1">
+                    <label className="flex items-center justify-between p-2.5 bg-amber-50/80 hover:bg-amber-100/80 rounded-2xl border border-amber-200 cursor-pointer transition">
+                      <div className="flex items-center gap-2">
+                        <Wind className="w-4 h-4 text-amber-600 animate-bounce" />
+                        <div>
+                          <span className="text-xs font-bold text-slate-900 block">Live NOAA EDR Turbulence</span>
+                          <span className="text-[10px] text-slate-500">Aircraft EDR G-force reports & PIREP bumps</span>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={showTurbulence}
+                        onChange={(e) => setShowTurbulence(e.target.checked)}
+                        className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                      />
+                    </label>
+
+                    {showTurbulence && (
+                      <div className="ml-3 p-2 bg-amber-500/10 border border-amber-200 rounded-2xl space-y-1">
+                        <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider block">EDR Cruise Altitude Filter</span>
+                        <div className="grid grid-cols-4 gap-1 text-center">
+                          {[
+                            { id: "ALL", label: "All" },
+                            { id: "LOW", label: "FL180-280" },
+                            { id: "MID", label: "FL290-350" },
+                            { id: "HIGH", label: "FL360-450" }
+                          ].map((b) => (
+                            <button
+                              key={b.id}
+                              onClick={() => setTurbulenceAltBand(b.id as any)}
+                              className={`py-1 text-[10.5px] font-bold rounded-xl transition cursor-pointer ${
+                                turbulenceAltBand === b.id ? "bg-amber-600 text-white shadow-2xs" : "bg-white text-slate-700 hover:bg-amber-100"
+                              }`}
+                            >
+                              {b.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lightning Toggle & Timeframe Decay Sub-Selector */}
+                  <div className="space-y-1">
+                    <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-500 animate-pulse" />
+                        <div>
+                          <span className="text-xs font-bold text-slate-900 block">Live Lightning Strikes</span>
+                          <span className="text-[10px] text-slate-500">Real-time strike flash clusters & rates</span>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={showLightning}
+                        onChange={(e) => setShowLightning(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                      />
+                    </label>
+
+                    {showLightning && (
+                      <div className="ml-3 p-2 bg-slate-100 border border-slate-200 rounded-2xl space-y-1">
+                        <span className="text-[10px] font-black uppercase text-slate-600 tracking-wider block">Strike Timeframe Decay</span>
+                        <div className="grid grid-cols-4 gap-1 text-center">
+                          {[
+                            { val: 2, label: "2m" },
+                            { val: 5, label: "5m" },
+                            { val: 10, label: "10m" },
+                            { val: 15, label: "15m" }
+                          ].map((t) => (
+                            <button
+                              key={t.val}
+                              onClick={() => setLightningMaxAge(t.val)}
+                              className={`py-1 text-[10.5px] font-bold rounded-xl transition cursor-pointer ${
+                                lightningMaxAge === t.val ? "bg-amber-500 text-white shadow-2xs" : "bg-white text-slate-700 hover:bg-slate-200"
+                              }`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
+                    <div className="flex items-center gap-2">
+                      <Cloud className="w-4 h-4 text-indigo-600" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">GOES Infrared Satellite</span>
+                        <span className="text-[10px] text-slate-500">Live NOAA GOES-16 cloud tops & cover</span>
                       </div>
                     </div>
-                  )}
+                    <input
+                      type="checkbox"
+                      checked={showSatelliteClouds}
+                      onChange={(e) => setShowSatelliteClouds(e.target.checked)}
+                      className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
+                    <div className="flex items-center gap-2">
+                      <Radio className="w-4 h-4 text-emerald-600 animate-pulse" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">NWS Severe Storm & Tornado Warnings</span>
+                        <span className="text-[10px] text-slate-500">Live active red polygon warning vectors</span>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={showNwsWarnings}
+                      onChange={(e) => setShowNwsWarnings(e.target.checked)}
+                      className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                    />
+                  </label>
                 </div>
 
-                <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
-                  <div className="flex items-center gap-2">
-                    <Cloud className="w-4 h-4 text-indigo-600" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">GOES Infrared Satellite</span>
-                      <span className="text-[10px] text-slate-500">Live NOAA GOES-16 cloud tops & cover</span>
+                {/* Granular NOAA SIGMET / AIRMET Filters */}
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">NOAA SIGMET & AIRMET Filters</span>
+
+                  <label className="flex items-center justify-between p-2.5 bg-rose-50/60 hover:bg-rose-50 rounded-2xl border border-rose-200/80 cursor-pointer transition">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">Convective Thunderstorms</span>
+                        <span className="text-[10px] text-slate-500">Severe storm cell SIGMET polygons</span>
+                      </div>
                     </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={showSatelliteClouds}
-                    onChange={(e) => setShowSatelliteClouds(e.target.checked)}
-                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
-                  />
-                </label>
+                    <input
+                      type="checkbox"
+                      checked={showSigmetConvective}
+                      onChange={(e) => setShowSigmetConvective(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                  </label>
 
-                <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
-                  <div className="flex items-center gap-2">
-                    <Radio className="w-4 h-4 text-emerald-600 animate-pulse" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">Doppler Radar Station Sweeps</span>
-                      <span className="text-[10px] text-slate-500">WSR-88D site circles & rotating radar beams</span>
+                  <label className="flex items-center justify-between p-2.5 bg-amber-50/60 hover:bg-amber-50 rounded-2xl border border-amber-200/80 cursor-pointer transition">
+                    <div className="flex items-center gap-2">
+                      <Wind className="w-4 h-4 text-amber-600" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">Turbulence (AIRMET TANGO)</span>
+                        <span className="text-[10px] text-slate-500">High/Low turbulence & LLWS polygons</span>
+                      </div>
                     </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={showRadarRings}
-                    onChange={(e) => setShowRadarRings(e.target.checked)}
-                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
-                  />
-                </label>
+                    <input
+                      type="checkbox"
+                      checked={showSigmetTurbulence}
+                      onChange={(e) => setShowSigmetTurbulence(e.target.checked)}
+                      className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                  </label>
 
-                <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 text-amber-600" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">NWS Severe Weather Warnings</span>
-                      <span className="text-[10px] text-slate-500">Severe T-Storm, Tornado & Wind polygons</span>
+                  <label className="flex items-center justify-between p-2.5 bg-cyan-50/60 hover:bg-cyan-50 rounded-2xl border border-cyan-200/80 cursor-pointer transition">
+                    <div className="flex items-center gap-2">
+                      <CloudSnow className="w-4 h-4 text-cyan-600" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">Icing (AIRMET ZULU)</span>
+                        <span className="text-[10px] text-slate-500">Structural icing hazard polygons</span>
+                      </div>
                     </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={showNwsWarnings}
-                    onChange={(e) => setShowNwsWarnings(e.target.checked)}
-                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
-                  />
-                </label>
-              </div>
+                    <input
+                      type="checkbox"
+                      checked={showSigmetIcing}
+                      onChange={(e) => setShowSigmetIcing(e.target.checked)}
+                      className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 cursor-pointer"
+                    />
+                  </label>
 
-              {/* Granular NOAA SIGMET / AIRMET Filters */}
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">NOAA SIGMET & AIRMET Filters</span>
-
-                <label className="flex items-center justify-between p-2.5 bg-rose-50/60 hover:bg-rose-50 rounded-2xl border border-rose-200/80 cursor-pointer transition">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-600" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">Convective Thunderstorms</span>
-                      <span className="text-[10px] text-slate-500">Severe storm cell SIGMET polygons</span>
+                  <label className="flex items-center justify-between p-2.5 bg-purple-50/60 hover:bg-purple-50 rounded-2xl border border-purple-200/80 cursor-pointer transition">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-purple-600" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">IFR / Ceilings (AIRMET SIERRA)</span>
+                        <span className="text-[10px] text-slate-500">Low ceiling & mountain obscuration</span>
+                      </div>
                     </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={showSigmetConvective}
-                    onChange={(e) => setShowSigmetConvective(e.target.checked)}
-                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-2.5 bg-amber-50/60 hover:bg-amber-50 rounded-2xl border border-amber-200/80 cursor-pointer transition">
-                  <div className="flex items-center gap-2">
-                    <Wind className="w-4 h-4 text-amber-600" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">Turbulence (AIRMET TANGO)</span>
-                      <span className="text-[10px] text-slate-500">High/Low turbulence & LLWS polygons</span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={showSigmetTurbulence}
-                    onChange={(e) => setShowSigmetTurbulence(e.target.checked)}
-                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-2.5 bg-cyan-50/60 hover:bg-cyan-50 rounded-2xl border border-cyan-200/80 cursor-pointer transition">
-                  <div className="flex items-center gap-2">
-                    <CloudSnow className="w-4 h-4 text-cyan-600" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">Icing (AIRMET ZULU)</span>
-                      <span className="text-[10px] text-slate-500">Structural icing hazard polygons</span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={showSigmetIcing}
-                    onChange={(e) => setShowSigmetIcing(e.target.checked)}
-                    className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-2.5 bg-purple-50/60 hover:bg-purple-50 rounded-2xl border border-purple-200/80 cursor-pointer transition">
-                  <div className="flex items-center gap-2">
-                    <Eye className="w-4 h-4 text-purple-600" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block">IFR / Ceilings (AIRMET SIERRA)</span>
-                      <span className="text-[10px] text-slate-500">Low ceiling & mountain obscuration</span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={showSigmetIfr}
-                    onChange={(e) => setShowSigmetIfr(e.target.checked)}
-                    className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
-                  />
-                </label>
-              </div>
-
-
-
-              {/* Airport Display & Hub Filtering */}
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Airports & Hub Display</span>
-                
-                <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                  <button
-                    onClick={() => setShowAllAirports(false)}
-                    className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      !showAllAirports ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Major Hubs Only
-                  </button>
-                  <button
-                    onClick={() => setShowAllAirports(true)}
-                    className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      showAllAirports ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    All Airports
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={showSigmetIfr}
+                      onChange={(e) => setShowSigmetIfr(e.target.checked)}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    />
+                  </label>
                 </div>
 
-                <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
-                  <span className="text-xs font-bold text-slate-900">Show Airport Badges</span>
-                  <input
-                    type="checkbox"
-                    checked={showAirportMarkers}
-                    onChange={(e) => setShowAirportMarkers(e.target.checked)}
-                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
-                  />
-                </label>
-              </div>
-
-              {/* Route Corridor Buffer */}
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Weather Corridor Width</span>
-                <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-center">
-                  {[50, 100, 200, 9999].map((val) => (
+                {/* Airport Display & Hub Filtering */}
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Airports & Hub Display</span>
+                  
+                  <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
                     <button
-                      key={val}
-                      onClick={() => setCorridorNm(val)}
-                      className={`py-1.5 text-xs font-bold rounded-xl transition cursor-pointer ${
-                        corridorNm === val ? "bg-sky-600 text-white shadow-2xs" : "text-slate-700 hover:text-slate-900"
+                      onClick={() => setShowAllAirports(false)}
+                      className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        !showAllAirports ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
-                      {val === 9999 ? "Off" : `${val} NM`}
+                      Major Hubs Only
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setShowAllAirports(true)}
+                      className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        showAllAirports ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      All Airports
+                    </button>
+                  </div>
+
+                  <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
+                    <span className="text-xs font-bold text-slate-900">Show Airport Badges</span>
+                    <input
+                      type="checkbox"
+                      checked={showAirportMarkers}
+                      onChange={(e) => setShowAirportMarkers(e.target.checked)}
+                      className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                    />
+                  </label>
+                </div>
+
+                {/* Route Corridor Buffer */}
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Weather Corridor Width</span>
+                  <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 text-center">
+                    {[50, 100, 200, 9999].map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => setCorridorNm(val)}
+                        className={`py-1.5 text-xs font-bold rounded-xl transition cursor-pointer ${
+                          corridorNm === val ? "bg-sky-600 text-white shadow-2xs" : "text-slate-700 hover:text-slate-900"
+                        }`}
+                      >
+                        {val === 9999 ? "Off" : `${val} NM`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
           )}
         </div>
 
@@ -836,76 +830,91 @@ export default function BriefingView() {
               </button>
             </div>
 
-            {/* Collapsible Flight Plan Waypoints Editor */}
+            {/* Mobile Bottom Sheet Flight Plan Waypoints Editor */}
             {showFplDrawer && (
-              <div className="absolute top-12 left-1/2 -translate-x-1/2 w-80 sm:w-96 bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-3xl p-4 shadow-2xl z-40 space-y-3 animate-slideDown">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <span className="text-xs font-black text-slate-900 uppercase tracking-wider">Flight Plan Route Editor</span>
-                  <span className="text-xs font-bold text-sky-700 font-mono">{totalFplDistanceNm} NM • ~{estimatedEteHours}h</span>
-                </div>
-
-                {/* Waypoint list */}
-                <div className="flex flex-wrap items-center gap-1.5 max-h-36 overflow-y-auto">
-                  {fplWaypoints.map((wp, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-1 bg-slate-100 border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-mono font-black text-slate-900 shadow-2xs"
-                    >
-                      <span className="text-[10px] text-sky-700 font-extrabold">
-                        {idx === 0 ? "DEP" : idx === fplWaypoints.length - 1 ? "ARR" : `WP${idx}`}
-                      </span>
-                      <span>{wp}</span>
-                      {fplWaypoints.length > 2 && (
-                        <button
-                          onClick={() => removeWaypointFromFpl(idx)}
-                          className="text-slate-400 hover:text-rose-600 ml-1 text-[11px] cursor-pointer"
-                          title="Remove Waypoint"
-                        >
-                          ×
-                        </button>
-                      )}
+              <>
+                <div
+                  className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
+                  onClick={() => setShowFplDrawer(false)}
+                />
+                <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white/95 backdrop-blur-2xl border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl space-y-3 animate-slideUp max-h-[85vh] overflow-y-auto scrollbar-thin pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+                  <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-2 shrink-0 sm:hidden" />
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <span className="text-xs font-black text-slate-900 uppercase tracking-wider">Flight Plan Route Editor</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-sky-700 font-mono">{totalFplDistanceNm} NM • ~{estimatedEteHours}h</span>
+                      <button
+                        onClick={() => setShowFplDrawer(false)}
+                        className="p-1 text-slate-500 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 cursor-pointer active-press"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  </div>
 
-                {/* Add Waypoint Input */}
-                <div className="flex items-center gap-1.5 pt-1">
-                  <input
-                    type="text"
-                    value={newWaypointInput}
-                    onChange={(e) => setNewWaypointInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addWaypointToFpl(newWaypointInput);
-                    }}
-                    placeholder="ADD AIRPORT (ICAO)..."
-                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold uppercase text-slate-900 focus:outline-none focus:border-sky-600"
-                  />
-                  <button
-                    onClick={() => addWaypointToFpl(newWaypointInput)}
-                    className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-2xs cursor-pointer flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add
-                  </button>
-                </div>
+                  {/* Waypoint list */}
+                  <div className="flex flex-wrap items-center gap-1.5 max-h-36 overflow-y-auto">
+                    {fplWaypoints.map((wp, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-1 bg-slate-100 border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-mono font-black text-slate-900 shadow-2xs"
+                      >
+                        <span className="text-[10px] text-sky-700 font-extrabold">
+                          {idx === 0 ? "DEP" : idx === fplWaypoints.length - 1 ? "ARR" : `WP${idx}`}
+                        </span>
+                        <span>{wp}</span>
+                        {fplWaypoints.length > 2 && (
+                          <button
+                            onClick={() => removeWaypointFromFpl(idx)}
+                            className="text-slate-400 hover:text-rose-600 ml-1 text-[11px] cursor-pointer"
+                            title="Remove Waypoint"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
 
-                {/* Quick Off-Day Mode Toggle Button inside Drawer */}
-                <div className="pt-2 border-t border-slate-200">
-                  <button
-                    onClick={() => {
-                      setShowFlightPlan(!showFlightPlan);
-                      setShowFplDrawer(false);
-                    }}
-                    className={`w-full py-2 px-3 rounded-2xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 border ${
-                      showFlightPlan
-                        ? "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300"
-                        : "bg-sky-600 hover:bg-sky-500 text-white border-sky-700 shadow-md"
-                    }`}
-                  >
-                    <Navigation className="w-3.5 h-3.5" />
-                    <span>{showFlightPlan ? "🌦 Hide Flight Plan (Off-Day Weather Mode)" : "✈️ Show Flight Plan Route"}</span>
-                  </button>
+                  {/* Add Waypoint Input */}
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <input
+                      type="text"
+                      value={newWaypointInput}
+                      onChange={(e) => setNewWaypointInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addWaypointToFpl(newWaypointInput);
+                      }}
+                      placeholder="ADD AIRPORT (ICAO)..."
+                      className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 focus:outline-none focus:border-sky-600"
+                    />
+                    <button
+                      onClick={() => addWaypointToFpl(newWaypointInput)}
+                      className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-2xs cursor-pointer flex items-center gap-1 active-press"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add
+                    </button>
+                  </div>
+
+                  {/* Quick Off-Day Mode Toggle Button inside Drawer */}
+                  <div className="pt-2 border-t border-slate-200">
+                    <button
+                      onClick={() => {
+                        setShowFlightPlan(!showFlightPlan);
+                        setShowFplDrawer(false);
+                      }}
+                      className={`w-full py-2.5 px-3 rounded-2xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 border active-press ${
+                        showFlightPlan
+                          ? "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300"
+                          : "bg-sky-600 hover:bg-sky-500 text-white border-sky-700 shadow-md"
+                      }`}
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>{showFlightPlan ? "🌦 Hide Flight Plan (Off-Day Weather Mode)" : "✈️ Show Flight Plan Route"}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -913,17 +922,18 @@ export default function BriefingView() {
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               onClick={() => setShowBriefingSheet(true)}
-              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-2xl text-xs font-extrabold shadow-lg shadow-amber-600/20 transition cursor-pointer"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-2xl text-xs font-extrabold shadow-lg shadow-amber-600/20 transition cursor-pointer active-press"
+              aria-label="Dispatch Briefing"
             >
               <Shield className="w-4 h-4 text-amber-100 shrink-0" />
               <span className="hidden sm:inline">Dispatch Briefing</span>
             </button>
 
             <button
-              onClick={loadLiveWeather}
+              onClick={() => loadLiveWeather(true)}
               disabled={isFetchingWeather}
-              className="p-1.5 sm:p-2 bg-white/95 backdrop-blur-xl border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-2xl shadow-lg cursor-pointer transition shrink-0"
-              title="Refresh NOAA Weather"
+              className="p-1.5 sm:p-2 bg-white/95 backdrop-blur-xl border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-2xl shadow-lg cursor-pointer transition shrink-0 active-press"
+              title="Refresh NOAA Weather (Force 5m Cache Bypass)"
             >
               <RefreshCw className={`w-4 h-4 ${isFetchingWeather ? "animate-spin text-sky-600" : ""}`} />
             </button>
@@ -933,7 +943,7 @@ export default function BriefingView() {
 
       {/* 3. Floating Selected Airport Weather & D-ATIS Panel (Centered horizontally, comfortably above bottom nav) */}
       {selectedAirportCode && (
-        <div className="absolute bottom-20 sm:bottom-8 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] sm:w-[440px] z-30 pointer-events-auto animate-slideUp">
+        <div className="absolute bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] sm:w-[440px] z-30 pointer-events-auto animate-slideUp">
           <div className="bg-white/95 backdrop-blur-xl border border-slate-200 rounded-3xl p-4 shadow-2xl space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <div className="flex items-baseline gap-2">
@@ -1027,26 +1037,29 @@ export default function BriefingView() {
         </div>
       )}
 
-      {/* 4. Full Dispatch Briefing Slide-Up Sheet Modal */}
+      {/* 4. Full Dispatch Briefing Mobile Slide-Up Sheet Modal */}
       {showBriefingSheet && (
         <>
           <div
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-40"
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
             onClick={() => setShowBriefingSheet(false)}
           />
-          <div className="fixed inset-x-0 bottom-0 z-50 h-[88vh] max-h-[88vh] bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl flex flex-col animate-slideUp overflow-hidden">
+          <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-2xl mx-auto h-[90vh] max-h-[90vh] bg-white border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl flex flex-col animate-slideUp overflow-hidden pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+            {/* Mobile Drag Handle */}
+            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-2 shrink-0 sm:hidden" />
+
             {/* Modal Header */}
             <div className="flex justify-between items-center pb-3 border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-amber-600" />
                 <div>
-                  <h3 className="text-base font-extrabold text-slate-900">Flight Weather Briefing & Leg Overview</h3>
+                  <h3 className="text-base font-extrabold text-slate-900 leading-tight">Flight Weather Briefing & Leg Overview</h3>
                   <p className="text-xs text-slate-600">Active Leg: {activeLeg.fltNum} • {activeLeg.dep} ➔ {activeLeg.arr}</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowBriefingSheet(false)}
-                className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-100 rounded-xl border border-slate-200 cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-100 rounded-xl border border-slate-200 cursor-pointer active-press"
               >
                 ✕
               </button>

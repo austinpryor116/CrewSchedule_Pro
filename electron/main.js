@@ -243,6 +243,14 @@ function createWindow() {
   session.defaultSession.setUserAgent(DESKTOP_USER_AGENT);
 
   // 1. ELECTRON MAIN PROCESS & SECURITY BYPASS
+  // Upgrade any unencrypted HTTP requests to HTTPS for aa.com domains to avoid Akamai EdgeSuite blocks
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    if (details.url.startsWith("http://webfos.aa.com") || details.url.startsWith("http://fosp.aa.com") || details.url.startsWith("http://login.aa.com")) {
+      return callback({ redirectURL: details.url.replace("http://", "https://") });
+    }
+    callback({});
+  });
+
   // Intercept headers and strip X-Frame-Options and Content-Security-Policy
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (!details.responseHeaders) {
@@ -261,12 +269,19 @@ function createWindow() {
     callback({ responseHeaders });
   });
 
-  // Inject User-Agent on all outgoing web requests
+  // Inject standard desktop browser headers on all outgoing web requests
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    if (details.requestHeaders) {
-      details.requestHeaders["User-Agent"] = DESKTOP_USER_AGENT;
+    const requestHeaders = details.requestHeaders || {};
+    requestHeaders["User-Agent"] = DESKTOP_USER_AGENT;
+    if (details.url.includes("aa.com")) {
+      requestHeaders["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+      requestHeaders["Accept-Language"] = "en-US,en;q=0.9";
+      requestHeaders["Sec-Ch-Ua"] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
+      requestHeaders["Sec-Ch-Ua-Mobile"] = "?0";
+      requestHeaders["Sec-Ch-Ua-Platform"] = '"Windows"';
+      requestHeaders["Upgrade-Insecure-Requests"] = "1";
     }
-    callback({ cancel: false, requestHeaders: details.requestHeaders || {} });
+    callback({ cancel: false, requestHeaders });
   });
 
   // Log renderer console messages directly to log files

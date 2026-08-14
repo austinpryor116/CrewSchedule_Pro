@@ -1,10 +1,11 @@
 /**
  * MONTH DYNAMIC PARSING TEST SUITE (src/lib/testMonthParsingFix.ts)
  * Verifies that pulling August sequences (e.g. #14731 on Aug 13th) produces 2026-08-13
- * instead of defaulting to July.
+ * instead of defaulting to July, and verifies HSS parsing across months and ranks.
  */
 
-import { parseRawSchedule, parseHI1Schedule, detectMonthFromText } from "./parser";
+import { parseRawSchedule, parseHI1Schedule, parseHssSchedule, detectMonthFromText } from "./parser";
+import { parseHssText } from "./hssParser";
 
 async function runMonthParsingTest() {
   console.log("===============================================================");
@@ -36,8 +37,8 @@ async function runMonthParsingTest() {
   const inlineAugDetect = detectMonthFromText("SEQ 14731  13AUG  ORD  D/P 1 13AUG");
   assert("Detect AUG from inline date 13AUG", inlineAugDetect.monthAbbr === "AUG" && inlineAugDetect.monthNum === 7, `Detected: ${inlineAugDetect.monthAbbr}`);
 
-  // 2. TEST AUGUST FLIGHT #14731 PARSING
-  console.log("\n--- 2. Testing Sequence #14731 August Roster Parsing ---");
+  // 2. TEST AUGUST FLIGHT #14731 PARSING (HI1)
+  console.log("\n--- 2. Testing Sequence #14731 August Roster Parsing (HI1) ---");
 
   const sampleAugHI1 = `
 MONTH ENDING 31AUG26
@@ -60,8 +61,52 @@ ACT TOTAL 12.30 14.15
     );
   }
 
-  // 3. TEST JULY FLIGHT PARSING FOR COMPARISON
-  console.log("\n--- 3. Testing July Roster Parsing Comparison ---");
+  // 3. TEST AUGUST HSS TRIP PARSING
+  console.log("\n--- 3. Testing August HSS Trip Parsing ---");
+
+  const sampleAugHss = `
+SEQ 14731      BASE ORD  SEL  502 ORG SCH DOM E75
+CAPT PRYOR AR            EMP NBR 742840
+MONTH ENDING 31AUG26
+   DT EQ   FLT STA DEP   STA ARR AC FLY     GTR  GRD      ACT
+SKD 13 54 3602 ORD 0800 FAR 0930    1.30
+SKD 14 54 3484 FAR 1000 ORD 1130    1.30
+FDPT  3.00          START  0715  END  1200  ACC STA  ORD
+`;
+
+  const parsedAugHss = parseHssSchedule(sampleAugHss);
+  assert("Parsed August HSS sequence count > 0", parsedAugHss.length > 0);
+
+  if (parsedAugHss.length > 0) {
+    const hssTrip = parsedAugHss[0];
+    assert(
+      "August HSS startDate is August 13th (2026-08-13)",
+      hssTrip.startDate === "2026-08-13",
+      `Expected '2026-08-13', got '${hssTrip.startDate}'`
+    );
+    assert(
+      "August HSS endDate is August 14th (2026-08-14)",
+      hssTrip.endDate === "2026-08-14",
+      `Expected '2026-08-14', got '${hssTrip.endDate}'`
+    );
+    assert(
+      "August HSS rank is CAPT",
+      hssTrip.rank === "CAPT",
+      `Expected 'CAPT', got '${hssTrip.rank}'`
+    );
+  }
+
+  // 4. TEST parseHssText wrapper
+  console.log("\n--- 4. Testing parseHssText Wrapper ---");
+  const wrappedHss = parseHssText(sampleAugHss);
+  assert("parseHssText returned valid object", wrappedHss !== null);
+  if (wrappedHss) {
+    assert("wrappedHss startDate is 2026-08-13", wrappedHss.startDate === "2026-08-13", `Got: ${wrappedHss.startDate}`);
+    assert("wrappedHss rank is CAPT", wrappedHss.rank === "CAPT", `Got: ${wrappedHss.rank}`);
+  }
+
+  // 5. TEST JULY FLIGHT PARSING FOR COMPARISON
+  console.log("\n--- 5. Testing July Roster Parsing Comparison ---");
 
   const sampleJulHI1 = `
 MONTH ENDING 31JUL26

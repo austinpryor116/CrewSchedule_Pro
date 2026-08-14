@@ -1,9 +1,27 @@
 import { create } from "zustand";
-import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry } from "../types";
-import { DEFAULT_PAY_RATES } from "../lib/demoData";
+import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry, UserProfile } from "../types";
+import { DEFAULT_PAY_RATES, DEFAULT_LOGBOOK_ENTRIES } from "../lib/demoData";
 
-import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes } from "../lib/parser";
+import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole } from "../lib/parser";
+import { getCbaRatesForProfile } from "../lib/cbaPayScale";
 export { convertOpenToTrip };
+
+export const DEFAULT_USER_PROFILE: UserProfile = {
+  name: "CAPTAIN PILOT",
+  employeeId: "742840",
+  seniorityNumber: "12345",
+  base: "ORD",
+  equipment: "E175",
+  crewRole: "CA",
+  hireDate: "2016-04-18",
+  email: "pilot.crew@aa.com",
+  phone: "(312) 555-0199",
+  theme: "light",
+  notificationsEnabled: true,
+  syncCalendar: true,
+  autoSyncEnabled: true,
+  timezoneDisplay: "LOCAL",
+};
 
 export const DEFAULT_OPEN_TIME_PRESETS: OpenTimePreset[] = [
   { id: "all", name: "All Open Trips" },
@@ -15,6 +33,8 @@ export const DEFAULT_OPEN_TIME_PRESETS: OpenTimePreset[] = [
 ];
 
 interface CrewState {
+  userProfile: UserProfile;
+  updateUserProfile: (profile: Partial<UserProfile>) => void;
   sequences: SequenceTrip[];
   vacations: VacationPeriod[];
   monthlyHIMetadata: MonthlyHIMetadata | null;
@@ -115,6 +135,12 @@ interface CrewState {
   exportLogbookCsv: (format: "logten" | "foreflight" | "standard_faa") => string;
 
 
+  // Calendar & Personal Event Actions
+  addPersonalEvent: (event: PersonalCalendarEvent) => void;
+  updatePersonalEvent: (event: PersonalCalendarEvent) => void;
+  deletePersonalEvent: (id: string) => void;
+  publishScheduleToFamilyFeed: () => Promise<boolean>;
+
   // Open Time Actions
   setOpenSequences: (seqs: OpenSequence[]) => void;
   importN4OpenTime: (rawN4Text: string) => void;
@@ -180,6 +206,61 @@ const deduplicateSequences = (seqs: SequenceTrip[]): SequenceTrip[] => {
 };
 
 export const useCrewStore = create<CrewState>((set, get) => ({
+  userProfile: DEFAULT_USER_PROFILE,
+  updateUserProfile: (profileUpdates) => {
+    const current = get().userProfile;
+    const updated = { ...current, ...profileUpdates };
+    set({ userProfile: updated });
+
+    const payRatesUpdates: Partial<PayRates> = {};
+    if (profileUpdates.crewRole !== undefined) payRatesUpdates.crewRole = profileUpdates.crewRole;
+    if (profileUpdates.equipment !== undefined) payRatesUpdates.equipment = profileUpdates.equipment;
+    if (profileUpdates.base !== undefined) payRatesUpdates.homeBase = profileUpdates.base;
+
+    // Automatically lookup CBA pay scale and per diem when hireDate, crewRole, 750 SIC, or Flow status changes
+    if (
+      profileUpdates.hireDate !== undefined ||
+      profileUpdates.crewRole !== undefined ||
+      profileUpdates.hasCompleted750Sic !== undefined ||
+      profileUpdates.flowStatus !== undefined ||
+      profileUpdates.isCaptainFlowTopScale !== undefined
+    ) {
+      const cbaRates = getCbaRatesForProfile({
+        hireDateStr: updated.hireDate,
+        role: updated.crewRole,
+        hasCompleted750Sic: updated.hasCompleted750Sic,
+        flowStatus: updated.flowStatus,
+        isCaptainFlowTopScale: updated.isCaptainFlowTopScale,
+      });
+      payRatesUpdates.hourlyRate = cbaRates.hourlyRate;
+      payRatesUpdates.perDiemRate = cbaRates.domesticPerDiem;
+      payRatesUpdates.intlPerDiemRate = cbaRates.intlPerDiem;
+    }
+
+    if (Object.keys(payRatesUpdates).length > 0) {
+      get().setPayRates(payRatesUpdates);
+    }
+
+    // Sync monthlyHIMetadata
+    const currentMeta = get().monthlyHIMetadata;
+    if (currentMeta) {
+      const updatedMeta: MonthlyHIMetadata = {
+        ...currentMeta,
+        pilotName: profileUpdates.name || currentMeta.pilotName,
+        empNum: profileUpdates.employeeId || currentMeta.empNum,
+        seniorityNum: profileUpdates.seniorityNumber || currentMeta.seniorityNum,
+        base: profileUpdates.base || currentMeta.base,
+        equipment: profileUpdates.equipment || currentMeta.equipment,
+        rank: profileUpdates.crewRole || currentMeta.rank,
+      };
+      set({ monthlyHIMetadata: updatedMeta });
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_userprofile", JSON.stringify(updated));
+    }
+  },
+
   sequences: [],
   vacations: [],
   monthlyHIMetadata: null,
@@ -192,7 +273,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   isHydrated: false,
   snapshots: [],
   activeSnapshotId: null,
-  logbookEntries: [],
+  logbookEntries: DEFAULT_LOGBOOK_ENTRIES,
   openSequences: [],
   simulatedSequenceIds: [],
   showOpenTimeOverlay: false,
@@ -245,15 +326,40 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
         dp.legs.forEach((leg, legIdx) => {
           const key = `${dateStr}-${leg.flightNumber}-${leg.depAirport}-${leg.arrAirport}`;
-          if (existingMap.has(key)) return;
-
+          
           const blockMins = leg.actualBlockMinutes ?? leg.blockMinutes;
           const depMins = timeToMinutes(leg.depTime);
           const arrMins = timeToMinutes(leg.arrTime);
           const isNightFlight = depMins >= 1200 || depMins <= 360 || arrMins >= 1200 || arrMins <= 360;
           const nightMins = isNightFlight ? Math.round(blockMins * 0.6) : 0;
           const instMins = Math.round(blockMins * 0.15);
-          const isPic = get().monthlyHIMetadata?.rank === "CAPT" || get().monthlyHIMetadata?.rank === "CA";
+          // Determine PIC/SIC/FA role
+          const effectiveRank = seq.rank || get().payRates?.crewRole || get().userProfile?.crewRole || get().monthlyHIMetadata?.rank || "CAPT";
+          const isFa = isFlightAttendantRole(effectiveRank);
+          const isPic = !isFa && isCaptainRank(effectiveRank);
+          const isSic = !isFa && (isFirstOfficerRole(effectiveRank) || !isPic);
+
+          if (existingMap.has(key)) {
+            const existingEntry = existingMap.get(key)!;
+            // Only update if it was auto-generated. Don't overwrite manual edits.
+            if (existingEntry.isAutoFilled) {
+              existingEntry.tailNumber = leg.tailNumber || existingEntry.tailNumber;
+              existingEntry.outTime = leg.actualDepTime || existingEntry.outTime;
+              existingEntry.inTime = leg.actualArrTime || existingEntry.inTime;
+              
+              // Always refresh these calculated fields to respect the latest rank or actual block times
+              existingEntry.blockMinutes = blockMins;
+              existingEntry.crossCountryMinutes = blockMins;
+              existingEntry.nightMinutes = nightMins;
+              existingEntry.instrumentMinutes = 0; // Instrument removed per spec
+              existingEntry.picMinutes = isPic ? blockMins : 0;
+              existingEntry.sicMinutes = isSic ? blockMins : 0;
+              existingEntry.landingsDay = isFa ? 0 : (isNightFlight ? 0 : 1);
+              existingEntry.landingsNight = isFa ? 0 : (isNightFlight ? 1 : 0);
+              existingEntry.approaches = 0;
+            }
+            return;
+          }
 
           const entry: LogbookEntry = {
             id: `log-${dateStr}-${leg.flightNumber}-${legIdx}-${Math.floor(Math.random() * 1000)}`,
@@ -267,14 +373,14 @@ export const useCrewStore = create<CrewState>((set, get) => ({
             inTime: leg.actualArrTime || leg.arrTime,
             blockMinutes: blockMins,
             nightMinutes: nightMins,
-            instrumentMinutes: instMins,
+            instrumentMinutes: 0,
             crossCountryMinutes: blockMins,
             picMinutes: isPic ? blockMins : 0,
-            sicMinutes: !isPic ? blockMins : 0,
+            sicMinutes: isSic ? blockMins : 0,
             dualReceivedMinutes: 0,
-            landingsDay: isNightFlight ? 0 : 1,
-            landingsNight: isNightFlight ? 1 : 0,
-            approaches: instMins > 0 ? 1 : 0,
+            landingsDay: isFa ? 0 : (isNightFlight ? 0 : 1),
+            landingsNight: isFa ? 0 : (isNightFlight ? 1 : 0),
+            approaches: 0,
             remarks: `Auto-populated from Sequence ${seq.sequenceNumber} (Leg ${legIdx + 1}).`,
             isAutoFilled: true,
             sourceSequenceNumber: seq.sequenceNumber,
@@ -363,11 +469,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   exportLogbookCsv: (format) => {
     const entries = get().logbookEntries;
-    if (format === "logten") {
+    const effectiveRank = get().payRates?.crewRole || get().userProfile?.crewRole || get().monthlyHIMetadata?.rank || "CAPT";
+    const isFa = isFlightAttendantRole(effectiveRank);
+    const isPic = !isFa && isCaptainRank(effectiveRank);
+
+    if (isFa) {
+      // Flight Attendant Inflight Log Format
       const headers = [
         "Date", "Flight #", "Aircraft ID", "Type", "From", "To", "Out", "In",
-        "Total Time", "PIC", "SIC", "Night", "Instrument", "Cross Country",
-        "Landings Day", "Landings Night", "Approaches", "Remarks"
+        "Flight Time", "Night", "Remarks"
       ];
       const rows = entries.map((e) => [
         e.date,
@@ -379,22 +489,41 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         e.outTime,
         e.inTime,
         (e.blockMinutes / 60).toFixed(1),
-        (e.picMinutes / 60).toFixed(1),
-        (e.sicMinutes / 60).toFixed(1),
         (e.nightMinutes / 60).toFixed(1),
-        (e.instrumentMinutes / 60).toFixed(1),
+        `"${(e.remarks || "").replace(/"/g, '""')}"`
+      ]);
+      return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    }
+
+    if (format === "logten") {
+      const headers = [
+        "Date", "Flight #", "Aircraft ID", "Type", "From", "To", "Out", "In",
+        "Total Time", isPic ? "PIC" : "SIC", "Night", "Cross Country",
+        "Landings Day", "Landings Night", "Remarks"
+      ];
+      const rows = entries.map((e) => [
+        e.date,
+        e.flightNumber,
+        e.tailNumber,
+        e.aircraftType,
+        e.depAirport,
+        e.arrAirport,
+        e.outTime,
+        e.inTime,
+        (e.blockMinutes / 60).toFixed(1),
+        isPic ? (e.picMinutes / 60).toFixed(1) : (e.sicMinutes / 60).toFixed(1),
+        (e.nightMinutes / 60).toFixed(1),
         (e.crossCountryMinutes / 60).toFixed(1),
         e.landingsDay,
         e.landingsNight,
-        e.approaches,
         `"${(e.remarks || "").replace(/"/g, '""')}"`
       ]);
       return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     } else if (format === "foreflight") {
       const headers = [
         "Date", "Text", "AircraftID", "EquipmentType", "From", "To", "Out", "In",
-        "TotalTime", "PIC", "SIC", "Night", "ActualInstrument", "CrossCountry",
-        "DayLandings", "NightLandings", "Approach1", "Comments"
+        "TotalTime", isPic ? "PIC" : "SIC", "Night", "CrossCountry",
+        "DayLandings", "NightLandings", "Comments"
       ];
       const rows = entries.map((e) => [
         e.date,
@@ -406,22 +535,19 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         e.outTime,
         e.inTime,
         (e.blockMinutes / 60).toFixed(1),
-        (e.picMinutes / 60).toFixed(1),
-        (e.sicMinutes / 60).toFixed(1),
+        isPic ? (e.picMinutes / 60).toFixed(1) : (e.sicMinutes / 60).toFixed(1),
         (e.nightMinutes / 60).toFixed(1),
-        (e.instrumentMinutes / 60).toFixed(1),
         (e.crossCountryMinutes / 60).toFixed(1),
         e.landingsDay,
         e.landingsNight,
-        e.approaches > 0 ? "ILS" : "",
         `"${(e.remarks || "").replace(/"/g, '""')}"`
       ]);
       return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     } else {
       const headers = [
         "Date", "FlightNumber", "AircraftTail", "AircraftType", "DepAirport", "ArrAirport",
-        "OutTime", "InTime", "BlockHours", "PICHours", "SICHours", "NightHours",
-        "InstrumentHours", "CrossCountryHours", "DayLandings", "NightLandings", "Approaches", "Remarks"
+        "OutTime", "InTime", "BlockHours", isPic ? "PICHours" : "SICHours", "NightHours",
+        "CrossCountryHours", "DayLandings", "NightLandings", "Remarks"
       ];
       const rows = entries.map((e) => [
         e.date,
@@ -433,14 +559,11 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         e.outTime,
         e.inTime,
         (e.blockMinutes / 60).toFixed(1),
-        (e.picMinutes / 60).toFixed(1),
-        (e.sicMinutes / 60).toFixed(1),
+        isPic ? (e.picMinutes / 60).toFixed(1) : (e.sicMinutes / 60).toFixed(1),
         (e.nightMinutes / 60).toFixed(1),
-        (e.instrumentMinutes / 60).toFixed(1),
         (e.crossCountryMinutes / 60).toFixed(1),
         e.landingsDay,
         e.landingsNight,
-        e.approaches,
         `"${(e.remarks || "").replace(/"/g, '""')}"`
       ]);
       return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -563,11 +686,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedSnaps = localStorage.getItem("crewschedule_snapshots");
       const storedMeta = localStorage.getItem("crewschedule_hi_metadata");
       const storedLogbook = localStorage.getItem("crewschedule_logbook");
+      const storedProfile = localStorage.getItem("crewschedule_userprofile");
 
       let sanitizedSeqs = storedSeqs ? deduplicateSequences(JSON.parse(storedSeqs)) : [];
 
       const parsedSnaps: ScheduleSnapshot[] = storedSnaps ? JSON.parse(storedSnaps) : [];
-      const parsedLogbook: LogbookEntry[] = storedLogbook ? JSON.parse(storedLogbook) : [];
+      let parsedLogbook: LogbookEntry[] = storedLogbook ? JSON.parse(storedLogbook) : [];
+      if (!parsedLogbook || parsedLogbook.length === 0) {
+        parsedLogbook = DEFAULT_LOGBOOK_ENTRIES;
+      }
       const activeOpenSeqs: OpenSequence[] = [];
 
       const storedPresets = localStorage.getItem("crewschedule_openpresets");
@@ -577,7 +704,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       let activeEvents: PersonalCalendarEvent[] = storedEvents ? JSON.parse(storedEvents) : [];
       const activeCals: SubscribedCalendar[] = storedCals ? JSON.parse(storedCals) : [];
 
+      let hydratedProfile = DEFAULT_USER_PROFILE;
+      if (storedProfile) {
+        try {
+          hydratedProfile = { ...DEFAULT_USER_PROFILE, ...JSON.parse(storedProfile) };
+        } catch {}
+      }
+
       set({
+        userProfile: hydratedProfile,
         sequences: sanitizedSeqs,
         vacations: storedVacations ? JSON.parse(storedVacations) : [],
         monthlyHIMetadata: storedMeta ? JSON.parse(storedMeta) : null,
@@ -701,6 +836,9 @@ export const useCrewStore = create<CrewState>((set, get) => ({
           ...s,
           dutyPeriods: hssData.dutyPeriods, // Use rich duty periods parsed from HSS
           totalBlockMinutes: hssData.totalBlockMinutes, // Update exact block time
+          ...(hssData.rank && { rank: hssData.rank }), // Store rank if HSS provided it
+          ...(hssData.startDate && { startDate: hssData.startDate }), // Update start date if HSS provides it
+          ...(hssData.endDate && { endDate: hssData.endDate }), // Update end date if HSS provides it (fixes missing extended days)
         };
       }
       return s;
@@ -727,6 +865,9 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     set({ payRates: updated });
     if (typeof window !== "undefined") {
       localStorage.setItem("crewschedule_payrates", JSON.stringify(updated));
+    }
+    if (rates.crewRole !== undefined) {
+      get().autoGenerateLogbookFromRoster();
     }
   },
 
@@ -891,6 +1032,55 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     set({ subscribedCalendars: updatedCals });
     if (typeof window !== "undefined") {
       localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
+    }
+  },
+
+  addPersonalEvent: (event) => {
+    const updated = [event, ...get().personalEvents];
+    set({ personalEvents: updated });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updated));
+    }
+  },
+
+  updatePersonalEvent: (updatedEvent) => {
+    const updated = get().personalEvents.map((e) => (e.id === updatedEvent.id ? updatedEvent : e));
+    set({ personalEvents: updated });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updated));
+    }
+  },
+
+  deletePersonalEvent: (id) => {
+    const updated = get().personalEvents.filter((e) => e.id !== id);
+    set({ personalEvents: updated });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updated));
+    }
+  },
+
+  publishScheduleToFamilyFeed: async () => {
+    try {
+      const state = get();
+      const token = `crew-${state.userProfile.employeeId || "742840"}`;
+      const payload = {
+        token,
+        sequences: state.sequences,
+        personalEvents: state.personalEvents,
+        userProfile: state.userProfile,
+        payRates: state.payRates,
+      };
+
+      const res = await fetch("/api/calendar/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      return res.ok;
+    } catch (e) {
+      console.warn("Could not publish schedule to family feed", e);
+      return false;
     }
   },
 

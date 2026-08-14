@@ -7,29 +7,43 @@
   --border: #cbd5e1;     /* Defined Crisp Light Border */
   --accent: #0284c7;     /* High Contrast Sky Blue Accent */
   --accent-cyan: #0891b2;/* Rich Cyan */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Mobile Safe Area Insets & Layout Utilities */
+.pb-safe-dock {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
 .pb-safe {
-  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
 }
 
 .pt-safe {
-  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
 }
 
 .mb-safe-nav {
-  margin-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  margin-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
 }
+
+/* Touch active haptic scale feedback */
+.active-press:active {
+  transform: scale(0.96);
+  transition: transform 0.08s ease-in-out;
+}
+
 
 /* Custom Scrollbar Styles */
 .scrollbar-thin::-webkit-scrollbar {

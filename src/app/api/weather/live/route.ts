@@ -2,12 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+const serverLiveWeatherCache = new Map<string, { data: any; timestamp: number }>();
+const SERVER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const station = searchParams.get("station") || "KORD";
   const clean = station.toUpperCase().trim();
   const icao = clean.length === 3 ? (["YYZ","YVR"].includes(clean) ? `C${clean}` : `K${clean}`) : clean;
   const iata = clean.length === 4 && clean.startsWith("K") ? clean.substring(1) : clean;
+
+  const now = Date.now();
+  if (serverLiveWeatherCache.has(icao)) {
+    const cached = serverLiveWeatherCache.get(icao)!;
+    if (now - cached.timestamp < SERVER_CACHE_TTL) {
+      return NextResponse.json(cached.data, {
+        headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=60" },
+      });
+    }
+  }
 
   try {
     const metarUrl = `https://aviationweather.gov/api/data/metar?ids=${icao}&format=json`;
@@ -18,10 +31,10 @@ export async function GET(request: NextRequest) {
     const headers = { "User-Agent": "CrewSchedulePro/1.0 (aviation@crewschedule.pro)", "Accept": "application/json" };
 
     const [metarRes, tafRes, nwsRes, atisRes] = await Promise.all([
-      fetch(metarUrl, { cache: "no-store", headers }).catch(() => null),
-      fetch(tafUrl, { cache: "no-store", headers }).catch(() => null),
-      fetch(nwsUrl, { cache: "no-store", headers }).catch(() => null),
-      fetch(atisUrl, { cache: "no-store", headers }).catch(() => null),
+      fetch(metarUrl, { next: { revalidate: 300 }, headers }).catch(() => null),
+      fetch(tafUrl, { next: { revalidate: 300 }, headers }).catch(() => null),
+      fetch(nwsUrl, { next: { revalidate: 300 }, headers }).catch(() => null),
+      fetch(atisUrl, { next: { revalidate: 300 }, headers }).catch(() => null),
     ]);
 
     let metarData: any = null;
@@ -114,7 +127,7 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       icao,
       iata,
@@ -124,6 +137,12 @@ export async function GET(request: NextRequest) {
       atisLetter,
       atis: atisData,
       datisText: liveAtisObj?.datis || null,
+    };
+
+    serverLiveWeatherCache.set(icao, { data: payload, timestamp: now });
+
+    return NextResponse.json(payload, {
+      headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=60" },
     });
   } catch (error: any) {
     return NextResponse.json(

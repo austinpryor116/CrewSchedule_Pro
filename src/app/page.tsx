@@ -84,7 +84,7 @@ export default function Home() {
   const isToolsActive = ["logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
 
   return (
-    <main className="w-screen h-screen flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans relative">
+    <main className="w-screen h-screen flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans relative select-none">
       {/* Main Full-Screen Workspace Tab View */}
       <div className="flex-grow overflow-hidden relative">
         <div className={`h-full w-full ${activeTab === "calendar" ? "block" : "hidden"}`}>
@@ -95,13 +95,13 @@ export default function Home() {
         </div>
         
         {/* Keep Portal alive in the DOM so the iframe doesn't lose session/login state */}
-        <div className={`h-full w-full overflow-y-auto p-4 sm:p-6 pb-24 scrollbar-thin ${activeTab === "portal" ? "block relative" : "absolute opacity-0 pointer-events-none -z-50 invisible"}`}>
+        <div className={`h-full w-full overflow-y-auto p-3 sm:p-6 pb-28 scrollbar-thin ${activeTab === "portal" ? "block relative" : "absolute opacity-0 pointer-events-none -z-50 invisible"}`}>
           <PortalBrowserStudio />
         </div>
 
         {/* Other tabs can unmount normally */}
         {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "portal" && (
-          <div className="h-full w-full overflow-y-auto p-4 sm:p-6 pb-24 scrollbar-thin">
+          <div className="h-full w-full overflow-y-auto p-3 sm:p-6 pb-28 scrollbar-thin">
             {activeTab === "logbook" && <LogbookStudio />}
             {activeTab === "revisions" && <RevisionStudio />}
             {activeTab === "import" && <ParserStudio />}
@@ -112,34 +112,37 @@ export default function Home() {
         )}
       </div>
 
-      {/* Tools Modal Bottom Sheet */}
+      {/* Tools Modal Mobile Bottom Sheet */}
       {showToolsModal && (
         <>
           <div
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100000] animate-fadeIn"
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
             onClick={() => setShowToolsModal(false)}
           />
-          <div className="fixed inset-x-0 bottom-16 sm:bottom-20 z-[100001] max-w-lg mx-auto bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-2xl animate-slideUp max-h-[75vh] overflow-y-auto scrollbar-thin">
-            <div className="flex justify-between items-center pb-3 mb-4 border-b border-slate-200">
-              <div className="flex items-center gap-2">
+          <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-2xl animate-slideUp max-h-[85vh] overflow-y-auto scrollbar-thin pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+            {/* Mobile Drag Handle */}
+            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-3.5 shrink-0" />
+
+            <div className="flex justify-between items-center pb-3 mb-3.5 border-b border-slate-200">
+              <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-sky-100 border border-sky-300 rounded-xl text-sky-700">
                   <SlidersHorizontal className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Aviation Tools & Settings</h3>
+                  <h3 className="text-sm font-black text-slate-900 leading-tight">Aviation Tools & Settings</h3>
                   <p className="text-[11px] text-slate-500 font-medium">Select a tool to launch studio view</p>
                 </div>
               </div>
 
               <button
                 onClick={() => setShowToolsModal(false)}
-                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 transition cursor-pointer active-press"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
               {toolsItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
@@ -156,30 +159,34 @@ export default function Home() {
                         setShowToolsModal(false);
                       }
                     }}
-                    className={`flex flex-col items-start p-3 rounded-2xl border text-left transition cursor-pointer ${
+                    className={`flex flex-col items-start p-3 rounded-2xl border text-left transition cursor-pointer active-press min-h-[76px] justify-between ${
                       isActive
                         ? "bg-sky-600 text-white border-sky-600 shadow-md"
                         : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
                     }`}
                   >
-                    <Icon className={`w-5 h-5 mb-1.5 ${isActive ? "text-white" : "text-sky-600"}`} />
-                    <span className="text-xs font-bold">{item.name}</span>
-                    <span className={`text-[10px] mt-0.5 ${isActive ? "text-sky-100" : "text-slate-500"}`}>
-                      {item.desc}
-                    </span>
+                    <div className="flex items-center justify-between w-full">
+                      <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-sky-600"}`} />
+                      {isActive && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                    </div>
+                    <div>
+                      <span className="text-xs font-black block leading-tight">{item.name}</span>
+                      <span className={`text-[9.5px] mt-0.5 block leading-tight ${isActive ? "text-sky-100" : "text-slate-500"}`}>
+                        {item.desc}
+                      </span>
+                    </div>
                   </button>
                 );
               })}
             </div>
 
-            <div className="pt-3 border-t border-slate-200 flex gap-2">
-
+            <div className="pt-2 border-t border-slate-200 flex gap-2">
               <button
                 onClick={() => {
                   clearAll();
                   setShowToolsModal(false);
                 }}
-                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active-press"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Clear Roster
@@ -189,8 +196,8 @@ export default function Home() {
         </>
       )}
 
-      {/* Condensed Bottom Navigation Bar at the Very Bottom */}
-      <nav className="h-14 sm:h-16 bg-white/95 border-t border-slate-200/90 shadow-lg flex items-center justify-around px-4 sm:px-12 shrink-0 z-50 backdrop-blur-md">
+      {/* Cell Phone First Mobile Bottom Navigation Dock */}
+      <nav className="bg-white/95 border-t border-slate-200/90 shadow-xl flex items-center justify-around px-2 sm:px-12 shrink-0 z-50 backdrop-blur-xl pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))]">
         {mainNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = item.id === "tools" ? isToolsActive : activeTab === item.id;
@@ -205,14 +212,14 @@ export default function Home() {
                   setShowToolsModal(false);
                 }
               }}
-              className={`flex flex-col items-center justify-center gap-1 px-4 sm:px-8 py-1 rounded-xl transition duration-150 cursor-pointer ${
+              className={`flex flex-col items-center justify-center gap-1 px-3 sm:px-8 py-1.5 rounded-2xl transition duration-150 cursor-pointer active-press min-w-[70px] min-h-[48px] ${
                 isActive
-                  ? "text-sky-600 font-extrabold bg-sky-50 border border-sky-200 shadow-xs"
-                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/60"
+                  ? "text-sky-600 font-extrabold bg-sky-50/90 border border-sky-200/90 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/50"
               }`}
             >
-              <Icon className={`w-5 h-5 ${isActive ? "text-sky-600" : "text-slate-500"}`} />
-              <span className="text-xs tracking-tight font-bold">{item.name}</span>
+              <Icon className={`w-5 h-5 ${isActive ? "text-sky-600 stroke-[2.5]" : "text-slate-500 stroke-[1.75]"}`} />
+              <span className="text-[11px] tracking-tight font-extrabold leading-none">{item.name}</span>
             </button>
           );
         })}

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { X, Calendar as CalendarIcon, SlidersHorizontal, Eye, EyeOff, ShoppingBag, Palmtree, Clock, Check, Plus, RefreshCw, Rss, ShieldCheck, FileSpreadsheet, Trash2, Link, Loader2 } from "lucide-react";
-import { fetchRemoteIcsFeed, parseIcsText } from "../../lib/icalExporter";
+import { X, Calendar as CalendarIcon, SlidersHorizontal, Eye, EyeOff, ShoppingBag, Palmtree, Clock, Check, Plus, RefreshCw, Rss, ShieldCheck, FileSpreadsheet, Trash2, Link, Loader2, Share2, Globe, Copy, Smartphone, Download, Info } from "lucide-react";
+import { fetchRemoteIcsFeed, parseIcsText, downloadRosterIcsFile } from "../../lib/icalExporter";
 import { PersonalCalendarEvent } from "../../types";
 
 interface CalendarToolsModalProps {
@@ -23,7 +23,7 @@ export default function CalendarToolsModal({
   filterMode,
   setFilterMode,
 }: CalendarToolsModalProps) {
-  const [activeTab, setActiveTabSection] = useState<"filters" | "opentime" | "vacation" | "calendars">("filters");
+  const [activeTab, setActiveTabSection] = useState<"filters" | "opentime" | "vacation" | "calendars" | "share">("filters");
 
   const showOpenTimeOverlay = useCrewStore((state) => state.showOpenTimeOverlay);
   const setShowOpenTimeOverlay = useCrewStore((state) => state.setShowOpenTimeOverlay);
@@ -43,6 +43,12 @@ export default function CalendarToolsModal({
   const addSubscribedCal = useCrewStore((state) => state.addSubscribedCalendar);
   const updateSubscribedCalColor = useCrewStore((state) => state.updateSubscribedCalendarColor);
   const setActiveTab = useCrewStore((state) => state.setActiveTab);
+
+  const userProfile = useCrewStore((state) => state.userProfile);
+  const sequences = useCrewStore((state) => state.sequences);
+  const payRates = useCrewStore((state) => state.payRates);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [guidePlatform, setGuidePlatform] = useState<"apple" | "google" | "free">("apple");
 
   // New Feed Form State
   const [newFeedName, setNewFeedName] = useState("");
@@ -121,20 +127,23 @@ export default function CalendarToolsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-md animate-fadeIn">
       <div
         className="fixed inset-0"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-xl bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] z-10 animate-slideUp text-slate-900 font-sans">
+      <div className="relative w-full max-w-xl bg-white border-t sm:border border-slate-200 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] z-10 animate-slideUp text-slate-900 font-sans pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+        {/* Mobile Drag Handle */}
+        <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-2 shrink-0 sm:hidden" />
+
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-sky-600 text-white rounded-2xl shadow-sm">
-              <SlidersHorizontal className="w-5 h-5" />
+            <div className="p-2 sm:p-2.5 bg-sky-600 text-white rounded-2xl shadow-sm">
+              <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
                 Calendar Tools & Controls
               </h2>
               <p className="text-xs text-slate-500 font-medium">
@@ -204,6 +213,19 @@ export default function CalendarToolsModal({
           >
             <Rss className="w-3.5 h-3.5 text-purple-600" />
             External Feeds
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTabSection("share")}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === "share"
+                ? "bg-white text-indigo-700 shadow-sm border border-slate-200"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+            }`}
+          >
+            <Share2 className="w-3.5 h-3.5 text-indigo-600" />
+            Family Share
           </button>
         </div>
 
@@ -619,6 +641,146 @@ export default function CalendarToolsModal({
                       </div>
                     </div>
                   ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: Family Share & Live Sync */}
+          {activeTab === "share" && (
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-sky-900 via-indigo-900 to-slate-900 p-4 rounded-2xl text-white space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 text-sky-300">
+                    <Globe className="w-4 h-4" />
+                    Live Schedule Feed
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-mono font-bold">
+                    100% FREE
+                  </span>
+                </div>
+                <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                  Share this link with your family or spouse. When added to their phone or Google Calendar once, it will <strong>automatically stay updated</strong> whenever your schedule changes!
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`}
+                    className="w-full bg-slate-950/60 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 select-all font-bold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`;
+                      navigator.clipboard.writeText(url);
+                      setShareCopied(true);
+                      setTimeout(() => setShareCopied(false), 2000);
+                    }}
+                    className="px-3.5 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-black rounded-xl text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer active-press"
+                  >
+                    {shareCopied ? <Check className="w-4 h-4 text-emerald-950" /> : <Copy className="w-4 h-4" />}
+                    <span>{shareCopied ? "Copied!" : "Copy"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 1-Tap Quick Actions */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <a
+                  href={`${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}`.replace(/^http:\/\//, "webcal://").replace(/^https:\/\//, "webcal://") + `/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`}
+                  className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-xs transition cursor-pointer"
+                >
+                  <Smartphone className="w-5 h-5 text-slate-800 mb-1" />
+                  <span className="text-xs font-extrabold text-slate-900">Apple Calendar</span>
+                  <span className="text-[10px] text-slate-500 font-medium">1-Tap Subscribe</span>
+                </a>
+
+                <a
+                  href={`https://calendar.google.com/calendar/r/settings/addbyurl?cid=${encodeURIComponent(`${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-xs transition cursor-pointer"
+                >
+                  <CalendarIcon className="w-5 h-5 text-sky-600 mb-1" />
+                  <span className="text-xs font-extrabold text-slate-900">Google Calendar</span>
+                  <span className="text-[10px] text-slate-500 font-medium">Add to Gmail</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => downloadRosterIcsFile(sequences, payRates)}
+                  className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-xs transition cursor-pointer"
+                >
+                  <Download className="w-5 h-5 text-emerald-600 mb-1" />
+                  <span className="text-xs font-extrabold text-slate-900">Download .ICS</span>
+                  <span className="text-[10px] text-slate-500 font-medium">AirDrop / Email</span>
+                </button>
+              </div>
+
+              {/* Free Setup Guides */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-indigo-600" />
+                    How to Share for Free
+                  </span>
+                  <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-slate-200 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setGuidePlatform("apple")}
+                      className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                        guidePlatform === "apple" ? "bg-sky-600 text-white" : "text-slate-600"
+                      }`}
+                    >
+                      iPhone / iCloud
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGuidePlatform("google")}
+                      className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                        guidePlatform === "google" ? "bg-sky-600 text-white" : "text-slate-600"
+                      }`}
+                    >
+                      Google
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGuidePlatform("free")}
+                      className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                        guidePlatform === "free" ? "bg-sky-600 text-white" : "text-slate-600"
+                      }`}
+                    >
+                      Hosting
+                    </button>
+                  </div>
+                </div>
+
+                {guidePlatform === "apple" && (
+                  <div className="text-[11px] text-slate-600 space-y-1 font-medium leading-relaxed">
+                    <strong className="text-slate-900 block">📱 Apple Calendar (iPhone, iPad, Mac):</strong>
+                    <p>1. Copy your live link above or tap <strong>Apple Calendar</strong>.</p>
+                    <p>2. On iPhone: Go to <strong>Settings ➔ Calendar ➔ Accounts ➔ Add Account ➔ Other ➔ Add Subscribed Calendar</strong>.</p>
+                    <p>3. Paste your link and tap <strong>Save</strong>. It updates automatically in background!</p>
+                  </div>
+                )}
+
+                {guidePlatform === "google" && (
+                  <div className="text-[11px] text-slate-600 space-y-1 font-medium leading-relaxed">
+                    <strong className="text-slate-900 block">🌐 Google Calendar (Android / Gmail):</strong>
+                    <p>1. Copy your live link above.</p>
+                    <p>2. On <strong>calendar.google.com</strong>, click <strong>+ ➔ From URL</strong> next to Other Calendars.</p>
+                    <p>3. Paste the link and save. Google will sync your schedule for free!</p>
+                  </div>
+                )}
+
+                {guidePlatform === "free" && (
+                  <div className="text-[11px] text-slate-600 space-y-1 font-medium leading-relaxed">
+                    <strong className="text-slate-900 block">💡 100% Free Hosting & Remote Sync:</strong>
+                    <p>&bull; <strong>Home WiFi:</strong> Family devices on your WiFi can sync directly via local IP.</p>
+                    <p>&bull; <strong>Cloudflare Tunnel:</strong> Run free <code className="font-mono bg-slate-200 px-1 rounded">cloudflared</code> tunnel for a free public HTTPS endpoint.</p>
+                    <p>&bull; <strong>Free Vercel Deploy:</strong> Deploy to Vercel for free 24/7 global uptime.</p>
+                  </div>
                 )}
               </div>
             </div>

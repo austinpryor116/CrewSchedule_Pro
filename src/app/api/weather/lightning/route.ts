@@ -34,8 +34,8 @@ export async function GET() {
     const sigmetUrl = "https://aviationweather.gov/api/data/airsigmet?format=json&type=sigmet";
 
     const [metarRes, sigmetRes] = await Promise.all([
-      fetch(metarUrl, { next: { revalidate: 60 } }).catch(() => null),
-      fetch(sigmetUrl, { next: { revalidate: 60 } }).catch(() => null),
+      fetch(metarUrl, { next: { revalidate: 300 } }).catch(() => null),
+      fetch(sigmetUrl, { next: { revalidate: 300 } }).catch(() => null),
     ]);
 
     const strikes: RealLightningStrike[] = [];

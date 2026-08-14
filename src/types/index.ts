@@ -70,8 +70,34 @@ export interface MonthlyHIMetadata {
   vacationCreditHours: number;
 }
 
+export interface UserProfile {
+  name: string;
+  employeeId: string;
+  seniorityNumber?: string;
+  base: string;
+  equipment: string;
+  crewRole: "CA" | "FO" | "CHECK_PILOT" | "LFA" | "FA";
+  hireDate?: string;
+  hasCompleted750Sic?: boolean; // FO reaches 750 SIC before Dec 31, 2026 -> Captain Pay
+  sic750DateReached?: string;   // Date 750 SIC was logged (YYYY-MM-DD)
+  sic750PayStartsPeriod?: string; // Effective pay period (starts pay period after reaching 750 SIC)
+  flowStatus?: "ACCEPT" | "DECLINE" | "BYPASS" | "PENDING"; // AA Flow Status (Declining flow reverts 5yr top scale to base longevity)
+  isCaptainFlowTopScale?: boolean; // 5+ Year Captain receiving Step 20 top-of-scale pay ($228.75/hr)
+  flowTopScaleDateReached?: string; // Date 5 years of service completed
+  flowTopScalePayStartsPeriod?: string; // Effective pay period (starts pay period after 5th year)
+  email?: string;
+  phone?: string;
+  theme?: "light" | "dark" | "system";
+  accentColor?: string;
+  notificationsEnabled?: boolean;
+  syncCalendar?: boolean;
+  autoSyncEnabled?: boolean;
+  timezoneDisplay?: "LOCAL" | "BASE" | "ZULU";
+}
+
 export interface SequenceTrip {
-  id: string; // Unique ID (e.g., UUID or custom string)
+  id: string;
+  rank?: string; // Captured from HSS text (e.g. CAPT or FO) // Unique ID (e.g., UUID or custom string)
   sequenceNumber: string; // Sequence ID from text, e.g. "S8341"
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
@@ -163,12 +189,19 @@ export interface PersonalCalendarEvent {
   id: string;
   calendarId: string;
   title: string;
+  category?: "event" | "task" | "reminder" | "commute" | "medical" | "family";
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   startTime?: string; // HH:MM
   endTime?: string; // HH:MM
+  isAllDay?: boolean;
+  recurrence?: "none" | "daily" | "weekly" | "monthly" | "yearly";
   location?: string;
   notes?: string;
+  url?: string;
+  reminderMinutes?: number; // e.g. 10, 30, 60, 1440
+  busyStatus?: "busy" | "free";
+  guests?: string[];
   color: string;
 }
 

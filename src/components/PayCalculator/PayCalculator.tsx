@@ -225,20 +225,20 @@ export default function PayCalculator() {
   return (
     <div className="space-y-6 animate-fadeIn font-sans">
       {/* Header */}
-      <div className="pb-6 border-b border-slate-200">
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
-          <DollarSign className="w-8 h-8 text-emerald-600" />
+      <div className="pb-4 sm:pb-6 border-b border-slate-200">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+          <DollarSign className="w-7 h-7 sm:w-8 sm:h-8 text-emerald-600 shrink-0" />
           Financial & Rigs Calculator
         </h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-1 text-xs sm:text-sm text-slate-600">
           Set custom pay parameters, examine soft pay rig credits, and project estimated gross earnings.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
         {/* Left column: Rate inputs & controllers */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-          <h2 className="text-lg font-bold text-slate-900">Contract Rate Settings</h2>
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4 sm:space-y-6">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900">Contract Rate Settings</h2>
           
           <div className="space-y-4">
             <div>
@@ -299,60 +299,60 @@ export default function PayCalculator() {
         </div>
 
         {/* Center column: Pay Ratios & Details */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6 xl:col-span-2">
-          <h2 className="text-lg font-bold text-slate-900 font-sans">Active Roster Yield Analysis</h2>
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4 sm:space-y-6 xl:col-span-2">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 font-sans">Active Roster Yield Analysis</h2>
 
           {/* Flown vs Remaining Block & Overtime Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-sans">
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 font-sans">
+            <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 space-y-1">
               <div className="flex justify-between items-center text-xs text-slate-700">
                 <span className="flex items-center gap-1.5 font-bold"><Clock className="w-3.5 h-3.5 text-emerald-600" /> Flown Block</span>
                 <span className="text-[10px] text-emerald-700 font-mono font-black">ACTUAL</span>
               </div>
-              <p className="text-2xl font-black text-emerald-800 font-mono">{blockAndOtStats.currentFlownBlockHours.toFixed(2)} <span className="text-xs font-normal text-slate-600">hrs</span></p>
+              <p className="text-xl sm:text-2xl font-black text-emerald-800 font-mono">{blockAndOtStats.currentFlownBlockHours.toFixed(2)} <span className="text-xs font-normal text-slate-600">hrs</span></p>
               <p className="text-[11px] text-slate-600 font-medium">Completed actual flight time</p>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1">
+            <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 space-y-1">
               <div className="flex justify-between items-center text-xs text-slate-700">
                 <span className="flex items-center gap-1.5 font-bold"><Clock className="w-3.5 h-3.5 text-amber-600" /> Remaining Block</span>
                 <span className="text-[10px] text-amber-800 font-mono font-black">SCHEDULED</span>
               </div>
-              <p className="text-2xl font-black text-amber-800 font-mono">{blockAndOtStats.remainingBlockHours.toFixed(2)} <span className="text-xs font-normal text-slate-600">hrs</span></p>
+              <p className="text-xl sm:text-2xl font-black text-amber-800 font-mono">{blockAndOtStats.remainingBlockHours.toFixed(2)} <span className="text-xs font-normal text-slate-600">hrs</span></p>
               <p className="text-[11px] text-slate-600 font-medium">To be flown on future trips</p>
             </div>
 
-            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-300 space-y-1">
+            <div className="bg-amber-50 p-3.5 sm:p-4 rounded-2xl border border-amber-300 space-y-1">
               <div className="flex justify-between items-center text-xs text-slate-900">
                 <span className="flex items-center gap-1.5 font-bold text-amber-950"><TrendingUp className="w-3.5 h-3.5 text-amber-700" /> Overtime (OT)</span>
                 <span className="text-[10px] text-amber-900 font-mono font-extrabold">{blockAndOtStats.overtimeTripsCount} TRIPS</span>
               </div>
-              <p className="text-2xl font-black text-amber-950 font-mono">{blockAndOtStats.overtimeCreditHours.toFixed(2)} <span className="text-xs font-normal text-slate-700">hrs OT</span></p>
+              <p className="text-xl sm:text-2xl font-black text-amber-950 font-mono">{blockAndOtStats.overtimeCreditHours.toFixed(2)} <span className="text-xs font-normal text-slate-700">hrs OT</span></p>
               <p className="text-[11px] text-slate-800 font-mono font-bold">+${blockAndOtStats.overtimeProjectedPay.toLocaleString(undefined, { maximumFractionDigits: 0 })} projected OT pay</p>
             </div>
           </div>
 
           {/* Time ratios block vs credit */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans">
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center gap-4">
-              <div className="p-3 bg-sky-100 text-sky-700 rounded-xl border border-sky-300">
-                <Clock className="w-6 h-6" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 font-sans">
+            <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 flex items-center gap-3 sm:gap-4">
+              <div className="p-2.5 sm:p-3 bg-sky-100 text-sky-700 rounded-xl border border-sky-300 shrink-0">
+                <Clock className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
                 <p className="text-xs text-slate-600 font-bold">Total Block Hours</p>
-                <p className="text-xl font-bold text-slate-900 font-mono">
+                <p className="text-lg sm:text-xl font-bold text-slate-900 font-mono">
                   {calcs.blockHours.toFixed(2)} hrs
                 </p>
               </div>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center gap-4">
-              <div className="p-3 bg-emerald-100 text-emerald-700 rounded-xl border border-emerald-300">
-                <Award className="w-6 h-6" />
+            <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 flex items-center gap-3 sm:gap-4">
+              <div className="p-2.5 sm:p-3 bg-emerald-100 text-emerald-700 rounded-xl border border-emerald-300 shrink-0">
+                <Award className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
                 <p className="text-xs text-slate-600 font-bold">Total Credit Hours Due</p>
-                <p className="text-xl font-bold text-emerald-800 font-mono">
+                <p className="text-lg sm:text-xl font-bold text-emerald-800 font-mono">
                   {calcs.creditHours.toFixed(2)} hrs
                 </p>
               </div>
@@ -361,43 +361,43 @@ export default function PayCalculator() {
 
           {/* Financial Breakdown Table */}
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden font-mono text-xs shadow-sm">
-            <div className="grid grid-cols-3 bg-slate-100 px-4 py-3 text-slate-700 border-b border-slate-200 font-sans font-extrabold">
+            <div className="grid grid-cols-3 bg-slate-100 px-3 sm:px-4 py-2.5 sm:py-3 text-slate-700 border-b border-slate-200 font-sans font-extrabold text-[11px] sm:text-xs">
               <span>Itemization</span>
-              <span className="text-right">Quantity / Hours</span>
-              <span className="text-right">Earnings / Yield</span>
+              <span className="text-right">Hours</span>
+              <span className="text-right">Yield</span>
             </div>
             
-            <div className="divide-y divide-slate-200">
-              <div className="grid grid-cols-3 px-4 py-3 text-slate-900">
-                <span className="font-sans font-bold text-slate-900">Base Flight Pay</span>
-                <span className="text-right text-slate-600">{calcs.blockHours.toFixed(2)} hrs</span>
+            <div className="divide-y divide-slate-200 text-[11px] sm:text-xs">
+              <div className="grid grid-cols-3 px-3 sm:px-4 py-2.5 sm:py-3 text-slate-900 items-center">
+                <span className="font-sans font-bold text-slate-900">Base Pay</span>
+                <span className="text-right text-slate-600">{calcs.blockHours.toFixed(2)}h</span>
                 <span className="text-right text-slate-900 font-bold">
                   ${(calcs.blockHours * payRates.hourlyRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
               
-              <div className="grid grid-cols-3 px-4 py-3 text-slate-900">
-                <span className="font-sans font-bold text-slate-900">Soft Pay Rig Adjustment</span>
+              <div className="grid grid-cols-3 px-3 sm:px-4 py-2.5 sm:py-3 text-slate-900 items-center">
+                <span className="font-sans font-bold text-slate-900">Soft Rig</span>
                 <span className="text-right text-sky-700 font-bold">
-                  +{(Math.max(0, calcs.creditHours - calcs.blockHours)).toFixed(2)} hrs
+                  +{(Math.max(0, calcs.creditHours - calcs.blockHours)).toFixed(2)}h
                 </span>
                 <span className="text-right text-sky-700 font-bold">
                   +${calcs.softPayAdjustment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 px-4 py-3 text-slate-900">
-                <span className="font-sans font-bold text-slate-900">Per Diem Reimbursement</span>
-                <span className="text-right text-slate-600">{displayTafb.toFixed(2)} hrs TAFB</span>
+              <div className="grid grid-cols-3 px-3 sm:px-4 py-2.5 sm:py-3 text-slate-900 items-center">
+                <span className="font-sans font-bold text-slate-900">Per Diem</span>
+                <span className="text-right text-slate-600">{displayTafb.toFixed(1)}h</span>
                 <span className="text-right text-amber-700 font-bold">
                   ${calcs.perDiemPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 px-4 py-4 bg-slate-50 text-slate-900 font-black border-t border-slate-200">
-                <span className="font-sans text-sm text-slate-900 uppercase">Gross Roster Pay</span>
-                <span className="text-right text-slate-600 font-mono text-[10px]">Combined</span>
-                <span className="text-right text-emerald-700 text-sm font-bold font-mono">
+              <div className="grid grid-cols-3 px-3 sm:px-4 py-3 bg-slate-50 text-slate-900 font-black border-t border-slate-200 items-center">
+                <span className="font-sans text-xs sm:text-sm text-slate-900 uppercase">Gross Pay</span>
+                <span className="text-right text-slate-600 font-mono text-[9px] sm:text-[10px]">Total</span>
+                <span className="text-right text-emerald-700 text-xs sm:text-sm font-bold font-mono">
                   ${calcs.grossTotalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
@@ -406,44 +406,44 @@ export default function PayCalculator() {
         </div>
 
         {/* Projections Card (Full width under xl:col-span-3) */}
-        <div className="xl:col-span-3 bg-sky-50 border border-sky-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 font-sans">
-          <div className="space-y-2">
-            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-sky-600" />
+        <div className="xl:col-span-3 bg-sky-50 border border-sky-200 rounded-3xl p-4 sm:p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 sm:gap-6 font-sans">
+          <div className="space-y-1 sm:space-y-2">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-sky-600 shrink-0" />
               Projections & Extrapolation Studio
             </h3>
             <p className="text-xs text-slate-700 max-w-[580px] leading-relaxed font-medium">
-              Extrapolate active schedule credit yields to project monthly and annual salaries, matching the standard monthly credit-hour benchmark ({standardMonthlyHours} credit hrs).
+              Extrapolate active schedule credit yields to project monthly and annual salaries ({standardMonthlyHours} credit hrs baseline).
             </p>
           </div>
 
-          <div className="flex flex-col items-center md:items-end gap-3 shrink-0">
+          <div className="flex flex-col sm:flex-row md:flex-col items-start sm:items-center md:items-end gap-3 shrink-0 w-full sm:w-auto justify-between">
             {/* Toggle */}
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-300 text-xs font-bold">
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-300 text-xs font-bold w-full sm:w-auto">
               <button
                 onClick={() => setExtrapolatePeriod("monthly")}
-                className={`px-3 py-1 rounded-lg transition duration-150 cursor-pointer ${
+                className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition duration-150 cursor-pointer active-press text-center ${
                   extrapolatePeriod === "monthly" ? "bg-sky-600 text-white shadow-sm" : "text-slate-700 hover:text-slate-900"
                 }`}
               >
-                Monthly Extrapolation
+                Monthly
               </button>
               <button
                 onClick={() => setExtrapolatePeriod("annual")}
-                className={`px-3 py-1 rounded-lg transition duration-150 cursor-pointer ${
+                className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg transition duration-150 cursor-pointer active-press text-center ${
                   extrapolatePeriod === "annual" ? "bg-sky-600 text-white shadow-sm" : "text-slate-700 hover:text-slate-900"
                 }`}
               >
-                Annual Salary Projector
+                Annual
               </button>
             </div>
 
             {/* Extrapolated Value */}
-            <div className="text-center md:text-right">
+            <div className="text-left md:text-right">
               <span className="text-[10px] uppercase font-extrabold tracking-widest text-slate-600">
                 Projected Gross Total
               </span>
-              <p className="text-3xl font-extrabold text-emerald-700 font-mono mt-0.5">
+              <p className="text-2xl sm:text-3xl font-extrabold text-emerald-700 font-mono mt-0.5">
                 ${currentExtrapolation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
@@ -451,46 +451,51 @@ export default function PayCalculator() {
         </div>
 
         {/* Rainmaker Crew Pay Details Ledger */}
-        <div className="xl:col-span-3 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+        <div className="xl:col-span-3 bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 gap-2">
             <div>
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-sky-600" />
-                Rainmaker Day-by-Day Pay Ledger
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-sky-600 shrink-0" />
+                  Rainmaker Pay Ledger
+                </h3>
+                <span className="sm:hidden text-[9px] text-sky-700 font-bold bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
+                  Swipe ➔
+                </span>
+              </div>
               <p className="text-xs text-slate-600 mt-0.5 font-medium">
                 Interactive reconciliation statement corresponding with airline payroll reporting ledgers.
               </p>
             </div>
             {isHi1Active && (
-              <span className="text-[10px] font-black uppercase text-sky-900 bg-sky-100 border border-sky-300 px-2.5 py-1 rounded-lg">
+              <span className="text-[10px] font-black uppercase text-sky-900 bg-sky-100 border border-sky-300 px-2.5 py-1 rounded-lg self-start sm:self-auto">
                 Roster Reconciled
               </span>
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full text-left border-collapse text-xs font-mono">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 scrollbar-thin">
+            <table className="w-full text-left border-collapse text-xs font-mono min-w-[700px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-wider">
-                  <th className="py-3 px-4 text-center">Day</th>
-                  <th className="py-3 px-3">Details</th>
-                  <th className="py-3 px-3">EQP</th>
-                  <th className="py-3 px-3 text-right">Base</th>
-                  <th className="py-3 px-3 text-right">OT</th>
-                  <th className="py-3 px-3 text-right">Prem</th>
-                  <th className="py-3 px-3 text-right">Other</th>
-                  <th className="py-3 px-3 text-right">TT</th>
-                  <th className="py-3 px-3 text-right">OTADJ</th>
-                  <th className="py-3 px-3 text-right">BLPRTC</th>
-                  <th className="py-3 px-3 text-right">PDM</th>
-                  <th className="py-3 px-4 text-right text-slate-900">PDM USD</th>
+                  <th className="py-2.5 px-3 text-center sticky left-0 bg-slate-100 z-10 border-r border-slate-200">Day</th>
+                  <th className="py-2.5 px-3">Details</th>
+                  <th className="py-2.5 px-3">EQP</th>
+                  <th className="py-2.5 px-3 text-right">Base</th>
+                  <th className="py-2.5 px-3 text-right">OT</th>
+                  <th className="py-2.5 px-3 text-right">Prem</th>
+                  <th className="py-2.5 px-3 text-right">Other</th>
+                  <th className="py-2.5 px-3 text-right">TT</th>
+                  <th className="py-2.5 px-3 text-right">OTADJ</th>
+                  <th className="py-2.5 px-3 text-right">BLPRTC</th>
+                  <th className="py-2.5 px-3 text-right">PDM</th>
+                  <th className="py-2.5 px-3 text-right text-slate-900">PDM USD</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-900">
                 {ledgerRows.map((row) => (
                   <tr key={row.day} className={`hover:bg-slate-50 transition duration-150 ${row.details ? "bg-slate-50/50" : ""}`}>
-                    <td className="py-2 px-4 text-center font-bold text-slate-500 border-r border-slate-200">{row.day}</td>
+                    <td className="py-2 px-3 text-center font-bold text-slate-600 sticky left-0 bg-slate-50 z-10 border-r border-slate-200">{row.day}</td>
                     <td className="py-2 px-3 text-slate-900 font-sans text-[11px] font-bold">{row.details || "—"}</td>
                     <td className="py-2 px-3 text-slate-600 text-[10px]">{row.eqp || "—"}</td>
                     <td className={`py-2 px-3 text-right ${row.base ? "text-slate-900 font-bold" : "text-slate-400"}`}>{row.base || "00:00"}</td>
@@ -501,26 +506,26 @@ export default function PayCalculator() {
                     <td className={`py-2 px-3 text-right ${row.otadj ? "text-amber-700 font-bold" : "text-slate-400"}`}>{row.otadj || "00:00"}</td>
                     <td className={`py-2 px-3 text-right ${row.blprtc ? (row.blprtc.startsWith("-") ? "text-rose-600 font-bold" : "text-sky-700 font-bold") : "text-slate-400"}`}>{row.blprtc || "00:00"}</td>
                     <td className={`py-2 px-3 text-right ${row.pdm ? "text-amber-800 font-bold" : "text-slate-400"}`}>{row.pdm || "00:00"}</td>
-                    <td className="py-2 px-4 text-right font-bold text-slate-700 border-l border-slate-200">
+                    <td className="py-2 px-3 text-right font-bold text-slate-700 border-l border-slate-200">
                       {row.usd > 0 ? `$${row.usd.toFixed(2)}` : "—"}
                     </td>
                   </tr>
                 ))}
                 
                 {/* Total Row */}
-                <tr className="bg-slate-50 font-black border-t-2 border-slate-300 text-slate-900">
-                  <td className="py-3.5 px-4 text-center text-slate-600 border-r border-slate-200">Total</td>
-                  <td className="py-3.5 px-3 font-sans uppercase text-[10px] text-slate-600">Ledger Sum</td>
-                  <td className="py-3.5 px-3 text-slate-400">—</td>
-                  <td className="py-3.5 px-3 text-right text-slate-900">{formatMinStr(ledgerTotals.base)}</td>
-                  <td className="py-3.5 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.ot)}</td>
-                  <td className="py-3.5 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.prem)}</td>
-                  <td className="py-3.5 px-3 text-right text-slate-900">{formatMinStr(ledgerTotals.other)}</td>
-                  <td className="py-3.5 px-3 text-right text-sky-700">{formatMinStr(ledgerTotals.tt)}</td>
-                  <td className="py-3.5 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.otadj)}</td>
-                  <td className="py-3.5 px-3 text-right text-sky-700">{formatMinStr(ledgerTotals.blprtc)}</td>
-                  <td className="py-3.5 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.pdm)}</td>
-                  <td className="py-3.5 px-4 text-right text-emerald-700 border-l border-slate-200">
+                <tr className="bg-slate-100 font-black border-t-2 border-slate-300 text-slate-900">
+                  <td className="py-3 px-3 text-center text-slate-700 sticky left-0 bg-slate-100 z-10 border-r border-slate-200">Total</td>
+                  <td className="py-3 px-3 font-sans uppercase text-[10px] text-slate-600">Ledger Sum</td>
+                  <td className="py-3 px-3 text-slate-400">—</td>
+                  <td className="py-3 px-3 text-right text-slate-900">{formatMinStr(ledgerTotals.base)}</td>
+                  <td className="py-3 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.ot)}</td>
+                  <td className="py-3 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.prem)}</td>
+                  <td className="py-3 px-3 text-right text-slate-900">{formatMinStr(ledgerTotals.other)}</td>
+                  <td className="py-3 px-3 text-right text-sky-700">{formatMinStr(ledgerTotals.tt)}</td>
+                  <td className="py-3 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.otadj)}</td>
+                  <td className="py-3 px-3 text-right text-sky-700">{formatMinStr(ledgerTotals.blprtc)}</td>
+                  <td className="py-3 px-3 text-right text-amber-700">{formatMinStr(ledgerTotals.pdm)}</td>
+                  <td className="py-3 px-3 text-right text-emerald-700 border-l border-slate-200">
                     ${ledgerTotals.usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                 </tr>

@@ -90,24 +90,24 @@ export default function CompliancePanel() {
   ];
 
   return (
-    <div className="space-y-6 animate-fadeIn font-sans">
+    <div className="space-y-4 sm:space-y-6 animate-fadeIn font-sans">
       {/* Header */}
-      <div className="pb-6 border-b border-slate-200">
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
-          <ShieldCheck className="w-8 h-8 text-emerald-600" />
+      <div className="pb-4 sm:pb-6 border-b border-slate-200">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+          <ShieldCheck className="w-7 h-7 sm:w-8 sm:h-8 text-emerald-600 shrink-0" />
           CBA & FAR Part 117 Audit
         </h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-1 text-xs sm:text-sm text-slate-600">
           Reconcile roster schedules against FAA Part 121 / 117 flight duty limitations and Envoy Air collective bargaining agreements.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Cumulative Limits */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4 sm:space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Activity className="w-5 h-5 text-sky-600" />
                 FAA Part 117 Cumulative Audits
               </h2>

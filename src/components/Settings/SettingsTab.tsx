@@ -3,31 +3,86 @@
 import { useState } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
 import {
-  Settings,
+  User,
+  CreditCard,
+  Scale,
+  Calendar,
+  Database,
+  Check,
+  Building2,
+  Plane,
+  ShieldCheck,
+  Award,
+  Download,
+  Upload,
+  RefreshCw,
+  AlertTriangle,
   Clock,
   Plus,
   Trash2,
   RotateCcw,
-  ShieldCheck,
-  Check,
-  Building2,
-  Award,
-  UserCheck,
-  DollarSign,
-  Scale,
-  Briefcase,
   SlidersHorizontal,
+  Mail,
+  Phone,
+  Hash,
+  Globe,
+  DollarSign,
+  ChevronRight,
+  UserCheck,
+  CalendarDays,
   Sparkles,
-  Plane,
-  Coins,
-  ShieldAlert,
   Zap,
 } from "lucide-react";
-import { PayRates, OpenTimePreset } from "../../types";
+import { PayRates, UserProfile } from "../../types";
+import { clearWeatherCache } from "../../lib/weatherService";
+import {
+  CBA_AIRLINE_PAY_SCALE,
+  calculateLongevityYears,
+  getCbaRatesForProfile,
+  calculateNextPayPeriodDate,
+} from "../../lib/cbaPayScale";
+import {
+  FAR_117_TABLE_B,
+  FAR_117_TABLE_A,
+  getMaxFdpHours,
+  getMaxFlightTimeHours,
+} from "../../lib/far117Engine";
+
+const AIRLINE_BASES = [
+  { code: "ORD", name: "Chicago O'Hare (ORD)" },
+  { code: "DFW", name: "Dallas/Fort Worth (DFW)" },
+  { code: "CLT", name: "Charlotte Douglas (CLT)" },
+  { code: "MIA", name: "Miami International (MIA)" },
+  { code: "PHX", name: "Phoenix Sky Harbor (PHX)" },
+  { code: "PHL", name: "Philadelphia (PHL)" },
+  { code: "LGA", name: "New York LaGuardia (LGA)" },
+  { code: "JFK", name: "New York JFK (JFK)" },
+  { code: "DCA", name: "Washington Reagan (DCA)" },
+  { code: "LAX", name: "Los Angeles (LAX)" },
+  { code: "BOS", name: "Boston Logan (BOS)" },
+  { code: "SFO", name: "San Francisco (SFO)" },
+];
+
+const FLEET_EQUIPMENT = [
+  { code: "E175", name: "Embraer 170 / 175 (E175)" },
+  { code: "B737", name: "Boeing 737-800 / MAX (B737)" },
+  { code: "A321", name: "Airbus A319 / A320 / A321 (A320)" },
+  { code: "B787", name: "Boeing 787 Dreamliner (B787)" },
+  { code: "B777", name: "Boeing 777 (B777)" },
+  { code: "CRJ9", name: "Bombardier CRJ-700 / 900 (CRJ9)" },
+];
 
 export default function SettingsTab() {
+  const userProfile = useCrewStore((state) => state.userProfile);
+  const updateUserProfile = useCrewStore((state) => state.updateUserProfile);
+
   const payRates = useCrewStore((state) => state.payRates);
   const setPayRates = useCrewStore((state) => state.setPayRates);
+
+  const sequences = useCrewStore((state) => state.sequences);
+  const logbookEntries = useCrewStore((state) => state.logbookEntries);
+  const snapshots = useCrewStore((state) => state.snapshots);
+  const vacations = useCrewStore((state) => state.vacations);
 
   const stationTurnLimits = useCrewStore((state) => state.stationTurnLimits);
   const defaultTurnLimit = useCrewStore((state) => state.defaultTurnLimit);
@@ -38,129 +93,75 @@ export default function SettingsTab() {
   const resetStationTurnLimits = useCrewStore((state) => state.resetStationTurnLimits);
   const setHighCreditThresholdHours = useCrewStore((state) => state.setHighCreditThresholdHours);
 
-  const [activeSection, setActiveSection] = useState<"presets" | "profile" | "pay" | "legality" | "stations">("presets");
+  const showDtsDropped = useCrewStore((state) => state.showDtsDropped);
+  const toggleShowDtsDropped = useCrewStore((state) => state.toggleShowDtsDropped);
+  const clearAll = useCrewStore((state) => state.clearAll);
 
-  const openPresets = useCrewStore((state) => state.openTimePresets);
-  const addOpenPreset = useCrewStore((state) => state.addOpenTimePreset);
-  const removeOpenPreset = useCrewStore((state) => state.removeOpenTimePreset);
-  const activePresetFilter = useCrewStore((state) => state.openTimeFilter);
-  const setOpenTimeFilter = useCrewStore((state) => state.setOpenTimeFilter);
+  // Active navigation section
+  const [activeSection, setActiveSection] = useState<"profile" | "pay" | "legality" | "calendar" | "storage">("profile");
 
-  // Typable Preference Form State inside Settings (Tools)
-  const [presetName, setPresetName] = useState("");
-  const [minCredit, setMinCredit] = useState<number | "">(3.5);
-  const [maxCredit, setMaxCredit] = useState<number | "">("");
-  const [maxDays, setMaxDays] = useState<number | "">(1);
-  const [reportAfterTime, setReportAfterTime] = useState("");
-  const [reportBeforeTime, setReportBeforeTime] = useState("");
-  const [releaseBeforeTime, setReleaseBeforeTime] = useState("");
-  const [layoverPrefText, setLayoverPrefText] = useState("");
-  const [fitsOnly, setFitsOnly] = useState(false);
-  const [baseFilter, setBaseFilter] = useState("ALL");
+  // Seat Upgrade / Transition Modal State
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [targetUpgradeRole, setTargetUpgradeRole] = useState<"CA" | "FO" | "CHECK_PILOT">(
+    userProfile.crewRole === "CA" ? "CHECK_PILOT" : "CA"
+  );
+  const [upgradeEffectiveDate, setUpgradeEffectiveDate] = useState(new Date().toISOString().substring(0, 10));
 
-  const handleCreateSettingsPreset = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!presetName.trim()) return;
-
-    const newPreset: OpenTimePreset = {
-      id: `preset-${Date.now()}`,
-      name: presetName.trim(),
-      minCreditHours: minCredit !== "" ? Number(minCredit) : undefined,
-      maxCreditHours: maxCredit !== "" ? Number(maxCredit) : undefined,
-      maxTripDays: maxDays !== "" ? Number(maxDays) : undefined,
-      reportAfterTime: reportAfterTime.trim() || undefined,
-      reportBeforeTime: reportBeforeTime.trim() || undefined,
-      releaseBeforeTime: releaseBeforeTime.trim() || undefined,
-      preferredLayoverCity: layoverPrefText.trim() || undefined,
-      fitsOnly: fitsOnly,
-      baseFilter: baseFilter,
-    };
-
-    addOpenPreset(newPreset);
-    setPresetName("");
-    triggerToast(`Saved Custom Preset: ${newPreset.name}`);
-  };
+  // Station turn addition state
   const [newStation, setNewStation] = useState("");
   const [newMinutes, setNewMinutes] = useState(40);
-  const [showSavedToast, setShowSavedToast] = useState(false);
-  const [toastMsg, setToastMsg] = useState("Settings updated!");
+
+  // Interactive FAR 117 Table B Calculator State
+  const [calcReportTime, setCalcReportTime] = useState("07:15");
+  const [calcSegments, setCalcSegments] = useState(3);
+
+  // Toast feedback
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("Settings updated!");
+
+  // Reset confirmation modal
+  const [showResetModal, setShowResetModal] = useState(false);
 
   const triggerToast = (msg = "Settings updated!") => {
-    setToastMsg(msg);
-    setShowSavedToast(true);
-    setTimeout(() => setShowSavedToast(false), 2200);
+    setToastMessage(msg);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2400);
   };
 
-  const applyPresetProfile = (role: "CA" | "FO" | "LFA" | "FA") => {
-    let preset: Partial<PayRates> = {};
-    if (role === "CA") {
-      preset = {
-        crewRole: "CA",
-        hourlyRate: 340.0,
-        overtimeMultiplier: 1.5,
-        perDiemRate: 2.85,
-        intlPerDiemRate: 3.60,
-        monthlyGuaranteeHours: 75.0,
-        minDailyGuaranteeMinutes: 300,
-        legalityStandard: "FAR117",
-        minRestHours: 10.0,
-        maxFdpHours: 13.0,
-        maxDailyFlightHours: 9.0,
-        reportBufferMins: 45,
-        releaseBufferMins: 15,
-      };
-    } else if (role === "FO") {
-      preset = {
-        crewRole: "FO",
-        hourlyRate: 215.0,
-        overtimeMultiplier: 1.5,
-        perDiemRate: 2.50,
-        intlPerDiemRate: 3.25,
-        monthlyGuaranteeHours: 75.0,
-        minDailyGuaranteeMinutes: 300,
-        legalityStandard: "FAR117",
-        minRestHours: 10.0,
-        maxFdpHours: 13.0,
-        maxDailyFlightHours: 9.0,
-        reportBufferMins: 45,
-        releaseBufferMins: 15,
-      };
-    } else if (role === "LFA") {
-      preset = {
-        crewRole: "LFA",
-        hourlyRate: 88.0,
-        overtimeMultiplier: 1.5,
-        perDiemRate: 2.40,
-        intlPerDiemRate: 3.10,
-        monthlyGuaranteeHours: 70.0,
-        minDailyGuaranteeMinutes: 240,
-        legalityStandard: "FA_REST",
-        minRestHours: 10.0,
-        maxFdpHours: 14.0,
-        maxDailyFlightHours: 10.0,
-        reportBufferMins: 60,
-        releaseBufferMins: 30,
-      };
-    } else if (role === "FA") {
-      preset = {
-        crewRole: "FA",
-        hourlyRate: 62.0,
-        overtimeMultiplier: 1.5,
-        perDiemRate: 2.25,
-        intlPerDiemRate: 2.95,
-        monthlyGuaranteeHours: 70.0,
-        minDailyGuaranteeMinutes: 240,
-        legalityStandard: "FA_REST",
-        minRestHours: 10.0,
-        maxFdpHours: 14.0,
-        maxDailyFlightHours: 10.0,
-        reportBufferMins: 60,
-        releaseBufferMins: 30,
-      };
-    }
+  // Longevity & CBA calculations from Date of Hire (DOH), 750 SIC status, and Delayed Flow status
+  const cbaInfo = getCbaRatesForProfile({
+    hireDateStr: userProfile.hireDate,
+    role: userProfile.crewRole,
+    hasCompleted750Sic: userProfile.hasCompleted750Sic,
+    flowStatus: userProfile.flowStatus,
+    isCaptainFlowTopScale: userProfile.isCaptainFlowTopScale,
+  });
 
-    setPayRates(preset);
-    triggerToast(`Loaded ${role} Contract Preset!`);
+  // Perform Formal Seat Upgrade / Transition
+  const handleConfirmSeatTransition = () => {
+    updateUserProfile({
+      crewRole: targetUpgradeRole,
+    });
+
+    setShowUpgradeModal(false);
+    triggerToast(`Seat transition confirmed: ${targetUpgradeRole === "CA" ? "Captain (PIC)" : targetUpgradeRole === "CHECK_PILOT" ? "Check Airman" : "First Officer (SIC)"}!`);
+  };
+
+  // Re-sync pay rates to CBA scale from Date of Hire
+  const handleResetToCbaScale = () => {
+    const cba = getCbaRatesForProfile({
+      hireDateStr: userProfile.hireDate,
+      role: userProfile.crewRole,
+      hasCompleted750Sic: userProfile.hasCompleted750Sic,
+      flowStatus: userProfile.flowStatus,
+      isCaptainFlowTopScale: userProfile.isCaptainFlowTopScale,
+    });
+    setPayRates({
+      hourlyRate: cba.hourlyRate,
+      perDiemRate: cba.domesticPerDiem,
+      intlPerDiemRate: cba.intlPerDiem,
+    });
+    triggerToast(`Re-synced to CBA: $${cba.hourlyRate.toFixed(2)}/hr, $${cba.domesticPerDiem.toFixed(2)} Per Diem`);
   };
 
   const handleAddStation = (e: React.FormEvent) => {
@@ -170,898 +171,1256 @@ export default function SettingsTab() {
     setStationTurnLimit(stationCode, Number(newMinutes) || 40);
     setNewStation("");
     setNewMinutes(40);
-    triggerToast(`Added ${stationCode} turn limit!`);
+    triggerToast(`Added turn buffer for ${stationCode}`);
+  };
+
+  // Export JSON Backup
+  const handleExportBackup = () => {
+    const backupData = {
+      app: "CrewSchedule Pro",
+      exportDate: new Date().toISOString(),
+      userProfile,
+      payRates,
+      sequences,
+      logbookEntries,
+      vacations,
+      stationTurnLimits,
+      defaultTurnLimit,
+      highCreditThresholdHours,
+      showDtsDropped,
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `CrewSchedule_Backup_${userProfile.employeeId || "Pilot"}_${new Date().toISOString().substring(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    triggerToast("Backup exported successfully!");
+  };
+
+  // Import JSON Backup
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json.userProfile) updateUserProfile(json.userProfile);
+        if (json.payRates) setPayRates(json.payRates);
+        if (Array.isArray(json.sequences)) useCrewStore.getState().setSequences(json.sequences);
+        if (Array.isArray(json.vacations)) useCrewStore.getState().setVacations(json.vacations);
+        triggerToast("Backup restored successfully!");
+      } catch (err) {
+        alert("Invalid backup file format.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Flush Weather Cache
+  const handleFlushWeatherCache = () => {
+    clearWeatherCache();
+    triggerToast("Live weather 5m cache flushed!");
   };
 
   const stations = Object.entries(stationTurnLimits);
 
+  // Seat / Rank helpers
+  const isFa = userProfile.crewRole === "FA" || userProfile.crewRole === "LFA";
+  const isCaptain = !isFa && (userProfile.crewRole === "CA" || userProfile.crewRole === "CHECK_PILOT");
+  const roleTitle = userProfile.crewRole === "CA" ? "Captain (CA)" : userProfile.crewRole === "CHECK_PILOT" ? "Check Airman" : userProfile.crewRole === "FA" ? "Flight Attendant (FA)" : userProfile.crewRole === "LFA" ? "Lead Flight Attendant (LFA)" : "First Officer (FO)";
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-16 font-sans animate-fadeIn">
+    <div className="max-w-4xl mx-auto space-y-6 pb-24 font-sans animate-fadeIn px-2 sm:px-4">
       {/* Toast Notification */}
-      {showSavedToast && (
-        <div className="fixed bottom-6 right-6 bg-slate-900 text-white font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs animate-bounce z-50 border border-slate-700">
+      {showToast && (
+        <div className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 bg-slate-900 text-white font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs animate-bounce z-50 border border-slate-700">
           <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
-          <span>{toastMsg}</span>
+          <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Header Banner */}
-      <div className="bg-white border border-slate-200 p-6 md:p-8 rounded-3xl shadow-sm relative overflow-hidden">
-        <div className="relative z-10 space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-100 border border-sky-300 text-sky-900 text-xs font-bold">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-sky-600" />
-            <span>Pilot & Flight Attendant Contract Configuration</span>
+      {/* 1. AUTHENTIC AIRLINE FLIGHT DECK CREW CREDENTIALS CARD */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl text-white">
+        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+          <div className="flex items-center gap-4">
+            {/* 4-Stripe / 3-Stripe / Inflight Insignia Badge */}
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-amber-500/30 via-sky-500/20 to-slate-800 border border-amber-500/40 p-1 shadow-lg flex items-center justify-center shrink-0">
+              <div className="w-full h-full bg-slate-950 rounded-[12px] flex flex-col items-center justify-center space-y-0.5">
+                {isFa ? (
+                  <div className="flex flex-col items-center justify-center py-1">
+                    <span className="text-xl">🛫</span>
+                  </div>
+                ) : isCaptain ? (
+                  <>
+                    <div className="w-7 h-1 bg-amber-400 rounded-full shadow-xs" />
+                    <div className="w-7 h-1 bg-amber-400 rounded-full shadow-xs" />
+                    <div className="w-7 h-1 bg-amber-400 rounded-full shadow-xs" />
+                    <div className="w-7 h-1 bg-amber-400 rounded-full shadow-xs" />
+                  </>
+                ) : (
+                  <>
+                    <div className="w-7 h-1 bg-amber-400/80 rounded-full shadow-xs" />
+                    <div className="w-7 h-1 bg-amber-400/80 rounded-full shadow-xs" />
+                    <div className="w-7 h-1 bg-amber-400/80 rounded-full shadow-xs" />
+                  </>
+                )}
+                <span className="text-[8px] font-black text-amber-300 uppercase tracking-tighter pt-0.5 font-mono">
+                  {userProfile.crewRole || "CA"}
+                </span>
+              </div>
+            </div>
+
+            {/* Pilot Standing & Employment Details */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
+                  {userProfile.name || "CAPTAIN PILOT"}
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30 text-[10px] font-extrabold uppercase tracking-wide">
+                  {roleTitle}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[10px] font-bold font-mono">
+                  {cbaInfo.longevityFormatted}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2.5 text-xs text-slate-300 font-mono flex-wrap">
+                <span>Emp #{userProfile.employeeId || "742840"}</span>
+                <span className="text-slate-600">•</span>
+                <span>Sen #{userProfile.seniorityNumber || "12345"}</span>
+                <span className="text-slate-600">•</span>
+                <span className="text-sky-300 font-bold">{userProfile.base || "ORD"} Base</span>
+                <span className="text-slate-600">•</span>
+                <span className="text-amber-300 font-bold">{userProfile.equipment || "E175"}</span>
+                <span className="text-slate-600">•</span>
+                <span className="text-emerald-300 font-bold">${payRates.hourlyRate || cbaInfo.hourlyRate}/hr</span>
+              </div>
+            </div>
           </div>
-          <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Crew Member & Airline System Settings
-          </h2>
-          <p className="text-slate-600 text-xs md:text-sm max-w-3xl leading-relaxed font-medium">
-            Customize crew roles (Captain, FO, Purser, Flight Attendant), base pay rates, per diems, overtime multipliers, FAR Part 117 legality thresholds, and station turn limits. All settings persist locally and drive real-time pay calculations and legality engines.
-          </p>
+
+          {/* Formal Seat Upgrade / Transition Trigger Button */}
+          <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-800 gap-2">
+            <button
+              onClick={() => setShowUpgradeModal(true)}
+              className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer border border-sky-400/30"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-300" />
+              <span>Seat Transition / Upgrade</span>
+            </button>
+            <span className="text-[10px] text-slate-400 font-medium">
+              {isCaptain ? "Logged Flight Time: PIC (100%)" : "Logged Flight Time: SIC (100%)"}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Quick Role Preset Switcher Bar */}
-      <div className="bg-white border border-slate-200 p-4 md:p-5 rounded-3xl shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5 font-mono">
-            <Sparkles className="w-4 h-4 text-amber-500" /> 1-Click Role Presets
-          </span>
-          <span className="text-[11px] text-slate-400 font-semibold hidden sm:inline">
-            Selecting a preset updates pay rates, per diem, and FAR/FA rest rules instantly
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <button
-            onClick={() => applyPresetProfile("CA")}
-            className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
-              payRates.crewRole === "CA"
-                ? "bg-sky-600 border-sky-500 text-white shadow-md"
-                : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
-            }`}
-          >
-            <div>
-              <span className="text-xs font-black block">👨‍✈️ Captain (CA)</span>
-              <span className="text-[10px] opacity-80 block font-mono">$340/hr • 1.5x OT</span>
-            </div>
-            <span className="text-[9px] font-bold uppercase tracking-wide mt-2 block opacity-75">FAR 117 Pilot</span>
-          </button>
-
-          <button
-            onClick={() => applyPresetProfile("FO")}
-            className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
-              payRates.crewRole === "FO"
-                ? "bg-sky-600 border-sky-500 text-white shadow-md"
-                : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
-            }`}
-          >
-            <div>
-              <span className="text-xs font-black block">👨‍✈️ First Officer (FO)</span>
-              <span className="text-[10px] opacity-80 block font-mono">$215/hr • 1.5x OT</span>
-            </div>
-            <span className="text-[9px] font-bold uppercase tracking-wide mt-2 block opacity-75">FAR 117 Pilot</span>
-          </button>
-
-          <button
-            onClick={() => applyPresetProfile("LFA")}
-            className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
-              payRates.crewRole === "LFA"
-                ? "bg-sky-600 border-sky-500 text-white shadow-md"
-                : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
-            }`}
-          >
-            <div>
-              <span className="text-xs font-black block">✈️ Lead FA / Purser</span>
-              <span className="text-[10px] opacity-80 block font-mono">$88/hr • 1.5x OT</span>
-            </div>
-            <span className="text-[9px] font-bold uppercase tracking-wide mt-2 block opacity-75">FA Rest Standard</span>
-          </button>
-
-          <button
-            onClick={() => applyPresetProfile("FA")}
-            className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
-              payRates.crewRole === "FA"
-                ? "bg-sky-600 border-sky-500 text-white shadow-md"
-                : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
-            }`}
-          >
-            <div>
-              <span className="text-xs font-black block">✈️ Flight Attendant</span>
-              <span className="text-[10px] opacity-80 block font-mono">$62/hr • 1.5x OT</span>
-            </div>
-            <span className="text-[9px] font-bold uppercase tracking-wide mt-2 block opacity-75">FA Rest Standard</span>
-          </button>
-        </div>
+      {/* 2. MOBILE-FIRST SEGMENTED NAVIGATION BAR */}
+      <div className="bg-slate-200/80 p-1 rounded-2xl flex items-center gap-1 overflow-x-auto scrollbar-none">
+        {[
+          { id: "profile", label: "Profile & DOH", icon: User },
+          { id: "pay", label: "CBA Pay & Per Diem", icon: CreditCard },
+          { id: "legality", label: "FAR 117 Legality", icon: Scale },
+          { id: "calendar", label: "Display & Zulu", icon: Calendar },
+          { id: "storage", label: "Data & Storage", icon: Database },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeSection === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSection(tab.id as any)}
+              className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 ${
+                isActive
+                  ? "bg-white text-slate-900 shadow-sm font-extrabold"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Icon className={`w-3.5 h-3.5 ${isActive ? "text-sky-600" : "text-slate-500"}`} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Main Navigation Tabs */}
-      <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold gap-1 overflow-x-auto scrollbar-none">
-        <button
-          onClick={() => setActiveSection("presets")}
-          className={`flex-1 py-2.5 px-4 rounded-xl transition duration-150 flex items-center justify-center gap-2 shrink-0 cursor-pointer ${
-            activeSection === "presets" ? "bg-white text-slate-900 shadow-sm font-extrabold" : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <SlidersHorizontal className="w-4 h-4 text-purple-600" />
-          <span>1. Open Time Presets</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSection("profile")}
-          className={`flex-1 py-2.5 px-4 rounded-xl transition duration-150 flex items-center justify-center gap-2 shrink-0 cursor-pointer ${
-            activeSection === "profile" ? "bg-white text-slate-900 shadow-sm font-extrabold" : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <UserCheck className="w-4 h-4 text-sky-600" />
-          <span>2. Crew & Base Profile</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSection("pay")}
-          className={`flex-1 py-2.5 px-4 rounded-xl transition duration-150 flex items-center justify-center gap-2 shrink-0 cursor-pointer ${
-            activeSection === "pay" ? "bg-white text-slate-900 shadow-sm font-extrabold" : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <DollarSign className="w-4 h-4 text-emerald-600" />
-          <span>3. Pay Rates & Financial CBA</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSection("legality")}
-          className={`flex-1 py-2.5 px-4 rounded-xl transition duration-150 flex items-center justify-center gap-2 shrink-0 cursor-pointer ${
-            activeSection === "legality" ? "bg-white text-slate-900 shadow-sm font-extrabold" : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <Scale className="w-4 h-4 text-amber-600" />
-          <span>4. FAR 117 & Legality Limits</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSection("stations")}
-          className={`flex-1 py-2.5 px-4 rounded-xl transition duration-150 flex items-center justify-center gap-2 shrink-0 cursor-pointer ${
-            activeSection === "stations" ? "bg-white text-slate-900 shadow-sm font-extrabold" : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <Building2 className="w-4 h-4 text-indigo-600" />
-          <span>5. Station Turns & Buffers</span>
-        </button>
-      </div>
-
-      {/* SECTION 1: CREW & BASE PROFILE */}
+      {/* 3. TAB 1: PILOT PROFILE & OFFICIAL CREDENTIALS */}
       {activeSection === "profile" && (
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-6 animate-fadeIn">
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
-            <UserCheck className="w-6 h-6 text-sky-600" />
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 shadow-sm space-y-6 animate-fadeIn">
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
+            <UserCheck className="w-5 h-5 text-sky-600" />
             <div>
-              <h3 className="text-base font-extrabold text-slate-900">Crew Member Role & Domicile Settings</h3>
-              <p className="text-xs text-slate-500 font-medium">Select crew rank, aircraft equipment, home base domicile, and employee ID</p>
+              <h2 className="text-base font-extrabold text-slate-900">Flight Deck Crew Profile & Credentials</h2>
+              <p className="text-xs text-slate-500">Official airline employee record, seniority award, Date of Hire (DOH), and base</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Position / Role */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">Crew Position / Rank</label>
-              <select
-                value={payRates.crewRole || "FO"}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+            {/* Full Name */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-slate-500" /> Official Pilot Name
+              </label>
+              <input
+                type="text"
+                value={userProfile.name || ""}
                 onChange={(e) => {
-                  setPayRates({ crewRole: e.target.value as any });
-                  triggerToast(`Role updated to ${e.target.value}`);
+                  updateUserProfile({ name: e.target.value.toUpperCase() });
+                  triggerToast("Pilot name updated");
                 }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
-              >
-                <option value="CA">👨‍✈️ Captain (CA)</option>
-                <option value="FO">👨‍✈️ First Officer (FO)</option>
-                <option value="CHECK_PILOT">👨‍✈️ Check Airman / Evaluator</option>
-                <option value="LFA">✈️ Lead Flight Attendant / Purser (LFA)</option>
-                <option value="FA">✈️ Flight Attendant (FA)</option>
-              </select>
-              <p className="text-[11px] text-slate-500 font-medium">Controls flight logbook generation and pay calculation formulas</p>
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 uppercase focus:outline-none focus:border-sky-600"
+                placeholder="e.g. AUSTIN PRYOR"
+              />
             </div>
 
-            {/* Aircraft Equipment */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">Fleet / Aircraft Equipment</label>
-              <select
-                value={payRates.equipment || "E175"}
+            {/* Active Position Display (Locked - Requires formal upgrade transition) */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 text-slate-500" /> Assigned Seat / Position
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowUpgradeModal(true)}
+                  className="text-[11px] font-bold text-sky-600 hover:text-sky-700 cursor-pointer"
+                >
+                  Change Seat
+                </button>
+              </label>
+              <div className="w-full bg-slate-100 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span>{roleTitle}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-extrabold uppercase">
+                  {isCaptain ? "PIC Flight Time" : "SIC Flight Time"}
+                </span>
+              </div>
+            </div>
+
+            {/* Date of Hire (DOH) - Auto-calculates CBA Longevity & Pay Scale */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5 text-sky-600" /> Official Date of Hire (DOH)
+                </span>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  {cbaInfo.longevityFormatted}
+                </span>
+              </label>
+              <input
+                type="date"
+                value={userProfile.hireDate || "2016-04-18"}
                 onChange={(e) => {
-                  setPayRates({ equipment: e.target.value });
+                  updateUserProfile({ hireDate: e.target.value });
+                  triggerToast(`Date of Hire updated to ${e.target.value} (Auto-computed CBA Longevity Step ${cbaInfo.payStepYear})`);
+                }}
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+              />
+              <p className="text-[11px] text-slate-500">
+                Auto-configures CBA Pay Step Year {cbaInfo.payStepYear} (${cbaInfo.hourlyRate.toFixed(2)}/hr) and Per Diem (${cbaInfo.domesticPerDiem.toFixed(2)}/hr).
+              </p>
+            </div>
+
+            {/* Employee ID */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Hash className="w-3.5 h-3.5 text-slate-500" /> Employee / Crew ID (AA/Eagle #)
+              </label>
+              <input
+                type="text"
+                value={userProfile.employeeId || ""}
+                onChange={(e) => {
+                  updateUserProfile({ employeeId: e.target.value.trim() });
+                  triggerToast("Employee ID updated");
+                }}
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+                placeholder="e.g. 742840"
+              />
+            </div>
+
+            {/* Seniority Number */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-500" /> System Seniority Number
+              </label>
+              <input
+                type="text"
+                value={userProfile.seniorityNumber || ""}
+                onChange={(e) => {
+                  updateUserProfile({ seniorityNumber: e.target.value.trim() });
+                  triggerToast("Seniority number updated");
+                }}
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+                placeholder="e.g. 12345"
+              />
+            </div>
+
+            {/* Primary Base Domicile */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-slate-500" /> Home Domicile Base
+              </label>
+              <select
+                value={userProfile.base || "ORD"}
+                onChange={(e) => {
+                  updateUserProfile({ base: e.target.value });
+                  triggerToast(`Base updated to ${e.target.value}`);
+                }}
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+              >
+                {AIRLINE_BASES.map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Aircraft Fleet */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Plane className="w-3.5 h-3.5 text-slate-500" /> Fleet Assignment
+              </label>
+              <select
+                value={userProfile.equipment || "E175"}
+                onChange={(e) => {
+                  updateUserProfile({ equipment: e.target.value });
                   triggerToast(`Fleet updated to ${e.target.value}`);
                 }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
               >
-                <option value="E175">Embraer 175 / 170 (E175)</option>
-                <option value="B737">Boeing 737-800 / 900 / MAX (B737)</option>
-                <option value="A320">Airbus A320 / A321 (A320)</option>
-                <option value="B787">Boeing 787 Dreamliner (B787)</option>
-                <option value="B777">Boeing 777 (B777)</option>
+                {FLEET_EQUIPMENT.map((eq) => (
+                  <option key={eq.code} value={eq.code}>
+                    {eq.name}
+                  </option>
+                ))}
               </select>
-              <p className="text-[11px] text-slate-500 font-medium">Default aircraft type assigned to roster sequences</p>
             </div>
 
-            {/* Home Base Domicile */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">Home Domicile / Base</label>
-              <select
-                value={payRates.homeBase || "ORD"}
-                onChange={(e) => {
-                  setPayRates({ homeBase: e.target.value });
-                  triggerToast(`Home base updated to ${e.target.value}`);
-                }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer font-mono"
-              >
-                <option value="ORD">ORD - Chicago O'Hare International</option>
-                <option value="DFW">DFW - Dallas/Fort Worth International</option>
-                <option value="MIA">MIA - Miami International</option>
-                <option value="PHX">PHX - Phoenix Sky Harbor</option>
-                <option value="DCA">DCA - Washington Reagan National</option>
-                <option value="CLT">CLT - Charlotte Douglas</option>
-                <option value="LAX">LAX - Los Angeles International</option>
-                <option value="JFK">JFK - New York John F. Kennedy</option>
-              </select>
-              <p className="text-[11px] text-slate-500 font-medium">Used for TAFB (Time Away From Base) and layover rest calculations</p>
+            {/* Contact Email */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-slate-500" /> Contact Email
+              </label>
+              <input
+                type="email"
+                value={userProfile.email || ""}
+                onChange={(e) => updateUserProfile({ email: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                placeholder="pilot.crew@aa.com"
+              />
+            </div>
+
+            {/* Mobile Phone */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-slate-500" /> Mobile Phone
+              </label>
+              <input
+                type="tel"
+                value={userProfile.phone || ""}
+                onChange={(e) => updateUserProfile({ phone: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+                placeholder="(312) 555-0199"
+              />
             </div>
           </div>
         </div>
       )}
 
-      {/* SECTION 2: PAY RATES & FINANCIAL CBA */}
+      {/* 4. TAB 2: CBA CONTRACT PAY SCALE & PER DIEM */}
       {activeSection === "pay" && (
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-6 animate-fadeIn">
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
-            <DollarSign className="w-6 h-6 text-emerald-600" />
-            <div>
-              <h3 className="text-base font-extrabold text-slate-900">Financial CBA & Pay Rates Configuration</h3>
-              <p className="text-xs text-slate-500 font-medium">Configure base hourly pay rates, per diems, overtime multipliers, and daily guarantees</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Hourly Pay Rate */}
-            <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-2">
-              <label className="text-xs font-bold text-emerald-950 block">Base Flight Pay ($/hr)</label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-emerald-700">$</span>
-                <input
-                  type="number"
-                  min={20}
-                  max={600}
-                  step={0.5}
-                  value={payRates.hourlyRate}
-                  onChange={(e) => {
-                    setPayRates({ hourlyRate: Number(e.target.value) || 0 });
-                    triggerToast("Hourly pay rate updated");
-                  }}
-                  className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
-                />
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 shadow-sm space-y-6 animate-fadeIn">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div className="flex items-center gap-3">
+              <DollarSign className="w-5 h-5 text-emerald-600" />
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900">Official Pilot CBA Pay Scale & Per Diem</h2>
+                <p className="text-xs text-slate-500">Source: Pilot Agreement Section 3 (Compensation) & Section 5 (Expenses)</p>
               </div>
-              <span className="text-[10px] text-emerald-800 font-medium block">Standard flight & credit hour pay rate</span>
             </div>
 
-            {/* Overtime Multiplier */}
-            <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-2">
-              <label className="text-xs font-bold text-amber-950 block">Open Time Overtime Multiplier</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1.0}
-                  max={3.0}
-                  step={0.25}
-                  value={payRates.overtimeMultiplier || 1.5}
-                  onChange={(e) => {
-                    setPayRates({ overtimeMultiplier: Number(e.target.value) || 1.5 });
-                    triggerToast("Overtime multiplier updated");
-                  }}
-                  className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-600"
-                />
-                <span className="text-sm font-bold text-amber-800">x</span>
-              </div>
-              <span className="text-[10px] text-amber-800 font-medium block">Applied to Open Time pickups (1.5x Premium)</span>
-            </div>
-
-            {/* Domestic Per Diem */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-              <label className="text-xs font-bold text-slate-900 block">Domestic Per Diem ($/hr)</label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-slate-600">$</span>
-                <input
-                  type="number"
-                  min={1.0}
-                  max={10.0}
-                  step={0.05}
-                  value={payRates.perDiemRate}
-                  onChange={(e) => {
-                    setPayRates({ perDiemRate: Number(e.target.value) || 0 });
-                    triggerToast("Per diem rate updated");
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600"
-                />
-              </div>
-              <span className="text-[10px] text-slate-500 font-medium block">TAFB expense allowance per hour away</span>
-            </div>
-
-            {/* International Per Diem */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-              <label className="text-xs font-bold text-slate-900 block">International Per Diem ($/hr)</label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-slate-600">$</span>
-                <input
-                  type="number"
-                  min={1.0}
-                  max={15.0}
-                  step={0.05}
-                  value={payRates.intlPerDiemRate || 3.5}
-                  onChange={(e) => {
-                    setPayRates({ intlPerDiemRate: Number(e.target.value) || 0 });
-                    triggerToast("International per diem updated");
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600"
-                />
-              </div>
-              <span className="text-[10px] text-slate-500 font-medium block">Applied to international/trans-oceanic legs</span>
-            </div>
-
-            {/* Monthly Minimum Guarantee (MMG) */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-              <label className="text-xs font-bold text-slate-900 block">Monthly Minimum Guarantee (MMG)</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={40}
-                  max={120}
-                  step={1}
-                  value={payRates.monthlyGuaranteeHours || 75.0}
-                  onChange={(e) => {
-                    setPayRates({ monthlyGuaranteeHours: Number(e.target.value) || 75 });
-                    triggerToast("Monthly guarantee updated");
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600"
-                />
-                <span className="text-xs font-bold text-slate-600">hrs</span>
-              </div>
-              <span className="text-[10px] text-slate-500 font-medium block">Contractual minimum monthly line pay</span>
-            </div>
-
-            {/* Daily Rig Minimum Guarantee */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-              <label className="text-xs font-bold text-slate-900 block">Daily Rig Minimum Guarantee</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={2.0}
-                  max={8.0}
-                  step={0.5}
-                  value={(payRates.minDailyGuaranteeMinutes || 300) / 60}
-                  onChange={(e) => {
-                    setPayRates({ minDailyGuaranteeMinutes: (Number(e.target.value) || 5) * 60 });
-                    triggerToast("Daily guarantee updated");
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600"
-                />
-                <span className="text-xs font-bold text-slate-600">hrs/day</span>
-              </div>
-              <span className="text-[10px] text-slate-500 font-medium block">Minimum credit earned per calendar duty day</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SECTION 3: FAR 117 & LEGALITY LIMITS */}
-      {activeSection === "legality" && (
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-6 animate-fadeIn">
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
-            <Scale className="w-6 h-6 text-amber-600" />
-            <div>
-              <h3 className="text-base font-extrabold text-slate-900">FAA & Contractual Legality Thresholds</h3>
-              <p className="text-xs text-slate-500 font-medium">Configure regulatory standards (FAR 117 vs Flight Attendant Rest) and maximum duty limits</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Regulatory Standard */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">Regulatory Compliance Standard</label>
-              <select
-                value={payRates.legalityStandard || "FAR117"}
-                onChange={(e) => {
-                  setPayRates({ legalityStandard: e.target.value as any });
-                  triggerToast(`Compliance engine set to ${e.target.value}`);
-                }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-600 cursor-pointer"
-              >
-                <option value="FAR117">FAR Part 117 (Pilots - Strict FDP & Rest Rules)</option>
-                <option value="FA_REST">FAA Flight Attendant Rest Standard (10 Hours Rest Guarantee - P.L. 115-254)</option>
-              </select>
-              <p className="text-[11px] text-slate-500 font-medium">Drives real-time legality validation on the calendar grid and inspector</p>
-            </div>
-
-            {/* Minimum Required Rest */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">Minimum Required Layover Rest (Hours)</label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min={8.0}
-                  max={16.0}
-                  step={0.5}
-                  value={payRates.minRestHours || 10.0}
-                  onChange={(e) => {
-                    setPayRates({ minRestHours: Number(e.target.value) || 10.0 });
-                    triggerToast("Minimum rest requirement updated");
-                  }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-600"
-                />
-                <span className="text-xs font-bold text-slate-600">hours</span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium">Mandatory consecutive rest block between duty periods</p>
-            </div>
-
-            {/* Max Daily FDP */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">Maximum Daily Flight Duty Period (FDP)</label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min={9.0}
-                  max={18.0}
-                  step={0.5}
-                  value={payRates.maxFdpHours || 13.0}
-                  onChange={(e) => {
-                    setPayRates({ maxFdpHours: Number(e.target.value) || 13.0 });
-                    triggerToast("Max FDP limit updated");
-                  }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-600"
-                />
-                <span className="text-xs font-bold text-slate-600">hours</span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium">Upper limit on continuous duty time per calendar day</p>
-            </div>
-
-            {/* Max Daily Flight Time */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 block">Maximum Daily Flight / Block Time</label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min={6.0}
-                  max={14.0}
-                  step={0.5}
-                  value={payRates.maxDailyFlightHours || 9.0}
-                  onChange={(e) => {
-                    setPayRates({ maxDailyFlightHours: Number(e.target.value) || 9.0 });
-                    triggerToast("Max daily flight hours updated");
-                  }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-600"
-                />
-                <span className="text-xs font-bold text-slate-600">hours</span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium">FAR 117.11 daily flight time cap for unaugmented operations</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SECTION 4: STATION TURNS & BUFFERS */}
-      {activeSection === "stations" && (
-        <div className="space-y-6 animate-fadeIn">
-          {/* Main Station Limits Column */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-200">
-              <div className="flex items-center gap-2.5">
-                <Building2 className="w-5 h-5 text-indigo-600" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Station Turn Time Limits</h3>
-                  <p className="text-[11px] text-slate-600 font-medium">Minimum connection time (minutes) required between turns</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  resetStationTurnLimits();
-                  triggerToast("Reset station limits to defaults");
-                }}
-                className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset Defaults
-              </button>
-            </div>
-
-            {/* Station Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {stations.map(([station, limitMins]) => (
-                <div
-                  key={station}
-                  className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 relative group"
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-900 border border-indigo-300 flex items-center justify-center font-mono font-bold text-xs">
-                        {station}
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-900">{station} Station</span>
-                        <p className="text-[10px] text-slate-600 font-bold">Min Turn Threshold</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        removeStationTurnLimit(station);
-                        triggerToast(`Removed ${station} override`);
-                      }}
-                      title={`Remove ${station} override`}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition opacity-60 group-hover:opacity-100 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      min={10}
-                      max={180}
-                      value={limitMins}
-                      onChange={(e) => {
-                        setStationTurnLimit(station, Number(e.target.value) || 0);
-                        triggerToast();
-                      }}
-                      className="w-20 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 text-center focus:outline-none focus:border-indigo-600"
-                    />
-                    <span className="text-xs font-bold text-slate-600">minutes</span>
-
-                    <div className="flex items-center gap-1 ml-auto">
-                      <button
-                        onClick={() => {
-                          setStationTurnLimit(station, Math.max(10, limitMins - 5));
-                          triggerToast();
-                        }}
-                        className="w-6 h-6 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-md text-xs font-bold transition flex items-center justify-center cursor-pointer shadow-xs"
-                      >
-                        -5
-                      </button>
-                      <button
-                        onClick={() => {
-                          setStationTurnLimit(station, limitMins + 5);
-                          triggerToast();
-                        }}
-                        className="w-6 h-6 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-md text-xs font-bold transition flex items-center justify-center cursor-pointer shadow-xs"
-                      >
-                        +5
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Add Custom Station Form */}
-            <form
-              onSubmit={handleAddStation}
-              className="p-4 bg-slate-50 border border-indigo-300 rounded-2xl space-y-3"
+            <button
+              onClick={handleResetToCbaScale}
+              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
             >
-              <h4 className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-                <Plus className="w-3.5 h-3.5 text-indigo-600" />
-                Add Custom Station Override
-              </h4>
-
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="text"
-                  placeholder="Station (e.g. LGA, SFO)"
-                  maxLength={4}
-                  value={newStation}
-                  onChange={(e) => setNewStation(e.target.value)}
-                  className="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-600"
-                />
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={10}
-                    max={180}
-                    value={newMinutes}
-                    onChange={(e) => setNewMinutes(Number(e.target.value) || 40)}
-                    className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 text-center focus:outline-none focus:border-indigo-600"
-                  />
-                  <span className="text-xs font-bold text-slate-600">mins</span>
-                </div>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shrink-0 shadow-sm"
-                >
-                  Add Station
-                </button>
-              </div>
-            </form>
+              <Zap className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Sync to CBA Scale</span>
+            </button>
           </div>
 
-          {/* Operational Buffers */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-3">
-              <h4 className="text-xs font-bold text-slate-900">Fallback Station Turn Limit</h4>
+          {/* DOH Longevity Banner Card */}
+          <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={10}
-                  max={180}
-                  value={defaultTurnLimit}
-                  onChange={(e) => {
-                    setDefaultTurnLimit(Number(e.target.value) || 40);
-                    triggerToast("Fallback turn limit updated");
-                  }}
-                  className="w-24 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 text-center focus:outline-none focus:border-indigo-600"
-                />
-                <span className="text-xs font-bold text-slate-600">minutes</span>
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-black text-slate-900">
+                  {cbaInfo.cbaCitation}
+                </span>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium">Used for unconfigured airports</p>
+              <p className="text-[11px] text-slate-600">
+                Date of Hire: <strong className="font-mono">{userProfile.hireDate || "2016-04-18"}</strong> ({cbaInfo.longevityFormatted}) • Flight Pay: <strong className="font-mono text-emerald-700">${cbaInfo.hourlyRate.toFixed(2)}/hr</strong>
+              </p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-3">
-              <h4 className="text-xs font-bold text-slate-900">Report Check-in Buffer</h4>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={15}
-                  max={120}
-                  value={payRates.reportBufferMins || 45}
-                  onChange={(e) => {
-                    setPayRates({ reportBufferMins: Number(e.target.value) || 45 });
-                    triggerToast("Report buffer updated");
-                  }}
-                  className="w-24 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 text-center focus:outline-none focus:border-indigo-600"
-                />
-                <span className="text-xs font-bold text-slate-600">minutes</span>
+            <div className="flex items-center gap-3 text-xs font-mono">
+              <div className="px-3 py-1 bg-white border border-emerald-200 rounded-xl">
+                <span className="text-[10px] text-slate-500 block">Sec 5.B Per Diem</span>
+                <strong className="text-emerald-700 font-bold">${cbaInfo.domesticPerDiem.toFixed(2)}/hr</strong>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium">Report time prior to first flight departure</p>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-3">
-              <h4 className="text-xs font-bold text-slate-900">Release Check-out Buffer</h4>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={10}
-                  max={60}
-                  value={payRates.releaseBufferMins || 15}
-                  onChange={(e) => {
-                    setPayRates({ releaseBufferMins: Number(e.target.value) || 15 });
-                    triggerToast("Release buffer updated");
-                  }}
-                  className="w-24 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 text-center focus:outline-none focus:border-indigo-600"
-                />
-                <span className="text-xs font-bold text-slate-600">minutes</span>
+              <div className="px-3 py-1 bg-white border border-emerald-200 rounded-xl">
+                <span className="text-[10px] text-slate-500 block">Sec 3.E Guarantee</span>
+                <strong className="text-emerald-700 font-bold">{cbaInfo.lineholderGuarantee.toFixed(0)}h / {cbaInfo.reserveGuarantee.toFixed(0)}h</strong>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium">Release buffer added after last flight block-in</p>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* SECTION 5: OPEN TIME PRESET MANAGER */}
-      {activeSection === "presets" && (
-        <div className="space-y-6 animate-fadeIn">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <div className="flex items-center gap-3">
-                <SlidersHorizontal className="w-6 h-6 text-purple-600" />
-                <div>
-                  <h3 className="text-base font-extrabold text-slate-900">Open Time Marketplace Filter Presets Studio</h3>
-                  <p className="text-xs text-slate-500 font-medium">Create and manage custom filtering presets for Open Time pickups (e.g. Turns &gt; 3.0h Credit)</p>
+          {/* Milestone Pay Adjustments & Contractual Provisions */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-600" />
+              Contractual Milestones & Incentive Pay Adjustments
+            </h3>
+
+            {/* Case A: First Officer 750 SIC Provision */}
+            {userProfile.crewRole === "FO" && (
+              <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      id="check750Sic"
+                      checked={!!userProfile.hasCompleted750Sic}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        const today = new Date().toISOString().substring(0, 10);
+                        const dateReached = userProfile.sic750DateReached || today;
+                        const nextPeriod = calculateNextPayPeriodDate(dateReached);
+                        updateUserProfile({
+                          hasCompleted750Sic: checked,
+                          sic750DateReached: dateReached,
+                          sic750PayStartsPeriod: nextPeriod.nextPeriodDate,
+                        });
+                        triggerToast(
+                          checked
+                            ? `750 SIC Qualified! Captain pay active (${nextPeriod.nextPeriodLabel})`
+                            : "Reverted to standard First Officer pay scale"
+                        );
+                      }}
+                      className="mt-1 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <label htmlFor="check750Sic" className="cursor-pointer">
+                      <span className="text-xs font-black text-slate-900 block">
+                        750+ Hours SIC Qualification (Captain Pay Eligible)
+                      </span>
+                      <span className="text-[11px] text-slate-600 block mt-0.5">
+                        Under the CBA Pilot Supply Agreement, First Officers reaching 750 hours SIC before Dec 31, 2026 are paid at Captain hourly rates. Pay adjustments take effect the pay period after qualification.
+                      </span>
+                    </label>
+                  </div>
+
+                  {userProfile.hasCompleted750Sic && (
+                    <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-bold rounded-md uppercase whitespace-nowrap">
+                      CA Pay Active
+                    </span>
+                  )}
+                </div>
+
+                {userProfile.hasCompleted750Sic && (
+                  <div className="pt-2 border-t border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-700 block">
+                        Date 750 SIC Logged / Reached
+                      </label>
+                      <input
+                        type="date"
+                        value={userProfile.sic750DateReached || new Date().toISOString().substring(0, 10)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const nextPeriod = calculateNextPayPeriodDate(val);
+                          updateUserProfile({
+                            sic750DateReached: val,
+                            sic750PayStartsPeriod: nextPeriod.nextPeriodDate,
+                          });
+                          triggerToast(`Updated 750 SIC date (Effective ${nextPeriod.nextPeriodLabel})`);
+                        }}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold font-mono text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-700 block">
+                        Effective Pay Period (Starts Next Pay Period)
+                      </label>
+                      <div className="p-2 bg-white border border-amber-200 rounded-xl flex items-center justify-between text-xs">
+                        <span className="text-slate-600 font-medium">
+                          {calculateNextPayPeriodDate(userProfile.sic750DateReached || new Date().toISOString().substring(0, 10)).nextPeriodLabel}
+                        </span>
+                        <strong className="text-emerald-700 font-mono font-bold">
+                          ${cbaInfo.hourlyRate.toFixed(2)}/hr (Step {cbaInfo.payStepYear} CA)
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Case B: Captain 5-Year Delayed Flow Top-of-Scale Provision */}
+            {userProfile.crewRole === "CA" && (
+              <div className="p-4 bg-sky-50/70 border border-sky-200 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5 text-sky-600" />
+                      5-Year Captain Delayed Flow Top-of-Scale Pay (Letter 22-06 Sec. G)
+                    </span>
+                    <span className="text-[11px] text-slate-600 block mt-0.5">
+                      Captains completing 5 years of service receive Step 20 Top-of-Scale pay ($228.75/hr) until flowing to American Airlines. Declining/bypassing flow reverts pay to base longevity step. Pay starts the pay period after reaching 5 years.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {cbaInfo.longevityYears >= 5 ? (
+                      <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-bold rounded-md uppercase whitespace-nowrap">
+                        5+ Yrs Eligible
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-slate-100 border border-slate-300 text-slate-700 text-[10px] font-bold rounded-md uppercase whitespace-nowrap">
+                        {cbaInfo.longevityYears} Yrs Active
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-sky-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Flow Status Selector */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-700 block">
+                      American Airlines Flow Status
+                    </label>
+                    <select
+                      value={userProfile.flowStatus || "ACCEPT"}
+                      onChange={(e) => {
+                        const val = e.target.value as "ACCEPT" | "DECLINE" | "BYPASS" | "PENDING";
+                        updateUserProfile({ flowStatus: val });
+                        triggerToast(
+                          val === "ACCEPT"
+                            ? "Flow Accepted: Step 20 Top-of-Scale ($228.75/hr) active"
+                            : "Flow Declined/Bypassed: Reverted to base longevity step pay"
+                        );
+                      }}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+                    >
+                      <option value="ACCEPT">✅ Flow Accepted (Step 20 Top-of-Scale: $228.75/hr)</option>
+                      <option value="PENDING">⏳ Flow Pending / Pre-Flow (Step 20 Top-of-Scale: $228.75/hr)</option>
+                      <option value="DECLINE">❌ Flow Declined (Reverted to Base Step Pay)</option>
+                      <option value="BYPASS">⚠️ Flow Bypassed (Reverted to Base Step Pay)</option>
+                    </select>
+                  </div>
+
+                  {/* Effective Rate Preview & Next Pay Period */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-700 block">
+                      Contractual Rate Status
+                    </label>
+                    <div className="p-2 bg-white border border-sky-200 rounded-xl flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-medium">
+                        {cbaInfo.isFlowTopScaleActive ? "Step 20 Top-of-Scale" : `Base Step ${cbaInfo.payStepYear}`}
+                      </span>
+                      <strong className={`font-mono font-bold ${cbaInfo.isFlowTopScaleActive ? "text-emerald-700" : "text-amber-700"}`}>
+                        ${cbaInfo.hourlyRate.toFixed(2)}/hr
+                      </strong>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* Presets Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {openPresets.map((p) => {
-                const isSelected = activePresetFilter === p.id;
-                const isBuiltIn = ["all", "fits", "simulated", "conflicts"].includes(p.id);
+          {/* CBA Longevity Table Grid */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-800 block">
+              Contract Pay Scale Longevity Steps ({userProfile.crewRole || "CA"})
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {CBA_AIRLINE_PAY_SCALE.map((step) => {
+                const isPilotStep = step.year === cbaInfo.payStepYear;
+                let stepRate = step.caHourlyRate;
+                if (userProfile.crewRole === "FO") stepRate = step.foHourlyRate;
+                if (userProfile.crewRole === "CHECK_PILOT") stepRate = step.checkPilotHourlyRate;
 
                 return (
-                  <div
-                    key={p.id}
-                    className={`p-4 rounded-2xl border transition duration-150 flex flex-col justify-between ${
-                      isSelected
-                        ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-500/20"
-                        : "bg-slate-50 border-slate-200"
+                  <button
+                    key={step.year}
+                    type="button"
+                    onClick={() => {
+                      setPayRates({ hourlyRate: stepRate });
+                      triggerToast(`Selected Step Year ${step.year}: $${stepRate.toFixed(2)}/hr`);
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      isPilotStep
+                        ? "bg-emerald-600 text-white border-emerald-500 font-bold shadow-xs ring-2 ring-emerald-400/40"
+                        : Math.abs((payRates.hourlyRate || 0) - stepRate) < 0.01
+                        ? "bg-sky-100 text-sky-950 border-sky-300 font-bold"
+                        : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-slate-900">{p.name}</span>
-                        {!isBuiltIn && (
-                          <button
-                            onClick={() => {
-                              removeOpenPreset(p.id);
-                              triggerToast(`Deleted custom preset: ${p.name}`);
-                            }}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer"
-                            title="Delete Preset"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-slate-600 font-mono space-y-0.5">
-                        {p.minCreditHours && <div>• Min Credit: <span className="font-bold text-slate-900">{p.minCreditHours} hrs</span></div>}
-                        {p.maxCreditHours && <div>• Max Credit: <span className="font-bold text-slate-900">{p.maxCreditHours} hrs</span></div>}
-                        {p.maxTripDays && <div>• Trip Days: <span className="font-bold text-slate-900">{p.maxTripDays === 1 ? "1-Day Turn" : `${p.maxTripDays} Days`}</span></div>}
-                        {p.reportAfterTime && <div>• Report After: <span className="font-bold text-slate-900">{p.reportAfterTime}</span></div>}
-                        {p.reportBeforeTime && <div>• Report Before: <span className="font-bold text-slate-900">{p.reportBeforeTime}</span></div>}
-                        {p.releaseBeforeTime && <div>• Release Cap: <span className="font-bold text-slate-900">Before {p.releaseBeforeTime}</span></div>}
-                        {p.preferredLayoverCity && <div>• Layover: <span className="font-bold text-indigo-700">{p.preferredLayoverCity}</span></div>}
-                        {p.fitsOnly && <div>• Legality: <span className="font-bold text-emerald-700">Fits Schedule Only</span></div>}
-                        {p.baseFilter && p.baseFilter !== "ALL" && <div>• Domicile: <span className="font-bold text-slate-900">{p.baseFilter}</span></div>}
-                        {isBuiltIn && <div className="text-[10px] text-slate-400 italic">Built-in System Preset</div>}
-                      </div>
+                    <div className="text-xs font-bold flex items-center justify-between">
+                      <span>{step.label}</span>
+                      {isPilotStep && <span className="text-[9px] bg-emerald-700 px-1 rounded uppercase">Active</span>}
                     </div>
-
-                    <button
-                      onClick={() => {
-                        setOpenTimeFilter(p.id);
-                        triggerToast(`Activated preset: ${p.name}`);
-                      }}
-                      className={`mt-4 w-full py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        isSelected
-                          ? "bg-purple-600 text-white shadow-sm"
-                          : "bg-white hover:bg-slate-100 text-slate-800 border border-slate-300"
-                      }`}
-                    >
-                      {isSelected ? "Active Preset" : "Set as Active Preset"}
-                    </button>
-                  </div>
+                    <div className="text-[11px] font-mono opacity-90">${stepRate.toFixed(2)}/hr</div>
+                  </button>
                 );
               })}
             </div>
+          </div>
 
-            {/* Create Custom Preset Form */}
-            <form
-              onSubmit={handleCreateSettingsPreset}
-              className="p-5 bg-purple-50/50 border border-purple-200 rounded-2xl space-y-4"
-            >
-              <h4 className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
-                <Plus className="w-4 h-4 text-purple-600" />
-                Build Custom Open Time Preference Preset
-              </h4>
+          {/* Rates & Calculations Form */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 pt-2">
+            {/* Custom Hourly Flight Pay Override */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">Current Flight Pay ($/hr)</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                <input
+                  type="number"
+                  step="0.50"
+                  value={payRates.hourlyRate || cbaInfo.hourlyRate}
+                  onChange={(e) => {
+                    setPayRates({ hourlyRate: parseFloat(e.target.value) || 0 });
+                    triggerToast("Hourly pay updated");
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500">Base contract rate paid per block/credit hour</p>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Preset Title</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ⚡ Morning Turns > 3.5h"
-                    value={presetName}
-                    onChange={(e) => setPresetName(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-purple-600"
-                  />
+            {/* Overtime Multiplier */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">Overtime / Premium Multiplier</label>
+              <select
+                value={payRates.overtimeMultiplier || 1.5}
+                onChange={(e) => {
+                  setPayRates({ overtimeMultiplier: parseFloat(e.target.value) });
+                  triggerToast("Overtime rate updated");
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+              >
+                <option value="1.0">1.0x (Straight Time)</option>
+                <option value="1.5">1.5x (Standard Premium Overtime)</option>
+                <option value="2.0">2.0x (Double Time)</option>
+                <option value="3.0">3.0x (Critical Coverage Premium)</option>
+              </select>
+              <p className="text-[10px] text-slate-500">Applied to OT open time pickups</p>
+            </div>
+
+            {/* Monthly Guarantee (MMG) */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">Monthly Guarantee (MMG Hours)</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="1"
+                  value={payRates.monthlyGuaranteeHours || 75}
+                  onChange={(e) => {
+                    setPayRates({ monthlyGuaranteeHours: parseFloat(e.target.value) || 0 });
+                    triggerToast("Monthly guarantee updated");
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500">Contract monthly minimum guarantee</p>
+            </div>
+
+            {/* Domestic Per Diem */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">Domestic Per Diem ($/hr TAFB)</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  value={payRates.perDiemRate || cbaInfo.domesticPerDiem}
+                  onChange={(e) => {
+                    setPayRates({ perDiemRate: parseFloat(e.target.value) || 0 });
+                    triggerToast("Domestic per diem updated");
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500">Hourly per diem for time away from base</p>
+            </div>
+
+            {/* International Per Diem */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">International Per Diem ($/hr)</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  value={payRates.intlPerDiemRate || cbaInfo.intlPerDiem}
+                  onChange={(e) => {
+                    setPayRates({ intlPerDiemRate: parseFloat(e.target.value) || 0 });
+                    triggerToast("International per diem updated");
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500">Per diem for Canada, Mexico, Caribbean, Intl</p>
+            </div>
+
+            {/* Deadhead Pay Ratio */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">Deadhead Pay Percentage</label>
+              <select
+                value={payRates.deadheadPayRatio || 1.0}
+                onChange={(e) => {
+                  setPayRates({ deadheadPayRatio: parseFloat(e.target.value) });
+                  triggerToast("Deadhead pay ratio updated");
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+              >
+                <option value="1.0">100% Full Pay (1.0)</option>
+                <option value="0.75">75% Pay (0.75)</option>
+                <option value="0.5">50% Pay (0.50)</option>
+              </select>
+              <p className="text-[10px] text-slate-500">Credit calculation for deadhead flight legs</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. TAB 3: FAR 117 LEGALITY & STATION TURN LIMITS */}
+      {activeSection === "legality" && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 shadow-sm space-y-6 animate-fadeIn">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div className="flex items-center gap-3">
+              <Scale className="w-5 h-5 text-amber-600" />
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900">14 CFR Part 117 Legality & FDP Engine</h2>
+                <p className="text-xs text-slate-500">Dynamic Table B Flight Duty Period (FDP) & Table A flight time limits</p>
+              </div>
+            </div>
+
+            <span className="px-2.5 py-1 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-[10px] font-extrabold uppercase font-mono">
+              FAA Part 117 Table B Active
+            </span>
+          </div>
+
+          {/* Interactive Table B FDP Calculator Card */}
+          {(() => {
+            const tableBCalc = getMaxFdpHours(calcReportTime, calcSegments);
+            const tableACalc = getMaxFlightTimeHours(calcReportTime);
+
+            return (
+              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-950 p-5 rounded-3xl text-white shadow-md space-y-4 border border-slate-700">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-amber-200">
+                      Interactive Table B FDP Calculator
+                    </h3>
+                  </div>
+                  <span className="text-[10px] text-slate-300 font-mono">
+                    {tableBCalc.ruleCitation}
+                  </span>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Min Credit (hrs)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    placeholder="e.g. 3.5"
-                    value={minCredit}
-                    onChange={(e) => setMinCredit(e.target.value ? Number(e.target.value) : "")}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-600"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Report Time Input */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-300 block">
+                      Scheduled Report Time (Acclimated / Base)
+                    </label>
+                    <input
+                      type="time"
+                      value={calcReportTime}
+                      onChange={(e) => setCalcReportTime(e.target.value)}
+                      className="w-full bg-slate-950/80 border border-slate-600 rounded-xl px-3 py-2 text-xs font-bold text-white font-mono focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  {/* Flight Segments Selector */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-300 block">
+                      Flight Segments (Operating Legs)
+                    </label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5, 6, 7].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setCalcSegments(num)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold font-mono transition cursor-pointer ${
+                            calcSegments === num
+                              ? "bg-amber-500 text-slate-950 font-black shadow-sm"
+                              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                          }`}
+                        >
+                          {num >= 7 ? "7+" : num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Max Credit (hrs)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    placeholder="No Cap"
-                    value={maxCredit}
-                    onChange={(e) => setMaxCredit(e.target.value ? Number(e.target.value) : "")}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-600"
-                  />
-                </div>
+                {/* Calculation Result Outputs */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700/80">
+                  <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-700">
+                    <span className="text-[10px] text-amber-300 block font-medium">Max Allowable FDP (Table B)</span>
+                    <strong className="text-lg font-black text-white font-mono">{tableBCalc.maxFdpHours.toFixed(1)} Hours</strong>
+                    <span className="text-[10px] text-slate-400 block font-mono">({tableBCalc.maxFdpMinutes} mins max duty)</span>
+                  </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Trip Duration</label>
-                  <select
-                    value={maxDays}
-                    onChange={(e) => setMaxDays(e.target.value ? Number(e.target.value) : "")}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-purple-600 cursor-pointer"
-                  >
-                    <option value={1}>1-Day Turns Only</option>
-                    <option value={2}>Up to 2 Days</option>
-                    <option value={3}>Up to 3 Days</option>
-                    <option value={4}>Up to 4 Days</option>
-                    <option value="">Any Duration</option>
-                  </select>
-                </div>
+                  <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-700">
+                    <span className="text-[10px] text-sky-300 block font-medium">Max Daily Flight Time (Table A)</span>
+                    <strong className="text-lg font-black text-white font-mono">{tableACalc.maxFlightHours.toFixed(1)} Hours</strong>
+                    <span className="text-[10px] text-slate-400 block font-mono">({tableACalc.maxFlightMinutes} mins max block)</span>
+                  </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Report After Time</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 06:00 or 0600"
-                    value={reportAfterTime}
-                    onChange={(e) => setReportAfterTime(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-600"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Report Before Time</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 11:30 or 1130"
-                    value={reportBeforeTime}
-                    onChange={(e) => setReportBeforeTime(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-600"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Release Before Time</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 19:30 or 1930"
-                    value={releaseBeforeTime}
-                    onChange={(e) => setReleaseBeforeTime(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-600"
-                  />
-                </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[11px] font-bold text-slate-800">Layover & Destination Preferences</label>
-                  <input
-                    type="text"
-                    placeholder="Type city/airport codes e.g. MIA, SAN, SFO or TURNS"
-                    value={layoverPrefText}
-                    onChange={(e) => setLayoverPrefText(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-600"
-                  />
-                  <span className="text-[10px] text-slate-400 block font-sans font-medium">Type any airport (e.g. MIA, SAN), multiple (MIA, SFO), or TURNS for no layovers</span>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-800">Base Domicile</label>
-                  <select
-                    value={baseFilter}
-                    onChange={(e) => setBaseFilter(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-600 cursor-pointer"
-                  >
-                    <option value="ALL">All Domiciles</option>
-                    <option value="ORD">ORD Domicile</option>
-                    <option value="DFW">DFW Domicile</option>
-                    <option value="MIA">MIA Domicile</option>
-                    <option value="PHX">PHX Domicile</option>
-                  </select>
+                  <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-700 col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-emerald-300 block font-medium">Required Rest Buffer</span>
+                    <strong className="text-lg font-black text-white font-mono">{payRates.minRestHours || 10.0} Hours</strong>
+                    <span className="text-[10px] text-slate-400 block">Uninterrupted rest</span>
+                  </div>
                 </div>
               </div>
+            );
+          })()}
 
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="settingsFitsOnly"
-                    checked={fitsOnly}
-                    onChange={(e) => setFitsOnly(e.target.checked)}
-                    className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
-                  />
-                  <label htmlFor="settingsFitsOnly" className="text-xs font-bold text-slate-800 cursor-pointer select-none">
-                    Fits Schedule Only (0 FAA / Duty Conflicts)
-                  </label>
+          {/* 14 CFR Part 117 Table B Matrix */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                14 CFR § 117.13 Table B — Unaugmented Maximum FDP Limits (Hours)
+              </h3>
+              <span className="text-[10px] text-slate-500 font-mono">FAA Table B Reference</span>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-[11px] text-center border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <th className="py-2.5 px-3 text-left">Report Window</th>
+                    <th className="py-2.5 px-2">1 Leg</th>
+                    <th className="py-2.5 px-2">2 Legs</th>
+                    <th className="py-2.5 px-2">3 Legs</th>
+                    <th className="py-2.5 px-2">4 Legs</th>
+                    <th className="py-2.5 px-2">5 Legs</th>
+                    <th className="py-2.5 px-2">6 Legs</th>
+                    <th className="py-2.5 px-2">7+ Legs</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono">
+                  {FAR_117_TABLE_B.map((row) => {
+                    const currentCalc = getMaxFdpHours(calcReportTime, calcSegments);
+                    const isCurrentWindow = currentCalc.timeWindowLabel === row.timeWindowLabel;
+
+                    return (
+                      <tr
+                        key={row.timeWindowLabel}
+                        className={isCurrentWindow ? "bg-amber-50 font-bold text-amber-950" : "hover:bg-slate-50 text-slate-800"}
+                      >
+                        <td className="py-2 px-3 text-left font-sans font-bold flex items-center gap-1.5">
+                          {isCurrentWindow && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                          <span>{row.timeWindowLabel}</span>
+                        </td>
+                        {row.limitsBySegments.map((limit, idx) => {
+                          const isSelectedCell = isCurrentWindow && currentCalc.segmentIndex === idx;
+                          return (
+                            <td
+                              key={idx}
+                              className={`py-2 px-2 ${
+                                isSelectedCell
+                                  ? "bg-amber-500 text-white font-black rounded-md shadow-xs"
+                                  : ""
+                              }`}
+                            >
+                              {limit.toFixed(1)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Table A Daily Flight Time Limits */}
+          <div className="space-y-2 pt-2">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              14 CFR § 117.11 Table A — Maximum Daily Flight Time Limits
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {FAR_117_TABLE_A.map((a) => (
+                <div key={a.timeWindowLabel} className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div className="text-xs font-bold text-slate-800">{a.timeWindowLabel} Report</div>
+                  <div className="text-base font-black text-sky-700 font-mono mt-0.5">{a.maxFlightHours.toFixed(1)} Hours Max</div>
+                  <span className="text-[10px] text-slate-500 block font-mono">({Math.round(a.maxFlightHours * 60)} minutes block limit)</span>
                 </div>
+              ))}
+            </div>
+          </div>
 
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm"
-                >
-                  Save Preset
-                </button>
+          {/* Core Rest & Report Buffers */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div className="space-y-1 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">Minimum Rest Buffer (Hours)</label>
+              <input
+                type="number"
+                step="0.5"
+                value={payRates.minRestHours || 10.0}
+                onChange={(e) => setPayRates({ minRestHours: parseFloat(e.target.value) || 10 })}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 font-mono"
+              />
+              <p className="text-[10px] text-slate-500">14 CFR § 117.25 mandatory 10.0 hours uninterrupted rest</p>
+            </div>
+
+            <div className="space-y-1 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 block">Report Buffer Before Dep (Mins)</label>
+              <input
+                type="number"
+                step="5"
+                value={payRates.reportBufferMins || 45}
+                onChange={(e) => setPayRates({ reportBufferMins: parseInt(e.target.value, 10) || 45 })}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 font-mono"
+              />
+              <p className="text-[10px] text-slate-500">Show time prior to first flight departure</p>
+            </div>
+          </div>
+
+          {/* Station Specific Turn Buffers */}
+          <div className="space-y-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Station Connection Turn Buffers</h3>
+                <p className="text-[11px] text-slate-500">Minimum ground turn time allowed per station (Default: {defaultTurnLimit} mins)</p>
               </div>
+              <button
+                onClick={resetStationTurnLimits}
+                className="text-[11px] font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" /> Reset Defaults
+              </button>
+            </div>
+
+            {/* Add Custom Station */}
+            <form onSubmit={handleAddStation} className="flex gap-2 items-center">
+              <input
+                type="text"
+                maxLength={4}
+                value={newStation}
+                onChange={(e) => setNewStation(e.target.value.toUpperCase())}
+                placeholder="Station (e.g. CLT)"
+                className="w-32 bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold uppercase font-mono"
+              />
+              <input
+                type="number"
+                value={newMinutes}
+                onChange={(e) => setNewMinutes(parseInt(e.target.value, 10) || 40)}
+                placeholder="Minutes"
+                className="w-24 bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold font-mono"
+              />
+              <button
+                type="submit"
+                className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
             </form>
+
+            {/* Station List */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+              {stations.map(([stn, mins]) => (
+                <div key={stn} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                  <div>
+                    <strong className="text-slate-900 font-mono">{stn}</strong>
+                    <span className="text-slate-500 text-[10px] block">{mins} mins</span>
+                  </div>
+                  <button
+                    onClick={() => removeStationTurnLimit(stn)}
+                    className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                    title={`Remove ${stn}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. TAB 4: CALENDAR & DISPLAY PREFERENCES */}
+      {activeSection === "calendar" && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 shadow-sm space-y-6 animate-fadeIn">
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
+            <Calendar className="w-5 h-5 text-indigo-600" />
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900">Display, Timezone & Schedule Preferences</h2>
+              <p className="text-xs text-slate-500">Configure timezone display, highlights, and dropped trip visibility</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+            {/* Timezone Mode */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-slate-500" /> Timezone Display Mode
+              </label>
+              <select
+                value={userProfile.timezoneDisplay || "LOCAL"}
+                onChange={(e) => {
+                  updateUserProfile({ timezoneDisplay: e.target.value as any });
+                  triggerToast(`Timezone set to ${e.target.value}`);
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+              >
+                <option value="LOCAL">Local Station Time (Airport Local)</option>
+                <option value="BASE">Home Domicile Base Time ({userProfile.base || "ORD"})</option>
+                <option value="ZULU">UTC / Zulu Time (24h Aviation Standard)</option>
+              </select>
+              <p className="text-[10px] text-slate-500">Controls time formatting across Calendar, Duty Periods, and Briefings</p>
+            </div>
+
+            {/* High Credit Highlight Threshold */}
+            <div className="space-y-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <CreditCard className="w-3.5 h-3.5 text-amber-500" /> High-Credit Highlight (Hours)
+              </label>
+              <input
+                type="number"
+                step="0.5"
+                value={highCreditThresholdHours || 15.0}
+                onChange={(e) => {
+                  setHighCreditThresholdHours(parseFloat(e.target.value) || 15);
+                  triggerToast("High credit threshold updated");
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 font-mono focus:outline-none focus:border-sky-600"
+              />
+              <p className="text-[10px] text-slate-500">Trips above this credit are highlighted in gold badges</p>
+            </div>
+
+            {/* Show DTS Dropped Trips */}
+            <div className="sm:col-span-2 flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <div>
+                <span className="text-xs font-bold text-slate-900 block">Show Dropped & DTS Trips on Calendar</span>
+                <span className="text-[11px] text-slate-500">Display removed / traded trips as translucent ghost blocks for full schedule audit trails</span>
+              </div>
+              <button
+                onClick={() => {
+                  toggleShowDtsDropped();
+                  triggerToast(`Dropped trips ${!showDtsDropped ? "shown" : "hidden"}`);
+                }}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                  showDtsDropped ? "bg-sky-600" : "bg-slate-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    showDtsDropped ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. TAB 5: LOCAL COMPUTER STORAGE & SYSTEM MAINTENANCE */}
+      {activeSection === "storage" && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-7 shadow-sm space-y-6 animate-fadeIn">
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
+            <Database className="w-5 h-5 text-purple-600" />
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900">Local Storage & Schedule Backups</h2>
+              <p className="text-xs text-slate-500">Offline Dexie.js database health, JSON backups, and system maintenance</p>
+            </div>
+          </div>
+
+          {/* Database Diagnostics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+              <span className="text-xs text-slate-500 block font-medium">Saved Trips</span>
+              <strong className="text-lg font-black text-slate-900">{sequences.length}</strong>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+              <span className="text-xs text-slate-500 block font-medium">Logbook Records</span>
+              <strong className="text-lg font-black text-slate-900">{logbookEntries.length}</strong>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+              <span className="text-xs text-slate-500 block font-medium">Schedule Snapshots</span>
+              <strong className="text-lg font-black text-slate-900">{snapshots.length}</strong>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+              <span className="text-xs text-slate-500 block font-medium">Vacation Blocks</span>
+              <strong className="text-lg font-black text-slate-900">{vacations.length}</strong>
+            </div>
+          </div>
+
+          {/* Export & Import Backup */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <button
+              onClick={handleExportBackup}
+              className="p-3.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl text-xs font-bold text-slate-900 flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
+            >
+              <Download className="w-4 h-4 text-sky-600" />
+              <span>Export Full JSON Backup</span>
+            </button>
+
+            <label className="p-3.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl text-xs font-bold text-slate-900 flex items-center justify-center gap-2 transition cursor-pointer shadow-xs">
+              <Upload className="w-4 h-4 text-purple-600" />
+              <span>Restore from JSON File</span>
+              <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+            </label>
+          </div>
+
+          {/* Flush Weather Cache */}
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-900 block">Live Weather 5-Minute Cache</span>
+              <span className="text-[11px] text-slate-500">Cached METAR/TAF/hazard data automatically flushes every 5 mins</span>
+            </div>
+            <button
+              onClick={handleFlushWeatherCache}
+              className="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-sky-600" />
+              <span>Flush Cache</span>
+            </button>
+          </div>
+
+          {/* Reset Database */}
+          <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-rose-900 block">Reset Local Database</span>
+              <span className="text-[11px] text-rose-700">Clear all local schedule trips, snapshots, and logbook entries</span>
+            </div>
+            <button
+              onClick={() => setShowResetModal(true)}
+              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Reset Data</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* FORMAL SEAT TRANSITION / UPGRADE MODAL */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100000] animate-fadeIn">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-7 max-w-md w-full border-t sm:border border-slate-200 shadow-2xl space-y-4 sm:space-y-5 animate-slideUp pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0 sm:hidden" />
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
+              <div className="w-10 h-10 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                <Award className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 leading-tight">Seat Transition / Upgrade</h3>
+                <p className="text-xs text-slate-500">Permanent career position change & award</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 block">New Awarded Seat / Position</label>
+                <select
+                  value={targetUpgradeRole}
+                  onChange={(e) => setTargetUpgradeRole(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+                >
+                  <option value="CA">👨‍✈️ Captain (CA - 4 Gold Stripes • PIC)</option>
+                  <option value="CHECK_PILOT">👨‍✈️ Check Airman / Evaluator (4 Gold Stripes • PIC)</option>
+                  <option value="FO">👨‍✈️ First Officer (FO - 3 Gold Stripes • SIC)</option>
+                  <option value="FA">🛫 Flight Attendant (FA - Cabin Crew)</option>
+                  <option value="LFA">🛫 Lead Flight Attendant / Purser (LFA)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 block">Effective Transition Date</label>
+                <input
+                  type="date"
+                  value={upgradeEffectiveDate}
+                  onChange={(e) => setUpgradeEffectiveDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                />
+              </div>
+
+              {/* Transition Summary Notice */}
+              <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-xs space-y-1.5 text-sky-950">
+                <span className="font-bold block flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0" /> Operational Impact:
+                </span>
+                <ul className="list-disc pl-4 space-y-1 text-[11px] text-sky-900">
+                  <li>
+                    {targetUpgradeRole === "CA" || targetUpgradeRole === "CHECK_PILOT"
+                      ? "All flight roster legs will be logged as PIC (Pilot in Command) in your electronic logbook."
+                      : "All flight roster legs will be logged as SIC (Second in Command) in your electronic logbook."}
+                  </li>
+                  <li>Base hourly pay rate will recalibrate to the corresponding CBA longevity scale.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer active-press"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSeatTransition}
+                className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-md active-press"
+              >
+                Confirm Upgrade
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Safety Reset Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100000] animate-fadeIn">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-6 max-w-md w-full border-t sm:border border-slate-200 shadow-2xl space-y-4 animate-slideUp pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0 sm:hidden" />
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-black text-slate-900">Reset Local Schedule Data?</h3>
+              <p className="text-xs text-slate-600">
+                This will clear all sequences, snapshots, and logbook records from your local computer. This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer active-press"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  clearAll();
+                  setShowResetModal(false);
+                  triggerToast("Local schedule database reset!");
+                }}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm active-press"
+              >
+                Confirm Reset
+              </button>
+            </div>
           </div>
         </div>
       )}

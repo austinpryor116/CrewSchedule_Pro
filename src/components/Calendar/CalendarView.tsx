@@ -11,6 +11,8 @@ import CalendarSyncModal from "./CalendarSyncModal";
 import DayDetailModal from "./DayDetailModal";
 import GridFilterModal from "./GridFilterModal";
 import CalendarToolsModal from "./CalendarToolsModal";
+import CalendarShareModal from "./CalendarShareModal";
+import CalendarEventModal from "./CalendarEventModal";
 import SequenceInspector from "../SequenceInspector/Inspector";
 
 function parseLocalDateString(dateStr: string): Date {
@@ -31,6 +33,7 @@ export default function CalendarView() {
 
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [selectedPersonalEvent, setSelectedPersonalEvent] = useState<PersonalCalendarEvent | null>(null);
   const [selectedDayDetail, setSelectedDayDetail] = useState<Date | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -1171,18 +1174,27 @@ export default function CalendarView() {
 
       <CalendarSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
 
-      {/* Sequence / Trip Inspector Modal Drawer */}
+      {/* Sequence / Trip Inspector Mobile Bottom Sheet Drawer */}
       {selectedSequenceId && (
-        <div className="fixed inset-0 z-[100000] bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slideUp">
-            <div className="p-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div
+          className="fixed inset-0 z-[100000] bg-slate-950/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn"
+          onClick={() => setSelectedSequenceId(null)}
+        >
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 shadow-2xl max-w-xl w-full max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slideUp pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Mobile Drag Handle */}
+            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-2.5 sm:hidden shrink-0" />
+
+            <div className="p-3 sm:p-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <span className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-2">
                 <Plane className="w-4 h-4 text-sky-600" />
                 Trip Inspector & Legality
               </span>
               <button
                 onClick={() => setSelectedSequenceId(null)}
-                className="p-1.5 rounded-xl bg-slate-200/80 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
+                className="p-1.5 rounded-xl bg-slate-200/80 hover:bg-slate-300 text-slate-700 transition cursor-pointer active-press"
                 title="Close Inspector"
               >
                 <X className="w-4 h-4" />
@@ -1300,6 +1312,19 @@ export default function CalendarView() {
         setViewMode={setViewMode}
         filterMode={filterMode}
         setFilterMode={setFilterMode}
+      />
+
+      {/* Live Calendar Export & Family Sharing Modal */}
+      <CalendarShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+      />
+
+      {/* Google Calendar Style Event View / Edit Modal */}
+      <CalendarEventModal
+        isOpen={!!selectedPersonalEvent}
+        onClose={() => setSelectedPersonalEvent(null)}
+        existingEvent={selectedPersonalEvent}
       />
     </>
   );
@@ -1560,7 +1585,7 @@ export default function CalendarView() {
       </div>
 
       {/* Unified Continuous Stream Grid */}
-      <div className="flex-grow h-full min-h-0 overflow-y-auto scrollbar-thin pb-20">
+      <div className="flex-grow h-full min-h-0 overflow-y-auto scrollbar-thin pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
         <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200" style={{ gridTemplateRows: streamGridTemplateRows }}>
           {streamDays.map((date, idx) => {
             const seq = getSequenceForDate(date);

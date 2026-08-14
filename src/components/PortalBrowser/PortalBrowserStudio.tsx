@@ -220,29 +220,31 @@ export default function PortalBrowserStudio() {
       parsedMonthlySeqs = parseRawSchedule(rawScheduleText);
 
       if (parsedMonthlySeqs.length > 0) {
+        const detected = detectMonthFromText(rawScheduleText);
+        const metadata = parseMonthlyHIMetadata(rawScheduleText) || {
+          monthEnding: detected.monthEnding || "31AUG26",
+          monthYearLabel: `${detected.monthAbbr} ${detected.yearNum}`,
+          asOfDateStr: new Date().toISOString(),
+          pilotName: "CAPTAIN PILOT",
+          seniorityNum: "12345",
+          empNum: "00123456",
+          base: "DFW",
+          equipment: "E75",
+          rank: "CAPT",
+          guaranteeHours: 75.0,
+          bidSelProjHours: 85.0,
+          fltTime672Hours: 45.2,
+          fltTime365Day: 520.0,
+          availSickHours: 120.0,
+          shortTermSickAccrual: 21.0,
+          sickUsedYtd: 0,
+          vacationDaysCount: 7,
+          vacationCreditHours: 24.5,
+        };
         importMonthlyHISchedule(
           parsedMonthlySeqs,
           [],
-          {
-            monthEnding: "31JUL26",
-            monthYearLabel: "July 2026",
-            asOfDateStr: new Date().toISOString(),
-            pilotName: "CAPTAIN PILOT",
-            seniorityNum: "12345",
-            empNum: "00123456",
-            base: "DFW",
-            equipment: "E75",
-            rank: "CAPT",
-            guaranteeHours: 75.0,
-            bidSelProjHours: 85.0,
-            fltTime672Hours: 45.2,
-            fltTime365Day: 520.0,
-            availSickHours: 120.0,
-            shortTermSickAccrual: 21.0,
-            sickUsedYtd: 0,
-            vacationDaysCount: 7,
-            vacationCreditHours: 24.5,
-          },
+          metadata,
           "Autonomous_Portal_AutoSync.txt",
           rawScheduleText
         );
@@ -388,11 +390,19 @@ export default function PortalBrowserStudio() {
     };
   }, []);
 
-  // Real-time Electron Webview Canvas Scraper Buffer Listener
+  // Consolidated Webview Canvas Scraper & DOM Inspector Listener (Throttled for low CPU/IPC utilization)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    let isPolling = false;
+
     const interval = setInterval(async () => {
+      // Suspend polling when tab/window is inactive or minimized to save battery & CPU
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+      if (isPolling) return;
+      isPolling = true;
+
       try {
         const webview = webviewRef.current;
         if (!webview || !webview.executeJavaScript) return;
@@ -431,23 +441,8 @@ export default function PortalBrowserStudio() {
             return decoded;
           });
         }
-      } catch (err) {
-        // Silently handle transient loading states
-      }
-    }, 300);
 
-    return () => clearInterval(interval);
-  }, []);
-
-  // Real-time DOM Target & Event Monitor Inspector Listener
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const monitorInterval = setInterval(async () => {
-      try {
-        const webview = webviewRef.current;
-        if (!webview || !webview.executeJavaScript) return;
-
+        // Inspector Target & Event Logs (Consolidated in same tick)
         const targetInfo = await webview.executeJavaScript("window._getInspectedTarget ? window._getInspectedTarget() : null").catch(() => null);
         if (targetInfo) {
           setInspectedTarget(targetInfo);
@@ -457,10 +452,14 @@ export default function PortalBrowserStudio() {
         if (Array.isArray(logs) && logs.length > 0) {
           setEventLogs(logs.slice(0, 15));
         }
-      } catch (err) {}
-    }, 300);
+      } catch (err) {
+        // Silently handle transient loading states
+      } finally {
+        isPolling = false;
+      }
+    }, 1500);
 
-    return () => clearInterval(monitorInterval);
+    return () => clearInterval(interval);
   }, []);
 
   // Load target URL or search query into browser iframe
@@ -829,9 +828,10 @@ export default function PortalBrowserStudio() {
               const parsedSeqs = parseRawSchedule(targetText);
 
               if (parsedSeqs.length > 0) {
+                const detected = detectMonthFromText(targetText);
                 const metadata = parseMonthlyHIMetadata(targetText) || {
-                    monthEnding: "31JUL26",
-                    monthYearLabel: "July 2026",
+                    monthEnding: detected.monthEnding || "31AUG26",
+                    monthYearLabel: `${detected.monthAbbr} ${detected.yearNum}`,
                     asOfDateStr: new Date().toISOString(),
                     pilotName: "CAPTAIN PILOT",
                     seniorityNum: "12345",
@@ -882,9 +882,10 @@ export default function PortalBrowserStudio() {
               const parsedSeqs = parseRawSchedule(targetText);
 
               if (parsedSeqs.length > 0) {
+                const detected = detectMonthFromText(targetText);
                 const metadata = parseMonthlyHIMetadata(targetText) || {
-                    monthEnding: "31AUG26", // arbitrary fallback
-                    monthYearLabel: "August 2026",
+                    monthEnding: detected.monthEnding || "31AUG26",
+                    monthYearLabel: `${detected.monthAbbr} ${detected.yearNum}`,
                     asOfDateStr: new Date().toISOString(),
                     pilotName: "CAPTAIN PILOT",
                     seniorityNum: "12345",
@@ -1055,7 +1056,8 @@ export default function PortalBrowserStudio() {
                   src={INITIAL_URL}
                   className="w-full h-full border-none"
                   useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                  allowpopups={true}
+                  // @ts-expect-error React wants string, TS wants boolean
+                  allowpopups="true"
                   webpreferences="contextIsolation=true, sandbox=false"
                 />
               ) : (

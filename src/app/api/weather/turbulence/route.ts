@@ -18,7 +18,7 @@ export async function GET() {
   try {
     const pirepUrl = "https://aviationweather.gov/api/data/pirep?bbox=24,-125,50,-66&format=json";
 
-    const res = await fetch(pirepUrl, { next: { revalidate: 60 } });
+    const res = await fetch(pirepUrl, { next: { revalidate: 300 } });
     if (!res.ok) {
       return NextResponse.json({ success: false, reports: [], count: 0 });
     }

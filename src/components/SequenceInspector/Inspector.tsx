@@ -3,8 +3,9 @@
 import { useMemo } from "react";
 import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
 import { SequenceTrip, FlightLeg, DutyPeriod } from "../../types";
-import { X, Plane, Clock, Calendar, Home, Plus, ShieldCheck, ShieldAlert, CheckCircle, AlertCircle } from "lucide-react";
+import { X, Plane, Clock, Calendar, Home, Plus, ShieldCheck, ShieldAlert, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
 import { checkOpenSequenceConflict } from "../../lib/parser";
+import { auditDutyPeriodFdp } from "../../lib/far117Engine";
 
 interface SequenceInspectorProps {
   isEmbedded?: boolean;
@@ -270,6 +271,7 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
 
         {seq.dutyPeriods.map((dp: DutyPeriod) => {
           const hasLayover = !!dp.layoverCity;
+          const fdpAudit = auditDutyPeriodFdp(dp);
 
           return (
             <div
@@ -277,10 +279,17 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
               className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 shadow-sm"
             >
               {/* Duty Day Header */}
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                <div className="flex items-center gap-2">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200 flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-extrabold text-slate-900">
                     Duty Day {dp.dayIndex + 1}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${
+                    fdpAudit.isFdpLegal
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                      : "bg-rose-100 text-rose-900 border-rose-300"
+                  }`}>
+                    Table B Max FDP: {fdpAudit.maxFdpHours.toFixed(1)}h ({fdpAudit.fdpMarginMinutes >= 0 ? `${fdpAudit.fdpMarginMinutes}m margin` : `${Math.abs(fdpAudit.fdpMarginMinutes)}m OVER`})
                   </span>
                   {(dp.isOvertime || dp.legs.some((l: FlightLeg) => l.isOvertime)) && (
                     <span className="px-2 py-0.5 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-black uppercase">

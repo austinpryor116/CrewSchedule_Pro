@@ -96,45 +96,61 @@ export async function GET(request: NextRequest) {
     if (contentType.includes("text/html") || contentType.includes("application/xhtml+xml") || !contentType) {
       let html = await response.text();
 
-      // Check if Cloudflare or bot security challenge page ("Just a moment...", 403 status, cf-mitigated)
-      const isCloudflareChallenge =
+      // Check if Cloudflare, Akamai EdgeSuite, or corporate WAF security challenge page
+      const isSecurityBlocked =
         response.status === 403 ||
+        response.status === 401 ||
         response.headers.get("cf-mitigated") === "challenge" ||
         html.includes("Just a moment...") ||
-        html.includes("challenges.cloudflare.com");
+        html.includes("challenges.cloudflare.com") ||
+        html.includes("edgesuite.net") ||
+        (html.includes("Access Denied") && html.includes("permission to access"));
 
-      if (isCloudflareChallenge) {
-        const cloudflareCard = `
+      if (isSecurityBlocked) {
+        const isAkamai = html.includes("edgesuite.net") || html.includes("Access Denied");
+        const securityBadge = isAkamai ? "🏢 Corporate Network / Akamai EdgeSuite Block" : "🛡 Cloudflare Bot Protection";
+        const securityTitle = isAkamai ? "Network Access Restriction" : "Security Challenge Required";
+        const securityDesc = isAkamai
+          ? `<strong>${parsedUrl.hostname}</strong> is protected by an enterprise firewall (Akamai EdgeSuite). If your current Wi-Fi or cellular network is blocked, connect to an authorized network/VPN or open directly in your main browser.`
+          : `<strong>${parsedUrl.hostname}</strong> requires a direct browser session for security verification.`;
+
+        const challengeCard = `
           <!DOCTYPE html>
           <html>
             <head>
               <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
               <style>
-                body { background: #090d16; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
-                .card { max-width: 520px; width: 100%; background: #1e293b; border: 1px solid #334155; border-radius: 24px; padding: 36px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); text-align: center; }
-                .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 4px 12px; border-radius: 999px; margin-bottom: 16px; }
-                h2 { color: #f8fafc; font-size: 20px; font-weight: 800; margin: 0 0 12px 0; }
-                p { color: #94a3b8; font-size: 13px; line-height: 1.6; margin: 0 0 20px 0; }
+                body { background: #090d16; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+                .card { max-width: 520px; width: 100%; background: #1e293b; border: 1px solid #334155; border-radius: 24px; padding: 32px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); text-align: center; }
+                .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 6px 14px; border-radius: 999px; margin-bottom: 16px; }
+                h2 { color: #f8fafc; font-size: 18px; font-weight: 800; margin: 0 0 10px 0; }
+                p { color: #94a3b8; font-size: 13px; line-height: 1.6; margin: 0 0 16px 0; }
                 code { background: #0f172a; border: 1px solid #334155; padding: 4px 8px; border-radius: 8px; color: #38bdf8; font-family: monospace; font-size: 12px; word-break: break-all; }
-                .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 14px; text-decoration: none; font-weight: 700; font-size: 13px; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3); transition: all 0.2s; }
-                .btn-primary:hover { background: #4338ca; transform: translateY(-1px); }
+                .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+                .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #0284c7; color: white; padding: 12px 20px; border-radius: 14px; text-decoration: none; font-weight: 700; font-size: 13px; box-shadow: 0 10px 15px -3px rgba(2, 132, 199, 0.3); transition: all 0.2s; }
+                .btn-primary:hover { background: #0369a1; transform: translateY(-1px); }
+                .hint { font-size: 11px; color: #64748b; margin-top: 12px; }
               </style>
             </head>
             <body>
               <div class="card">
-                <div class="badge">🛡 Cloudflare Bot Protection</div>
-                <h2>Security Challenge Required</h2>
-                <p><strong>${parsedUrl.hostname}</strong> requires a direct browser session for security verification.</p>
-                <p>Target URL: <code>${parsedUrl.toString()}</code></p>
-                <a href="${parsedUrl.toString()}" target="_blank" class="btn-primary">
-                  <span>Open ${parsedUrl.hostname} in New Tab</span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                </a>
+                <div class="badge">${securityBadge}</div>
+                <h2>${securityTitle}</h2>
+                <p>${securityDesc}</p>
+                <p>Target: <code>${parsedUrl.toString()}</code></p>
+                <div class="actions">
+                  <a href="${parsedUrl.toString()}" target="_blank" rel="noopener noreferrer" class="btn-primary">
+                    <span>Open in External Browser</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </a>
+                </div>
+                <div class="hint">Tip: You can also upload your schedule file (PDF or TXT) or paste raw HI1 text directly into CrewSchedule Pro.</div>
               </div>
             </body>
           </html>
         `;
-        return new NextResponse(cloudflareCard, {
+        return new NextResponse(challengeCard, {
           status: 200,
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });

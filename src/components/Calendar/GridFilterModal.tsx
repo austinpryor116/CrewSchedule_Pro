@@ -52,23 +52,23 @@ export default function GridFilterModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100002] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[100002] bg-slate-950/70 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] animate-slideUp">
         {/* Modal Header */}
-        <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+        <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-sky-500/20 border border-sky-400/30 rounded-2xl text-sky-400">
-              <SlidersHorizontal className="w-5 h-5" />
+            <div className="p-2 sm:p-2.5 bg-sky-500/20 border border-sky-400/30 rounded-2xl text-sky-400 shrink-0">
+              <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black tracking-tight text-white">Calendar Options & Settings</h3>
-              <p className="text-xs text-slate-400 font-medium">Customize view, filters, overlays, and subscribed feeds</p>
+              <h3 className="text-base font-black tracking-tight text-white leading-tight">Calendar Options & Settings</h3>
+              <p className="text-xs text-slate-400 font-medium">Customize view, filters, overlays, and feeds</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer"
+            className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer active-press"
           >
             <X className="w-5 h-5" />
           </button>

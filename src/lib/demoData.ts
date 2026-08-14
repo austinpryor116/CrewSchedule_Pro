@@ -1,17 +1,17 @@
 import { SequenceTrip, PayRates, VacationPeriod } from "../types";
 
 export const DEFAULT_PAY_RATES: PayRates = {
-  hourlyRate: 215.0, // $/hr
+  hourlyRate: 198.75, // $/hr (Year 11 Captain from CBA Sec. 3.D.1 2026 Table w/ 50% PSP)
   overtimeMultiplier: 1.5,
-  perDiemRate: 2.75, // $/hr for Time Away From Base
-  intlPerDiemRate: 3.50,
-  minDailyGuaranteeMinutes: 300, // 5.0 hours minimum credit per day
-  monthlyGuaranteeHours: 75.0,
-  deadheadPayRatio: 1.0,
+  perDiemRate: 2.00, // $/hr for Time Away From Base (CBA Sec. 5.B)
+  intlPerDiemRate: 2.00,
+  minDailyGuaranteeMinutes: 222, // 3.7 hours (3:42) Value of Day (CBA Sec. 3.F.1)
+  monthlyGuaranteeHours: 72.0, // CBA Sec. 3.E.1 Lineholder Minimum Guarantee
+  deadheadPayRatio: 1.0, // 100% Deadhead Pay
   holdingPayRate: 45.0,
   tafbHours: 0,
 
-  crewRole: "FO",
+  crewRole: "CA",
   equipment: "E175",
   homeBase: "ORD",
 
@@ -972,7 +972,84 @@ DRP TRP - SEE LEG DETAIL
  -3552 5.49 16.26
  15101 EXP TAFB 70.35 SPI 3 MLI 1 GSO 3
  ACT TOTAL 0.00
-END OF DISPLAY
 `;
+
+export const DEFAULT_LOGBOOK_ENTRIES: import("../types").LogbookEntry[] = [
+  {
+    id: "log-demo-1",
+    date: "2026-07-14",
+    flightNumber: "AA3421",
+    tailNumber: "N405AA",
+    aircraftType: "E75",
+    depAirport: "ORD",
+    arrAirport: "MHK",
+    outTime: "0815",
+    inTime: "1030",
+    blockMinutes: 135,
+    nightMinutes: 0,
+    instrumentMinutes: 0,
+    crossCountryMinutes: 135,
+    picMinutes: 135,
+    sicMinutes: 0,
+    dualReceivedMinutes: 0,
+    landingsDay: 1,
+    landingsNight: 0,
+    approaches: 0,
+    remarks: "Line flight - On-time arrival into Manhattan, KS.",
+    isAutoFilled: true,
+    sourceSequenceNumber: "S8341",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "log-demo-2",
+    date: "2026-07-14",
+    flightNumber: "AA3580",
+    tailNumber: "N405AA",
+    aircraftType: "E75",
+    depAirport: "MHK",
+    arrAirport: "ORD",
+    outTime: "1115",
+    inTime: "1310",
+    blockMinutes: 115,
+    nightMinutes: 0,
+    instrumentMinutes: 0,
+    crossCountryMinutes: 115,
+    picMinutes: 115,
+    sicMinutes: 0,
+    dualReceivedMinutes: 0,
+    landingsDay: 1,
+    landingsNight: 0,
+    approaches: 0,
+    remarks: "Return turn to Chicago O'Hare.",
+    isAutoFilled: true,
+    sourceSequenceNumber: "S8341",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "log-demo-3",
+    date: "2026-07-15",
+    flightNumber: "AA4112",
+    tailNumber: "N418AA",
+    aircraftType: "E75",
+    depAirport: "ORD",
+    arrAirport: "GRR",
+    outTime: "1930",
+    inTime: "2110",
+    blockMinutes: 100,
+    nightMinutes: 60,
+    instrumentMinutes: 0,
+    crossCountryMinutes: 100,
+    picMinutes: 100,
+    sicMinutes: 0,
+    dualReceivedMinutes: 0,
+    landingsDay: 0,
+    landingsNight: 1,
+    approaches: 0,
+    remarks: "Night landing into Grand Rapids.",
+    isAutoFilled: true,
+    sourceSequenceNumber: "S8342",
+    createdAt: new Date().toISOString(),
+  },
+];
 
 

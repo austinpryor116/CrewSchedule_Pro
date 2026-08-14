@@ -586,16 +586,7 @@ export async function runFullAutonomousRosterPipeline(
   console.log("=== RAW DECS EXTRACTED HI1 TEXT ===");
   console.log(hi1Text);
   console.log("===================================");
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    const logPath = path.join(process.cwd(), 'decs_debug.log');
-    fs.appendFileSync(logPath, "\n\n=== RAW DECS HI1 TEXT (" + new Date().toISOString() + ") ===\n" + hi1Text + "\n");
-    updateStatus("Logged RAW DECS script to decs_debug.log for diagnostic review");
-  } catch(e) {
-    console.error("Could not write diagnostic log:", e);
-  }
-  // --------------------------
+
 
   // STEP 3: Parse HI1 Schedule & Populate Calendar
   updateStatus("Step 3/4: Parsing HI1 schedule roster & populating monthly calendar...");
@@ -662,17 +653,14 @@ export async function runFullAutonomousRosterPipeline(
         pressEnter: true,
         smartScreenInspection: false
       });
-      const hssRes = await waitForScreenChange(beforeHSS, 3500);
-      const hssText = hssRes.text || (await inspectAndCaptureScreenText());
+      await waitForScreenChange(beforeHSS, 3500);
+      const multiPageHss = await captureMultiPageDecsText(3);
+      const hssText = multiPageHss.fullText || (await inspectAndCaptureScreenText());
 
       const detailedTrips = parseHssSchedule(hssText);
       if (detailedTrips.length > 0) {
-        // Merge detailed duty period legs into store sequence
-        const existing = store.sequences.find((s) => s.sequenceNumber === seqNum);
-        if (existing) {
-          const merged = { ...existing, dutyPeriods: detailedTrips[0].dutyPeriods, totalBlockMinutes: detailedTrips[0].totalBlockMinutes };
-          store.setSequences(store.sequences.map((s) => (s.sequenceNumber === seqNum ? merged : s)));
-        }
+        // Merge detailed duty period legs and metadata safely into store
+        store.mergeHssIntoSequence(seqNum, detailedTrips[0]);
       }
 
       await new Promise((r) => setTimeout(r, 400));
