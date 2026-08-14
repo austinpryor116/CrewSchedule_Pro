@@ -95,13 +95,13 @@ export default function Home() {
         </div>
         
         {/* Keep Portal alive in the DOM so the iframe doesn't lose session/login state */}
-        <div className={`h-full w-full overflow-y-auto p-3 sm:p-6 pb-28 scrollbar-thin ${activeTab === "portal" ? "block relative" : "absolute opacity-0 pointer-events-none -z-50 invisible"}`}>
+        <div className={`h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin ${activeTab === "portal" ? "block relative" : "absolute opacity-0 pointer-events-none -z-50 invisible"}`}>
           <PortalBrowserStudio />
         </div>
 
         {/* Other tabs can unmount normally */}
         {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "portal" && (
-          <div className="h-full w-full overflow-y-auto p-3 sm:p-6 pb-28 scrollbar-thin">
+          <div className="h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
             {activeTab === "logbook" && <LogbookStudio />}
             {activeTab === "revisions" && <RevisionStudio />}
             {activeTab === "import" && <ParserStudio />}

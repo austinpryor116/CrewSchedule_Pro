@@ -484,8 +484,8 @@ export default function BriefingView() {
         />
       </div>
 
-      {/* 2. Top Edge-to-Edge ForeFlight Controls Bar */}
-      <div className="absolute top-0 inset-x-0 z-20 pointer-events-auto flex flex-col p-2 sm:px-4 sm:py-2.5 bg-white/90 backdrop-blur-2xl border-b border-slate-200/90 shadow-md">
+      {/* 2. Top Edge-to-Edge ForeFlight Controls Bar (Safe below camera notch) */}
+      <div className="absolute top-0 inset-x-0 z-20 pointer-events-auto flex flex-col pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-2.5 pb-2.5 sm:px-4 sm:pb-3 bg-white/95 backdrop-blur-2xl border-b border-slate-200/90 shadow-md">
         {/* Primary Actions (Map Layers | Flight Leg Select | FPL | Briefing | Refresh) */}
         <div className="flex items-center justify-between gap-1 sm:gap-2 w-full">
           {/* Left: Map Layers Button */}

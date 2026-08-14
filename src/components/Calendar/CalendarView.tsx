@@ -1575,8 +1575,8 @@ export default function CalendarView() {
 
   return (
     <div className="w-full h-full flex flex-col bg-[#f8fafc] overflow-hidden font-sans text-slate-900">
-      {/* Sticky Weekday Header */}
-      <div className="grid grid-cols-7 border-b border-slate-200 text-center py-2.5 bg-slate-100/95 shrink-0 sticky top-0 z-40 backdrop-blur-md shadow-xs">
+      {/* Sticky Weekday Header (Safe below camera notch) */}
+      <div className="grid grid-cols-7 border-b border-slate-200 text-center pt-[max(2.5rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-2 bg-slate-100/95 shrink-0 sticky top-0 z-40 backdrop-blur-md shadow-xs">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
           <span key={day} className="text-[10px] sm:text-xs font-extrabold text-slate-700 uppercase tracking-wider">
             {day}
