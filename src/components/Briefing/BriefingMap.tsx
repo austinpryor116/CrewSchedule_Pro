@@ -1215,62 +1215,52 @@ export default function BriefingMap({
         });
       }
 
-      strikesToDraw.forEach((st) => {
+      // Limit to 45 top-priority recent strikes to keep rendering lightweight and 60 FPS
+      const cappedStrikes = strikesToDraw.slice(0, 45);
+
+      cappedStrikes.forEach((st) => {
         const isCG = st.type === "CG";
         const age = st.ageMinutes ?? 0;
 
-        // Auto-decay opacity coding for fast-moving storm cells
-        const isFresh = age <= 3; // 100% opacity, bright yellow + active pulse
-        const isMid = age > 3 && age <= 8; // 80% opacity, amber
+        // Clean ForeFlight/Garmin Pilot style vector lightning bolt (no heavy pulsing circles)
+        const isFresh = age <= 3;
+        const isMid = age > 3 && age <= 8;
 
-        const bgPing = isFresh ? "bg-yellow-400/70 animate-ping" : isMid ? "bg-amber-400/30" : "hidden";
-        const bgCircle = isFresh
-          ? "bg-yellow-400/50 border-2 border-yellow-300 shadow-yellow-400/60 opacity-100"
-          : isMid
-          ? "bg-amber-500/40 border border-amber-300 opacity-85 shadow-amber-500/30"
-          : "bg-orange-600/30 border border-orange-400/60 opacity-50";
-
-        const boltColor = isFresh ? "text-yellow-300 drop-shadow-md" : isMid ? "text-amber-200" : "text-orange-300/80";
-        const ageLabel = age <= 1 ? "FLASHED JUST NOW (< 1 min)" : `FLASHED ${age} MIN AGO`;
+        const fill = isFresh ? "#eab308" : isMid ? "#f59e0b" : "#d97706";
+        const stroke = isFresh ? "#854d0e" : isMid ? "#78350f" : "#451a03";
+        const opacity = isFresh ? 1.0 : isMid ? 0.75 : 0.45;
+        const size = isFresh ? 14 : isMid ? 12 : 10;
+        const ageLabel = age <= 1 ? "JUST NOW (< 1 min)" : `${age} MIN AGO`;
 
         const lightningIcon = L.divIcon({
           className: "custom-lightning-strike-icon",
           html: `
-            <div class="relative w-7 h-7 flex items-center justify-center -translate-x-1/2 -translate-y-1/2 cursor-pointer">
-              <div class="absolute inset-0 rounded-full ${bgPing}"></div>
-              <div class="w-6 h-6 rounded-full ${bgCircle} flex items-center justify-center shadow-lg">
-                <span class="${boltColor} font-black text-xs">⚡</span>
-              </div>
+            <div style="opacity: ${opacity}; display: flex; align-items: center; justify-content: center; width: ${size}px; height: ${size}px; cursor: pointer; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));">
+              <svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${fill}" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
             </div>
           `,
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
         });
 
         const marker = L.marker([st.lat, st.lng], { icon: lightningIcon });
         marker.bindPopup(`
-          <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #0f172a; padding: 6px; min-width: 240px;">
-            <div style="font-weight: 900; font-size: 13px; color: #d97706; display: flex; align-items: center; justify-between;">
-              <span>⚡ INDIVIDUAL STRIKE</span>
-              <span style="font-size: 10px; background: ${isFresh ? "#fef08a" : "#fef3c7"}; border: 1px solid #fde68a; color: #92400e; padding: 2px 6px; border-radius: 6px; font-weight: 800;">${st.type === "CG" ? "Cloud-to-Ground" : "Cloud-to-Cloud"}</span>
+          <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #0f172a; padding: 4px; min-width: 220px;">
+            <div style="font-weight: 900; font-size: 12px; color: #b45309; display: flex; align-items: center; justify-content: space-between;">
+              <span>⚡ LIGHTNING STRIKE</span>
+              <span style="font-size: 10px; background: ${isFresh ? "#fef08a" : "#fef3c7"}; border: 1px solid #fde68a; color: #92400e; padding: 1px 5px; border-radius: 4px; font-weight: 800;">${st.type === "CG" ? "Cloud-to-Ground" : "Cloud-to-Cloud"}</span>
             </div>
-            <div style="font-size: 11px; font-weight: 800; color: ${isFresh ? "#b45309" : "#475569"}; margin-top: 4px; background: #fffbeb; padding: 3px 6px; border-radius: 6px; border: 1px solid #fef08a; display: inline-block;">
-              ${ageLabel}
+            <div style="font-size: 11px; font-weight: 700; color: #475569; margin-top: 3px;">
+              Flashed: <strong>${ageLabel}</strong>
             </div>
-            <div style="font-size: 11px; font-weight: 800; color: #334155; margin-top: 4px;">
-              Location: <strong>${st.station || "NOAA Severe Storm Core"}</strong>
+            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+              Location: <strong>${st.station || "Convective Storm Core"}</strong>
             </div>
-            <div style="font-size: 10px; font-weight: 800; color: #166534; background: #dcfce7; border: 1px solid #bbf7d0; padding: 2px 6px; border-radius: 6px; margin-top: 4px; display: inline-block;">
-              ✓ NOAA SENSOR QC VERIFIED
+            <div style="font-size: 10px; font-family: monospace; color: #64748b; margin-top: 2px;">
+              Peak Current: <strong>${st.peakCurrent}</strong>
             </div>
-            <div style="font-size: 10px; font-family: monospace; color: #475569; margin-top: 4px;">
-              Peak Current: <strong>${st.peakCurrent}</strong> | Polarity: <strong>${st.polarity || "-"}</strong>
-            </div>
-            ${st.remark ? `
-              <div style="font-size: 10px; font-family: monospace; background: #f8fafc; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 6px; color: #0f172a;">
-                NOAA Telemetry: ${st.remark}
-              </div>
-            ` : ""}
           </div>
         `);
         group.addLayer(marker);
