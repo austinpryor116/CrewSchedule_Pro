@@ -251,7 +251,7 @@ export default function BriefingView() {
   const [showRadar, setShowRadar] = useState(true);
   const [showSatelliteClouds, setShowSatelliteClouds] = useState(false);
   const [showNwsWarnings, setShowNwsWarnings] = useState(true);
-  const [showRadarRings, setShowRadarRings] = useState(true);
+  const [showRadarRings, setShowRadarRings] = useState(false);
   const [showSigmet, setShowSigmet] = useState(true);
   const [showSigmetConvective, setShowSigmetConvective] = useState(true);
   const [showSigmetTurbulence, setShowSigmetTurbulence] = useState(true);
@@ -663,6 +663,22 @@ export default function BriefingView() {
                       type="checkbox"
                       checked={showNwsWarnings}
                       onChange={(e) => setShowNwsWarnings(e.target.checked)}
+                      className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition">
+                    <div className="flex items-center gap-2">
+                      <Radio className="w-4 h-4 text-cyan-600" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">NEXRAD Sweeps & Range Rings</span>
+                        <span className="text-[10px] text-slate-500">124 NM radar site coverage circles & beam heads</span>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={showRadarRings}
+                      onChange={(e) => setShowRadarRings(e.target.checked)}
                       className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
                     />
                   </label>
