@@ -4,7 +4,7 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "node -e \"require('fs').rmSync('.next', {recursive:true, force:true})\" && next dev",
+    "dev": "node -e \"require('fs').rmSync('.next', {recursive:true, force:true})\" && next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

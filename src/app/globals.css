@@ -51,6 +51,19 @@ body {
   height: 5px;
 }
 
+/* Hide Next.js dev indicators and overlays on mobile */
+nextjs-portal,
+[data-nextjs-toast],
+[data-nextjs-dialog-overlay],
+[data-nextjs-dev-overlay],
+#next-route-announcer,
+div[data-next-badge],
+div[data-next-mark] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .scrollbar-thin::-webkit-scrollbar-track {
   background: rgba(226, 232, 240, 0.6);
   border-radius: 999px;

@@ -5,8 +5,8 @@ const config: CapacitorConfig = {
   appName: "CrewSchedule Pro",
   webDir: "out",
   server: {
-    // Connects directly to your computer's local dev server for live testing on your Samsung Galaxy S26:
-    url: "http://192.168.23.193:3000",
+    // Over USB cable with adb reverse port forwarding or Wi-Fi:
+    url: "http://localhost:3000",
     cleartext: true,
   },
   android: {
