@@ -1,4 +1,4 @@
-import { SequenceTrip, DutyPeriod, FlightLeg, PayRates, PayCalculations, RosterMetrics, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata } from "../types";
+import { SequenceTrip, DutyPeriod, FlightLeg, PayRates, PayCalculations, RosterMetrics, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata } from "../types/index";
 import { LogicLogger } from "./logicLogger";
 import { getMaxFdpHours, getMaxFlightTimeHours } from "./far117Engine";
 
@@ -997,7 +997,7 @@ export function extractVacationsFromHI1(text: string): VacationPeriod[] {
  * Parses the HI1 schedule log format and converts it into structured SequenceTrip objects
  */
 export function parseHI1Schedule(text: string): SequenceTrip[] {
-  LogicLogger.parser("Starting parseHI1Schedule", { textLength: text.length });
+  LogicLogger.parser("Starting parseHI1Schedule with full FOS specification", { textLength: text.length });
   const sequences: SequenceTrip[] = [];
   const extractedVacations = extractVacationsFromHI1(text);
   LogicLogger.parser("Extracted vacations from HI1", { vacationCount: extractedVacations.length });
@@ -1027,66 +1027,136 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
     monthEnding = detected.monthEnding;
   }
 
-  const foundSeqsMap = new Map<string, {
+  interface ParsedDayLeg {
+    flightNumber: string;
+    prefix: string;
+    isDeadhead: boolean;
+    isCancelled: boolean;
+  }
+
+  interface ParsedDayDetail {
+    dayNum: number;
+    payStatusCode?: string;
+    removalCode?: string;
+    addCode?: string;
+    flightLegs: ParsedDayLeg[];
+    skedTime?: string;
+    actTime?: string;
+    grtrTime?: string;
+  }
+
+  interface ParsedSeqEntry {
     seqNum: string;
     days: Set<number>;
+    dayDetails: Map<number, ParsedDayDetail>;
     statusTag: string;
     tafb?: string;
     credit?: string;
     layovers?: string[];
     isDropped?: boolean;
-  }>();
+    hasContinuityIssue?: boolean;
+  }
+
+  const foundSeqsMap = new Map<string, ParsedSeqEntry>();
 
   let currentSeqNum: string | null = null;
   let currentSeqDays = new Set<number>();
+  let currentDayDetails = new Map<number, ParsedDayDetail>();
   let currentStatusTag = "SKD";
   let currentTafb = "";
   let currentLayovers: string[] = [];
   let lastLineCredit = "";
   let currentIsDropped = false;
+  let currentHasContinuity = false;
+  let currentActiveDayNum: number | null = null;
 
   const saveCurrentSeq = () => {
     if (currentSeqNum && currentSeqDays.size > 0) {
       if (currentIsDropped) {
-        // User requested: completely ignore anything dropped. 
-        // If it was already partially added, remove it.
         LogicLogger.parser(`Discarding dropped sequence ${currentSeqNum}`);
         foundSeqsMap.delete(currentSeqNum);
       } else {
         if (!foundSeqsMap.has(currentSeqNum)) {
           LogicLogger.parser(`Saving new sequence ${currentSeqNum}`, { days: Array.from(currentSeqDays), statusTag: currentStatusTag, credit: lastLineCredit });
+          const dayDetailsCopy = new Map<number, ParsedDayDetail>();
+          currentDayDetails.forEach((v, k) => {
+            dayDetailsCopy.set(k, { ...v, flightLegs: [...v.flightLegs] });
+          });
+
           foundSeqsMap.set(currentSeqNum, {
             seqNum: currentSeqNum,
             days: new Set(currentSeqDays),
+            dayDetails: dayDetailsCopy,
             statusTag: currentStatusTag,
             tafb: currentTafb,
             credit: lastLineCredit,
             layovers: [...currentLayovers],
-            isDropped: currentIsDropped
+            isDropped: currentIsDropped,
+            hasContinuityIssue: currentHasContinuity,
           });
         } else {
           LogicLogger.parser(`Merging additional days into sequence ${currentSeqNum}`, { addedDays: Array.from(currentSeqDays), credit: lastLineCredit });
           const existing = foundSeqsMap.get(currentSeqNum)!;
           currentSeqDays.forEach((d) => existing.days.add(d));
+          currentDayDetails.forEach((v, k) => {
+            if (!existing.dayDetails.has(k)) {
+              existing.dayDetails.set(k, { ...v, flightLegs: [...v.flightLegs] });
+            } else {
+              const exDay = existing.dayDetails.get(k)!;
+              v.flightLegs.forEach((leg) => {
+                if (!exDay.flightLegs.some((fl) => fl.flightNumber === leg.flightNumber && fl.prefix === leg.prefix)) {
+                  exDay.flightLegs.push(leg);
+                }
+              });
+              if (v.payStatusCode) exDay.payStatusCode = v.payStatusCode;
+              if (v.removalCode) exDay.removalCode = v.removalCode;
+              if (v.addCode) exDay.addCode = v.addCode;
+            }
+          });
           if (currentTafb) existing.tafb = currentTafb;
           if (lastLineCredit && lastLineCredit !== "0.00") {
-             existing.credit = lastLineCredit;
+            existing.credit = lastLineCredit;
           }
           if (currentStatusTag === "OT" || currentStatusTag === "TT") {
             existing.statusTag = currentStatusTag;
           }
           if (currentLayovers.length > 0) existing.layovers = [...currentLayovers];
+          if (currentHasContinuity) existing.hasContinuityIssue = true;
         }
       }
     }
     currentSeqNum = null;
     currentSeqDays = new Set<number>();
+    currentDayDetails = new Map<number, ParsedDayDetail>();
     currentStatusTag = "SKD";
     currentTafb = "";
     currentLayovers = [];
     lastLineCredit = "";
     currentIsDropped = false;
+    currentHasContinuity = false;
+    currentActiveDayNum = null;
   };
+
+  function extractFlightLegsFromText(lineStr: string): ParsedDayLeg[] {
+    const cleanLine = lineStr.replace(/\*([1-9]\d{3,5})\b/g, (m, seq) => {
+      currentHasContinuity = true;
+      return ` SEQ_${seq} `;
+    });
+    const fltRegex = /(?:^|\s)([-DCX]|\*[A-Z]{2})([1-9]\d{0,4})(?=\s|$)/g;
+    const legs: ParsedDayLeg[] = [];
+    const matches = Array.from(cleanLine.matchAll(fltRegex));
+    for (const m of matches) {
+      const prefix = m[1];
+      const fltNum = m[2];
+      legs.push({
+        flightNumber: fltNum,
+        prefix: prefix,
+        isDeadhead: prefix === "D" || prefix.startsWith("*"),
+        isCancelled: prefix === "C",
+      });
+    }
+    return legs;
+  }
 
   for (let idx = 0; idx < lines.length; idx++) {
     const rawLine = lines[idx];
@@ -1115,21 +1185,34 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       continue;
     }
 
-    // Check for Summary Line: e.g. "14731 EXP TAFB 65.22 FA 2 CMI 2 CLE 2" or "14962 EP TAFB 73.44 RI 2 FSM 2 MAF 3"
+    // Check for Revision / Schedule Change delimiters (e.g. "SKD CHG - SEE LEG DETAIL", "DRP TRP - SEE LEG DETAIL", "TRP TRD")
+    if (line.includes("SKD CHG") || line.includes("DRP TRP") || line.includes("TRP TRD")) {
+      LogicLogger.parser(`Saw revision delimiter: ${line}`);
+      if (currentSeqNum) {
+        currentIsDropped = true;
+        currentStatusTag = line.includes("DRP") ? "DROP" : "SKD_CHG";
+        saveCurrentSeq();
+      }
+      continue;
+    }
+
+    // Check for Summary Line: e.g. "14731 EXP TAFB 65.22 AVP 3 ORD 2 CLE 1" or "14962 EXP TAFB 73.44 RIC 2 FSM 2 MAF 3"
     const summaryMatch = line.match(/\b([1-9]\d{4,5})\s+(?:EXP|EP)?\s*TAFB\s+([\d.]+)\s*(.*)$/i);
     if (summaryMatch) {
       const summarySeq = summaryMatch[1];
       const tafbVal = summaryMatch[2];
       const restSummary = summaryMatch[3];
 
-      // Match 2 or 3 letter airport codes and normalize to 3-letter IATA (e.g. FA -> FAR, RI -> RIC, SP -> SPI)
-      const decsMap: Record<string, string> = { FA: "FAR", RI: "RIC", SP: "SPI", CM: "CMI", CL: "CLE", FS: "FSM", MA: "MAF", ML: "MLI", GS: "GSO" };
-      const layoverMatches = Array.from(restSummary.matchAll(/\b([A-Z]{2,3})\s+\d+\b/g)).map(m => {
+      // Match 2 or 3 letter airport codes and normalize to 3-letter IATA
+      const decsMap: Record<string, string> = {
+        FA: "FAR", RI: "RIC", SP: "SPI", CM: "CMI", CL: "CLE", FS: "FSM", MA: "MAF", ML: "MLI", GS: "GSO", AV: "AVP"
+      };
+      const layoverMatches = Array.from(restSummary.matchAll(/\b([A-Z]{2,3})\s+\d+\b/g)).map((m) => {
         const raw = m[1].toUpperCase();
         return raw.length === 3 ? raw : (decsMap[raw] || raw);
       });
 
-      // Look back up to 4 lines to find cumulative total sequence credit decimal (e.g. 17.22, 22.29, 16.26 or mashed 5.4916.26 / 6.2522.29)
+      // Look back up to 4 lines to find cumulative sequence credit (STTL or GTTL column, e.g. 12.57, 22.29, 16.26, 17.22)
       let extractedCredit = "";
       for (let prev = idx - 1; prev >= Math.max(0, idx - 4); prev--) {
         const pLine = lines[prev].trim();
@@ -1138,13 +1221,19 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
           extractedCredit = mashedMatch[2];
           break;
         }
-        const decMatches = Array.from(pLine.matchAll(/(\d{1,2}\.\d{2})/g));
+        const decMatches = Array.from(pLine.matchAll(/(\d{1,2}\.\d{2})/g)).map(m => m[1]);
         if (decMatches.length > 0) {
-          extractedCredit = decMatches[decMatches.length - 1][1];
-          if (extractedCredit === "0.00" && decMatches.length >= 2) {
-            extractedCredit = decMatches[decMatches.length - 2][1];
+          // If multiple decimals present on line (e.g. 1.31 12.57 0.00 1.31 or 5.01 15.57 15.57),
+          // total sequence credit is the larger cumulative value (e.g. 12.57, 15.57)
+          const bigDecs = decMatches.filter(d => parseFloat(d) >= 7.0);
+          if (bigDecs.length > 0) {
+            extractedCredit = bigDecs[0];
+            break;
+          } else {
+            const nonZero = decMatches.filter(d => d !== "0.00");
+            extractedCredit = nonZero.length > 0 ? nonZero[nonZero.length - 1] : decMatches[decMatches.length - 1];
+            break;
           }
-          break;
         }
       }
 
@@ -1154,6 +1243,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       currentSeqNum = summarySeq;
       currentTafb = tafbVal;
       currentLayovers = layoverMatches;
+      if (extractedCredit) lastLineCredit = extractedCredit;
       saveCurrentSeq();
 
       if (extractedCredit && foundSeqsMap.has(summarySeq)) {
@@ -1162,20 +1252,20 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       continue;
     }
 
-    // Removed DRP TRP logic per user feedback
-
-    // Check if line is a Day Line (starts with 1 or 2 digit day + optional letter + optional digit, e.g. "06Q 1", "20Q1", "01 1")
-    const dayMatch = rawLine.match(/^\s*(\d{1,2})([A-Za-z]?)\s*\d?\b(.*)$/);
+    // Check if line is a Day Line (starts with 1 or 2 digit day + optional letter + optional pay status digit, e.g. "18 1", "06Q 1", "20Q1", "01 4")
+    const dayMatch = rawLine.match(/^\s*(\d{1,2})([A-Za-z]?)\s*(\d{1,2})?\b(.*)$/);
 
     if (dayMatch) {
       const dayNum = parseInt(dayMatch[1], 10);
-      const rest = dayMatch[3].trim();
+      const payStatusCandidate = dayMatch[3] || "";
+      const rest = dayMatch[4].trim();
 
       if (dayNum >= 1 && dayNum <= 31) {
-        const hasFlights = /[-DX]\d{3,4}\b/.test(rest);
+        currentActiveDayNum = dayNum;
+        const hasFlights = /[-DCX]\d{2,4}\b/.test(rest);
         const isOffOrVacation = !hasFlights && /\b(VC|SK|DHO|RO|OF|24\s+0000|2400|400)\b/i.test(rest);
 
-        // Sequence numbers in AA/DECS are 5 or 6 digits (e.g. 15156, 14731, 14962, 15101)
+        // Sequence numbers in AA/DECS are 5 or 6 digits (e.g. 17495, 14731, 14962, 21566)
         const seqMatches = Array.from(rest.matchAll(/(?<![A-Z\d\-])([1-9]\d{4,5})(?![A-Z\d\-])/g));
         let explicitSeq: string | null = null;
         for (const sm of seqMatches) {
@@ -1186,34 +1276,25 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
           }
         }
 
-        const lineCreditMatches = Array.from(line.matchAll(/(\d{1,2}\.\d{2})/g));
-        if (lineCreditMatches.length > 0) {
-          let potentialCredit = lineCreditMatches[lineCreditMatches.length - 1][1];
-          if (potentialCredit === "0.00" && lineCreditMatches.length >= 2) {
-            potentialCredit = lineCreditMatches[lineCreditMatches.length - 2][1];
-          }
-          if (potentialCredit !== "0.00") {
-            lastLineCredit = potentialCredit;
-          }
+        // If day number drops backwards (e.g. Day 13 after Day 16), finalize previous sequence revision
+        if (currentSeqNum && currentSeqDays.has(dayNum)) {
+          LogicLogger.parser(`Day ${dayNum} already recorded in sequence ${currentSeqNum} - finalizing previous version`);
+          saveCurrentSeq();
         }
 
         if (isOffOrVacation && !explicitSeq) {
           saveCurrentSeq();
         } else if (explicitSeq) {
-          const seqMatch = explicitSeq.match(/([1-9]\d{4,5})/);
-          if (seqMatch) {
-            const seqNumber = seqMatch[1];
-            LogicLogger.parser(`Identified sequence number on line: ${seqNumber}`, { day: dayNum, statusTag: currentStatusTag });
-            if (currentSeqNum && currentSeqNum !== seqNumber) {
-              LogicLogger.parser(`Sequence transition detected from ${currentSeqNum} to ${seqNumber}`);
-              saveCurrentSeq();
-            }
-            currentSeqNum = seqNumber;
+          if (currentSeqNum && currentSeqNum !== explicitSeq) {
+            LogicLogger.parser(`Sequence transition detected from ${currentSeqNum} to ${explicitSeq}`);
+            saveCurrentSeq();
           }
-          
+          currentSeqNum = explicitSeq;
           currentSeqDays.add(dayNum);
+          
           if (rest.includes("TT")) currentStatusTag = "TT";
           else if (rest.includes("OT")) currentStatusTag = "OT";
+          else if (rest.includes("RA")) currentStatusTag = "RA";
           
           if (rest.includes("DRP") || rest.includes("DROP") || rest.includes("RMV")) {
             LogicLogger.parser(`Line identified as DROPPED sequence.`, { line });
@@ -1228,26 +1309,35 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
             currentSeqNum = `SEQ-${dayNum}`;
           }
           currentSeqDays.add(dayNum);
+          if (rest.includes("RA")) currentStatusTag = "RA";
           if (rest.includes("VC") || rest.includes("VA")) {
             currentStatusTag = "VC";
             currentIsDropped = true;
           }
         }
+
+        // Extract flight legs for this day line
+        const dayLegs = extractFlightLegsFromText(rest);
+        if (!currentDayDetails.has(dayNum)) {
+          currentDayDetails.set(dayNum, {
+            dayNum,
+            payStatusCode: payStatusCandidate || undefined,
+            flightLegs: dayLegs,
+          });
+        } else {
+          const dObj = currentDayDetails.get(dayNum)!;
+          dayLegs.forEach((leg) => {
+            if (!dObj.flightLegs.some((fl) => fl.flightNumber === leg.flightNumber && fl.prefix === leg.prefix)) {
+              dObj.flightLegs.push(leg);
+            }
+          });
+        }
       }
     } else if (currentSeqNum) {
-      const lineCreditMatches = Array.from(line.matchAll(/(\d{1,2}\.\d{2})/g));
-      if (lineCreditMatches.length > 0) {
-        let potentialCredit = lineCreditMatches[lineCreditMatches.length - 1][1];
-        if (potentialCredit === "0.00" && lineCreditMatches.length >= 2) {
-          potentialCredit = lineCreditMatches[lineCreditMatches.length - 2][1];
-        }
-        if (potentialCredit !== "0.00") {
-          lastLineCredit = potentialCredit;
-        }
-      }
-      
+      // Continuation line for the current sequence / active day
       if (line.includes("TT")) currentStatusTag = "TT";
       else if (line.includes("OT")) currentStatusTag = "OT";
+      else if (line.includes("RA")) currentStatusTag = "RA";
       
       if (line.includes("DRP") || line.includes("DROP") || line.includes("RMV")) {
         currentIsDropped = true;
@@ -1255,9 +1345,29 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       
       const layoversStringMatch = line.match(/LAYOVERS?:\s*(.+)$/i);
       if (layoversStringMatch) {
-        const lCities = layoversStringMatch[1].split(/[-/,]+/).map(c => c.trim()).filter(Boolean);
+        const lCities = layoversStringMatch[1].split(/[-/,]+/).map((c) => c.trim()).filter(Boolean);
         currentLayovers.push(...lCities);
         LogicLogger.parser(`Extracted layovers: ${lCities.join(", ")} for sequence ${currentSeqNum}`);
+      }
+
+      // Check for wrapped flight numbers on continuation line
+      if (currentActiveDayNum !== null) {
+        const contLegs = extractFlightLegsFromText(line);
+        if (contLegs.length > 0) {
+          if (!currentDayDetails.has(currentActiveDayNum)) {
+            currentDayDetails.set(currentActiveDayNum, {
+              dayNum: currentActiveDayNum,
+              flightLegs: contLegs,
+            });
+          } else {
+            const dObj = currentDayDetails.get(currentActiveDayNum)!;
+            contLegs.forEach((leg) => {
+              if (!dObj.flightLegs.some((fl) => fl.flightNumber === leg.flightNumber && fl.prefix === leg.prefix)) {
+                dObj.flightLegs.push(leg);
+              }
+            });
+          }
+        }
       }
     }
   }
@@ -1275,7 +1385,6 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
   }
 
   foundSeqsMap.forEach((val) => {
-    // If a sequence lacks an EXP TAFB line, it was traded, dropped, or removed.
     if (!val.tafb && val.statusTag !== "VC") {
       val.isDropped = true;
     }
@@ -1286,7 +1395,6 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
     const startDay = rawDays[0];
     const endDay = rawDays[rawDays.length - 1];
 
-    // Expand to continuous calendar days from startDay to endDay
     const fullDays: number[] = [];
     for (let d = startDay; d <= endDay; d++) {
       fullDays.push(d);
@@ -1297,6 +1405,53 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
 
     const dutyPeriods: DutyPeriod[] = fullDays.map((d, idx) => {
       const layover = (idx < fullDays.length - 1 && val.layovers && val.layovers[idx]) ? val.layovers[idx] : "";
+      const dayDetail = val.dayDetails.get(d);
+      const parsedLegs = dayDetail?.flightLegs || [];
+
+      let formattedLegs: FlightLeg[] = [];
+      if (parsedLegs.length > 0) {
+        formattedLegs = parsedLegs.map((fl, lIdx) => {
+          const isFirstLegOfDay = lIdx === 0;
+          const isLastLegOfDay = lIdx === parsedLegs.length - 1;
+
+          let dep = base;
+          if (idx > 0 && isFirstLegOfDay) {
+            dep = val.layovers && val.layovers[idx - 1] ? val.layovers[idx - 1] : base;
+          } else if (!isFirstLegOfDay) {
+            dep = "ANY";
+          }
+
+          let arr = layover || base;
+          if (!isLastLegOfDay) {
+            arr = "ANY";
+          }
+
+          return {
+            flightNumber: `AA ${fl.flightNumber}`,
+            flightPrefix: fl.prefix,
+            depAirport: dep,
+            arrAirport: arr,
+            depTime: "0800",
+            arrTime: "1600",
+            blockMinutes: 180,
+            isDeadhead: fl.isDeadhead,
+            isCancelled: fl.isCancelled,
+          };
+        });
+      } else {
+        formattedLegs = [
+          {
+            flightNumber: `AA ${val.seqNum}`,
+            flightPrefix: "-",
+            depAirport: idx === 0 ? base : (val.layovers && val.layovers[idx - 1] ? val.layovers[idx - 1] : "ANY"),
+            arrAirport: layover || base,
+            depTime: "0900",
+            arrTime: "1600",
+            blockMinutes: 420,
+          },
+        ];
+      }
+
       return {
         dayIndex: idx,
         reportTime: "0800",
@@ -1304,16 +1459,10 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         dutyMinutes: 540,
         layoverCity: layover,
         layoverHotelInfo: "",
-        legs: [
-          {
-            flightNumber: `AA-${val.seqNum}`,
-            depAirport: idx === 0 ? base : (val.layovers && val.layovers[idx - 1] ? val.layovers[idx - 1] : "ANY"),
-            arrAirport: layover || base,
-            depTime: "0900",
-            arrTime: "1600",
-            blockMinutes: 420,
-          }
-        ]
+        payStatusCode: dayDetail?.payStatusCode,
+        removalCode: dayDetail?.removalCode,
+        addCode: dayDetail?.addCode,
+        legs: formattedLegs,
       };
     });
 
@@ -1322,7 +1471,8 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       parsedCreditMinutes = parseAviationTime(val.credit);
     }
     
-    // (User requested that 0-credit dropped trips still display on the calendar)
+    const tafbHours = val.tafb ? parseFloat(val.tafb) : undefined;
+
     sequences.push({
       id: `${val.seqNum}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       sequenceNumber: val.seqNum,
@@ -1332,11 +1482,13 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       equipment,
       totalBlockMinutes: dutyPeriods.length * 420,
       totalCreditMinutes: parsedCreditMinutes,
+      expTafbHours: tafbHours,
+      hasContinuityIssue: val.hasContinuityIssue,
       layoverCities: val.layovers || [],
       dutyPeriods,
       statusTag: val.statusTag,
       colorTag: val.isDropped ? "slate" : (val.statusTag === "OT" ? "amber" : "sky"),
-      isDropped: val.isDropped
+      isDropped: val.isDropped,
     });
   });
 

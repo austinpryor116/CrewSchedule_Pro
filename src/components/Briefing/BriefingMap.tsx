@@ -1,19 +1,63 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { LiveSigmetAirmet, LiveLightningStrike, LiveTurbulenceReport, getAirportCoords } from "../../lib/weatherService";
+import { LiveSigmetAirmet, LiveLightningStrike, LiveTurbulenceReport, LiveAirportCondition, getAirportCoords } from "../../lib/weatherService";
+import { getOrFetchTile, precacheFlightRoute } from "../../lib/mapTileCache";
+import { MEGA_HUBS, MAJOR_HUBS, ALL_MAJOR_AIRPORTS, destinationDistanceNm, isPointInPolygon } from "../../lib/airportData";
 
-// Fix for default Leaflet icon paths
+// Self-contained SVG pin icons to guarantee 100% offline rendering with zero network requests
+const SVG_MARKER_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 41" width="25" height="41">
+  <path d="M12.5 0C5.596 0 0 5.596 0 12.5c0 9.375 12.5 28.5 12.5 28.5S25 21.875 25 12.5C25 5.596 19.404 0 12.5 0z" fill="#0284c7" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="12.5" cy="12.5" r="4.5" fill="#ffffff"/>
+</svg>
+`)}`;
+
+const SVG_MARKER_SHADOW = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 41 41" width="41" height="41">
+  <ellipse cx="15" cy="35" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+</svg>
+`)}`;
+
+// Fix for default Leaflet icon paths (100% offline self-contained)
 const fixLeafletIcon = () => {
   delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
   L.Icon.Default.mergeOptions({
-    iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-    iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-    shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+    iconRetinaUrl: SVG_MARKER_ICON,
+    iconUrl: SVG_MARKER_ICON,
+    shadowUrl: SVG_MARKER_SHADOW,
   });
 };
+
+// Custom Offline-First TileLayer for Leaflet that uses persistent CacheStorage
+const OfflineTileLayer = (L.TileLayer as any).extend({
+  createTile(coords: { x: number; y: number; z: number }, done: (error: any, tile: HTMLImageElement) => void) {
+    const tile = document.createElement("img");
+    tile.alt = "";
+    tile.setAttribute("role", "presentation");
+    tile.crossOrigin = "anonymous";
+
+    const url = (this as any).getTileUrl(coords);
+
+    tile.onload = () => done(null, tile);
+    tile.onerror = () => {
+      tile.style.visibility = "hidden";
+      done(null, tile);
+    };
+
+    getOrFetchTile(url, coords)
+      .then((resolvedUrl) => {
+        tile.src = resolvedUrl;
+      })
+      .catch(() => {
+        tile.src = url;
+      });
+
+    return tile;
+  },
+});
 
 const AIRPORT_COORDS: Record<string, [number, number]> = {
   ORD: [41.9742, -87.9073],
@@ -168,7 +212,8 @@ export interface BriefingMapProps {
   onAddWaypoint?: (code: string) => void;
   onMapTap?: (data: MapTapData | null) => void;
   showFlightPlan?: boolean;
-  showRadar: boolean;
+  showRadar?: boolean;
+  radarMode?: "FOREFLIGHT" | "N0Q" | "N0R" | "SMOOTH" | "NEXRAD";
   showSigmet?: boolean;
   showSigmetConvective?: boolean;
   showSigmetTurbulence?: boolean;
@@ -189,18 +234,19 @@ export interface BriefingMapProps {
   corridorNm?: number;
   liveHazards?: LiveSigmetAirmet[];
   liveLightning?: LiveLightningStrike[];
+  liveAirportConditions?: Record<string, LiveAirportCondition>;
   showTurbulence?: boolean;
   turbulenceAltBand?: "ALL" | "LOW" | "MID" | "HIGH";
   liveTurbulence?: LiveTurbulenceReport[];
-  filteredAlerts: Array<{
-    id: number;
-    type: string;
-    subtype?: string;
-    text: string;
-    priority: string;
+  userLocation?: {
     lat: number;
     lng: number;
-  }>;
+    accuracy?: number;
+    altitude?: number | null;
+    speed?: number | null;
+    heading?: number | null;
+  } | null;
+  onLocateMe?: () => void;
 }
 
 export interface NexradStation {
@@ -282,128 +328,6 @@ export const NEXRAD_DOPPLER_STATIONS: NexradStation[] = [
   { id: "KRTX", name: "Portland WSR-88D Radar", lat: 45.7147, lng: -122.9647, city: "Portland, OR" },
 ];
 
-export const MAJOR_HUBS = new Set([
-  "ORD", "DFW", "CLT", "MIA", "ATL", "DEN", "LAX", "PHX", "JFK", "LGA", "EWR", "DTW", "MSP", "SFO", "IAH", "BOS", "SEA", "LAS", "SLC", "PHL", "IAD", "DCA", "MDW", "DAL", "SAN", "AUS", "SAT", "YYZ"
-]);
-
-export const ALL_MAJOR_AIRPORTS: Record<string, { name: string; lat: number; lng: number; cat: "VFR" | "MVFR" | "IFR" | "LIFR" }> = {
-  // Texas & Gulf Coast
-  CRP: { name: "Corpus Christi Intl", lat: 27.7704, lng: -97.5012, cat: "VFR" },
-  NGP: { name: "NAS Corpus Christi", lat: 27.6926, lng: -97.2913, cat: "VFR" },
-  RKP: { name: "Rockport Aransas Co", lat: 28.0850, lng: -97.0425, cat: "VFR" },
-  ALI: { name: "Alice Municipal", lat: 27.7408, lng: -98.0269, cat: "VFR" },
-  SAT: { name: "San Antonio Intl", lat: 29.5337, lng: -98.4698, cat: "VFR" },
-  AUS: { name: "Austin-Bergstrom Intl", lat: 30.1945, lng: -97.6699, cat: "VFR" },
-  IAH: { name: "Houston George Bush", lat: 29.9902, lng: -95.3368, cat: "VFR" },
-  HOU: { name: "Houston William P Hobby", lat: 29.6454, lng: -95.2789, cat: "VFR" },
-  BRO: { name: "Brownsville/South Padre", lat: 25.9068, lng: -97.4259, cat: "VFR" },
-  HRL: { name: "Valley Intl Harlingen", lat: 26.2285, lng: -97.6544, cat: "VFR" },
-  MFE: { name: "McAllen Miller Intl", lat: 26.1758, lng: -98.2386, cat: "VFR" },
-  LRD: { name: "Laredo Intl", lat: 27.5438, lng: -99.4616, cat: "VFR" },
-  DFW: { name: "Dallas/Fort Worth Intl", lat: 32.8998, lng: -97.0403, cat: "VFR" },
-  DAL: { name: "Dallas Love Field", lat: 32.8471, lng: -96.8518, cat: "VFR" },
-  ELP: { name: "El Paso Intl", lat: 31.8072, lng: -106.3778, cat: "VFR" },
-
-  // Midwest & North
-  ORD: { name: "Chicago O'Hare Intl", lat: 41.9742, lng: -87.9073, cat: "VFR" },
-  MDW: { name: "Chicago Midway Intl", lat: 41.7868, lng: -87.7522, cat: "VFR" },
-  BMI: { name: "Central Illinois Regional", lat: 40.4771, lng: -88.9159, cat: "VFR" },
-  CMI: { name: "Champaign Willard", lat: 40.0392, lng: -88.2781, cat: "VFR" },
-  PIA: { name: "General Downing Peoria", lat: 40.6642, lng: -89.6933, cat: "VFR" },
-  EVV: { name: "Evansville Regional", lat: 38.0378, lng: -87.5306, cat: "VFR" },
-  IND: { name: "Indianapolis Intl", lat: 39.7173, lng: -86.2944, cat: "VFR" },
-  CVG: { name: "Cincinnati/Northern KY", lat: 39.0461, lng: -84.6622, cat: "VFR" },
-  DTW: { name: "Detroit Metropolitan", lat: 42.2162, lng: -83.3554, cat: "VFR" },
-  CLE: { name: "Cleveland Hopkins Intl", lat: 41.4117, lng: -81.8498, cat: "VFR" },
-  MSP: { name: "Minneapolis-St Paul Intl", lat: 44.8848, lng: -93.2223, cat: "VFR" },
-  MKE: { name: "Milwaukee Mitchell Intl", lat: 42.9472, lng: -87.8966, cat: "VFR" },
-  STL: { name: "St Louis Lambert Intl", lat: 38.7487, lng: -90.3654, cat: "VFR" },
-  MCI: { name: "Kansas City Intl", lat: 39.2976, lng: -94.7139, cat: "VFR" },
-
-  // East Coast & Southeast
-  MIA: { name: "Miami Intl", lat: 25.7959, lng: -80.2870, cat: "VFR" },
-  FLL: { name: "Fort Lauderdale-Hollywood", lat: 26.0726, lng: -80.1527, cat: "VFR" },
-  PBI: { name: "Palm Beach Intl", lat: 26.6832, lng: -80.0956, cat: "VFR" },
-  RSW: { name: "Southwest Florida Intl", lat: 26.5362, lng: -81.7552, cat: "VFR" },
-  TPA: { name: "Tampa Intl", lat: 27.9755, lng: -82.5332, cat: "VFR" },
-  MCO: { name: "Orlando Intl", lat: 28.4294, lng: -81.3090, cat: "VFR" },
-  JAX: { name: "Jacksonville Intl", lat: 30.4941, lng: -81.6879, cat: "VFR" },
-  ATL: { name: "Hartsfield-Jackson Atlanta", lat: 33.6407, lng: -84.4277, cat: "VFR" },
-  CLT: { name: "Charlotte Douglas Intl", lat: 35.2140, lng: -80.9431, cat: "VFR" },
-  RDU: { name: "Raleigh-Durham Intl", lat: 35.8776, lng: -78.7875, cat: "VFR" },
-  BNA: { name: "Nashville Intl", lat: 36.1245, lng: -86.6782, cat: "VFR" },
-  MEM: { name: "Memphis Intl", lat: 35.0424, lng: -89.9767, cat: "VFR" },
-  JFK: { name: "New York John F. Kennedy", lat: 40.6413, lng: -73.7781, cat: "MVFR" },
-  LGA: { name: "New York LaGuardia", lat: 40.7769, lng: -73.8740, cat: "VFR" },
-  EWR: { name: "Newark Liberty Intl", lat: 40.6925, lng: -74.1687, cat: "VFR" },
-  HPN: { name: "Westchester County", lat: 41.0669, lng: -73.7076, cat: "VFR" },
-  BOS: { name: "Boston Logan Intl", lat: 42.3656, lng: -71.0096, cat: "VFR" },
-  PHL: { name: "Philadelphia Intl", lat: 39.8719, lng: -75.2411, cat: "VFR" },
-  BWI: { name: "Baltimore/Washington Intl", lat: 39.1754, lng: -76.6683, cat: "VFR" },
-  IAD: { name: "Washington Dulles Intl", lat: 38.9445, lng: -77.4558, cat: "VFR" },
-  DCA: { name: "Reagan Washington National", lat: 38.8512, lng: -77.0377, cat: "VFR" },
-  SYR: { name: "Syracuse Hancock Intl", lat: 43.1111, lng: -76.1063, cat: "VFR" },
-  AVP: { name: "Wilkes-Barre/Scranton", lat: 41.3385, lng: -75.7242, cat: "VFR" },
-  CAE: { name: "Columbia Metropolitan", lat: 33.9388, lng: -81.1195, cat: "VFR" },
-  MSY: { name: "Louis Armstrong New Orleans", lat: 29.9911, lng: -90.2580, cat: "MVFR" },
-
-  // West Coast & Mountain
-  LAX: { name: "Los Angeles Intl", lat: 33.9416, lng: -118.4085, cat: "VFR" },
-  SAN: { name: "San Diego Intl", lat: 32.7336, lng: -117.1897, cat: "VFR" },
-  SFO: { name: "San Francisco Intl", lat: 37.6213, lng: -122.3790, cat: "IFR" },
-  SJC: { name: "Norman Y. Mineta San Jose", lat: 37.3626, lng: -121.9290, cat: "VFR" },
-  OAK: { name: "Oakland San Francisco Bay", lat: 37.7213, lng: -122.2207, cat: "VFR" },
-  SMF: { name: "Sacramento Intl", lat: 38.6954, lng: -121.5908, cat: "VFR" },
-  SEA: { name: "Seattle-Tacoma Intl", lat: 47.4502, lng: -122.3088, cat: "MVFR" },
-  PDX: { name: "Portland Intl", lat: 45.5898, lng: -122.5951, cat: "VFR" },
-  PHX: { name: "Phoenix Sky Harbor", lat: 33.4352, lng: -112.0101, cat: "VFR" },
-  TUS: { name: "Tucson Intl", lat: 32.1161, lng: -110.9410, cat: "VFR" },
-  ABQ: { name: "Albuquerque Sunport", lat: 35.0402, lng: -106.6092, cat: "VFR" },
-  LAS: { name: "Harry Reid Intl Las Vegas", lat: 36.0840, lng: -115.1537, cat: "VFR" },
-  SLC: { name: "Salt Lake City Intl", lat: 40.7884, lng: -111.9778, cat: "VFR" },
-  DEN: { name: "Denver Intl", lat: 39.8561, lng: -104.6737, cat: "VFR" },
-  COS: { name: "Colorado Springs", lat: 38.8058, lng: -104.7008, cat: "VFR" },
-  BIL: { name: "Billings Logan Intl", lat: 45.8077, lng: -108.5428, cat: "VFR" },
-  BOI: { name: "Boise Air Terminal", lat: 43.5644, lng: -116.2228, cat: "VFR" },
-
-  // Canada & International
-  YYZ: { name: "Toronto Pearson Intl", lat: 43.6777, lng: -79.6248, cat: "VFR" },
-  YVR: { name: "Vancouver Intl", lat: 49.1967, lng: -123.1815, cat: "VFR" },
-  GDL: { name: "Guadalajara Intl", lat: 20.5218, lng: -103.3112, cat: "VFR" },
-  PVR: { name: "Puerto Vallarta Intl", lat: 20.6801, lng: -105.2541, cat: "VFR" },
-  CUN: { name: "Cancun Intl", lat: 21.0365, lng: -86.8771, cat: "VFR" },
-  SJU: { name: "Luis Munoz Marin San Juan", lat: 18.4394, lng: -66.0018, cat: "VFR" },
-};
-
-function destinationDistanceNm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 3440.065; // Earth radius in NM
-  const phi1 = (lat1 * Math.PI) / 180;
-  const phi2 = (lat2 * Math.PI) / 180;
-  const dphi = ((lat2 - lat1) * Math.PI) / 180;
-  const dlambda = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a = Math.sin(dphi / 2) * Math.sin(dphi / 2) +
-            Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlambda / 2) * Math.sin(dlambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function isPointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
-  const x = point[0];
-  const y = point[1];
-  let inside = false;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i][0], yi = polygon[i][1];
-    const xj = polygon[j][0], yj = polygon[j][1];
-
-    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-
-  return inside;
-}
-
 export default function BriefingMap({
   depAirport,
   arrAirport,
@@ -424,19 +348,22 @@ export default function BriefingMap({
   showSatelliteClouds = true,
   showNwsWarnings = true,
   showRadarRings = true,
+  radarMode = "SMOOTH",
   rainViewerHost,
   rainViewerPath,
-  rainViewerColorScheme = 3,
+  rainViewerColorScheme = 4,
   rainViewerSmooth = true,
   showAllAirports = false,
   showAirportMarkers = true,
   corridorNm = 200,
   liveHazards = [],
   liveLightning = [],
+  liveAirportConditions = {},
   showTurbulence = true,
   turbulenceAltBand = "ALL",
   liveTurbulence = [],
-  filteredAlerts,
+  userLocation = null,
+  onLocateMe,
 }: BriefingMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -447,16 +374,19 @@ export default function BriefingMap({
   const radarRingsRef = useRef<L.LayerGroup | null>(null);
   const lightningLayerRef = useRef<L.LayerGroup | null>(null);
   const turbulenceLayerRef = useRef<L.LayerGroup | null>(null);
-  const sigmetLayersRef = useRef<L.Polygon[]>([]);
+  const sigmetLayersRef = useRef<L.Layer[]>([]);
   const routeLayerRef = useRef<L.Polyline | null>(null);
   const corridorLayerRef = useRef<L.Polygon | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const airportNodeMarkersRef = useRef<L.Marker[]>([]);
-  const alertMarkersRef = useRef<L.Marker[]>([]);
   const tapMarkerRef = useRef<L.Marker | null>(null);
+  const demoRainLayersRef = useRef<L.Circle[]>([]);
+  const userLocationMarkerRef = useRef<L.Marker | null>(null);
+  const userAccuracyCircleRef = useRef<L.Circle | null>(null);
 
   const baseLayerRef = useRef<L.TileLayer | null>(null);
   const latestBoundsRef = useRef<L.LatLngBounds | null>(null);
+  const [mapZoom, setMapZoom] = useState<number>(4);
 
   useEffect(() => {
     fixLeafletIcon();
@@ -467,31 +397,91 @@ export default function BriefingMap({
       mapRef.current.remove();
       mapRef.current = null;
     }
-    const container = mapContainerRef.current as HTMLDivElement & { _leaflet_id?: string | null };
-    if (container._leaflet_id) {
-      container._leaflet_id = null;
+
+    const container = mapContainerRef.current;
+    if ((container as any)._leaflet_id) {
+      (container as any)._leaflet_id = null;
     }
 
-    const defaultCenter: [number, number] = [39.8283, -98.5795];
+    let initialCenter: [number, number] = [38.5, -96.0];
+    let initialZoom = 4;
+    try {
+      const savedViewStr = typeof window !== "undefined" ? localStorage.getItem("csp_map_last_view") : null;
+      if (savedViewStr) {
+        const saved = JSON.parse(savedViewStr);
+        if (saved && typeof saved.lat === "number" && typeof saved.lng === "number" && typeof saved.zoom === "number") {
+          initialCenter = [saved.lat, saved.lng];
+          initialZoom = Math.min(10, Math.max(3, saved.zoom));
+        }
+      }
+    } catch (e) {}
+
     const map = L.map(container, {
-      center: defaultCenter,
-      zoom: 4,
+      center: initialCenter,
+      zoom: initialZoom,
       minZoom: 2,
       maxZoom: 18,
       zoomControl: false,
       attributionControl: false,
+      preferCanvas: true, // Hardware-accelerate all vector paths on GPU Canvas
+      fadeAnimation: true,
+      zoomAnimation: true,
+      markerZoomAnimation: true,
+      wheelDebounceTime: 40,
+      inertia: true,
+      inertiaDeceleration: 3000,
+      inertiaMaxSpeed: 1500,
     });
     mapRef.current = map;
+    setMapZoom(map.getZoom());
+
+    map.on("zoomend", () => {
+      if (mapRef.current) {
+        setMapZoom(mapRef.current.getZoom());
+      }
+    });
+
+    map.on("moveend", () => {
+      if (mapRef.current) {
+        const center = mapRef.current.getCenter();
+        const zoom = mapRef.current.getZoom();
+        try {
+          localStorage.setItem("csp_map_last_view", JSON.stringify({ lat: center.lat, lng: center.lng, zoom }));
+        } catch (e) {}
+      }
+    });
+
     (window as any).leafletMapFlyTo = (lat: number, lng: number, zoom = 9) => {
       if (map) {
         map.flyTo([lat, lng], zoom, { animate: true, duration: 1.2 });
       }
     };
 
-    const baseTile = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      maxZoom: 20,
-      zIndex: 1,
-    }).addTo(map);
+    (window as any).leafletRecenterRoute = () => {
+      if (map && latestBoundsRef.current) {
+        map.fitBounds(latestBoundsRef.current, { padding: [70, 70], maxZoom: 8, animate: true });
+      }
+    };
+
+    (window as any).leafletFlyToUserLocation = (lat: number, lng: number, zoom = 11) => {
+      if (map) {
+        map.flyTo([lat, lng], zoom, { animate: true, duration: 1.2 });
+      }
+    };
+
+    // Real High-Detail Aeronautical Base Map (CartoDB Voyager raster tiles with persistent offline storage)
+    const baseTile = new (OfflineTileLayer as any)(
+      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+      {
+        subdomains: "abcd",
+        maxZoom: 20,
+        maxNativeZoom: 18,
+        keepBuffer: 3,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        zIndex: 1,
+      }
+    ).addTo(map);
     baseLayerRef.current = baseTile;
 
     // Map Press-and-Hold Location Handler (500ms threshold - prevents accidental pin drops while panning on phones)
@@ -562,10 +552,7 @@ export default function BriefingMap({
     const resizeObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
         if (mapRef.current) {
-          mapRef.current.invalidateSize();
-          if (latestBoundsRef.current) {
-            mapRef.current.fitBounds(latestBoundsRef.current, { padding: [50, 50], animate: false });
-          }
+          mapRef.current.invalidateSize({ debounceMoveend: true });
         }
       });
     });
@@ -582,7 +569,95 @@ export default function BriefingMap({
     };
   }, []);
 
-  // Render Interactive ForeFlight Airport Nodes (Major Hubs & Active Route)
+  // Render High-Visibility Live GPS Location & Pulsing Radar Halo
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (userLocationMarkerRef.current) {
+      userLocationMarkerRef.current.remove();
+      userLocationMarkerRef.current = null;
+    }
+    if (userAccuracyCircleRef.current) {
+      userAccuracyCircleRef.current.remove();
+      userAccuracyCircleRef.current = null;
+    }
+
+    if (!userLocation) return;
+
+    const { lat, lng, accuracy, altitude, speed, heading } = userLocation;
+
+    // Draw accuracy circle
+    if (accuracy && accuracy > 0) {
+      const circle = L.circle([lat, lng], {
+        radius: Math.min(accuracy, 5000),
+        color: "#0284c7",
+        fillColor: "#38bdf8",
+        fillOpacity: 0.15,
+        weight: 1.5,
+        dashArray: "4, 4",
+        interactive: false,
+      }).addTo(map);
+      userAccuracyCircleRef.current = circle;
+    }
+
+    // High-visibility GPS dot with pulsating halo and optional heading indicator
+    const headingDeg = typeof heading === "number" && !isNaN(heading) ? heading : null;
+    const speedKt = typeof speed === "number" && speed > 0 ? Math.round(speed * 1.94384) : 0;
+    const altFt = typeof altitude === "number" ? Math.round(altitude * 3.28084) : null;
+
+    const icon = L.divIcon({
+      className: "custom-user-gps-location-marker",
+      html: `
+        <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+          <span style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background-color: rgba(2, 132, 199, 0.3); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
+          <span style="position: absolute; width: 22px; height: 22px; border-radius: 50%; background-color: rgba(56, 189, 248, 0.5);"></span>
+          <span style="position: relative; width: 14px; height: 14px; border-radius: 50%; background-color: #0284c7; border: 2.5px solid #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);"></span>
+          ${headingDeg !== null ? `
+            <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; transform: rotate(${headingDeg}deg);">
+              <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 10px solid #0284c7; transform: translateY(-16px); filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));"></div>
+            </div>
+          ` : ""}
+        </div>
+      `,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+    });
+
+    const marker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(map);
+
+    marker.bindPopup(`
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 4px; min-width: 200px;">
+        <div style="font-weight: 900; font-size: 13px; color: #0284c7; display: flex; align-items: center; gap: 4px;">
+          <span>📍 CURRENT GPS POSITION</span>
+        </div>
+        <div style="font-size: 11px; font-weight: 800; color: #334155; margin-top: 4px;">
+          ${lat.toFixed(4)}° N, ${lng.toFixed(4)}° W
+        </div>
+        <div style="margin-top: 6px; padding: 6px; background-color: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; font-size: 10.5px; font-weight: 700; color: #0369a1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+          <div>Accuracy: <strong>±${Math.round(accuracy || 0)}m</strong></div>
+          <div>Ground Speed: <strong>${speedKt} KT</strong></div>
+          <div>Altitude: <strong>${altFt !== null ? `${altFt} FT` : "N/A"}</strong></div>
+          <div>Heading: <strong>${headingDeg !== null ? `${Math.round(headingDeg)}°` : "N/A"}</strong></div>
+        </div>
+      </div>
+    `);
+
+    userLocationMarkerRef.current = marker;
+
+    return () => {
+      if (userLocationMarkerRef.current) {
+        userLocationMarkerRef.current.remove();
+        userLocationMarkerRef.current = null;
+      }
+      if (userAccuracyCircleRef.current) {
+        userAccuracyCircleRef.current.remove();
+        userAccuracyCircleRef.current = null;
+      }
+    };
+  }, [userLocation]);
+
+  // Render Interactive ForeFlight Airport Nodes (Major Hubs & Active Route with Dynamic Zoom LOD)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -599,22 +674,43 @@ export default function BriefingMap({
     ]);
 
     Object.entries(ALL_MAJOR_AIRPORTS).forEach(([code, data]) => {
-      const isHub = MAJOR_HUBS.has(code);
       const isRoute = routeAirports.has(code);
+      const isMegaHub = MEGA_HUBS.has(code);
+      const isMajorHub = MAJOR_HUBS.has(code);
 
-      // Unless showAllAirports is explicitly toggled, only show major airline hubs & route legs
-      if (!showAllAirports && !isHub && !isRoute) {
-        return;
+      // Dynamic Zoom Consolidation:
+      // - Active Route (DEP, ARR, Waypoints): ALWAYS visible at all zoom levels
+      // - Zoom <= 4 (Continental US view): Show only Mega Hubs (ORD, DFW, ATL, CLT, MIA, LAX, DEN, JFK, SFO, SEA, PHX) + Route
+      // - Zoom 5..6 (Multi-State Regional): Show Major Airline Hubs + Route
+      // - Zoom >= 7 (Terminal / Local Area): Show all regional and local airports
+      if (!isRoute) {
+        if (mapZoom <= 4) {
+          if (!isMegaHub) return;
+        } else if (mapZoom <= 6) {
+          if (!isMajorHub && !showAllAirports) return;
+        }
       }
 
+      const live = liveAirportConditions[code] || liveAirportConditions[`K${code}`] || liveAirportConditions[`C${code}`];
+      const currentCat = live?.cat || data.cat || "VFR";
+
       const catColor =
-        data.cat === "VFR"
+        currentCat === "VFR"
           ? "bg-emerald-500 text-emerald-950 border-emerald-400"
-          : data.cat === "MVFR"
+          : currentCat === "MVFR"
           ? "bg-sky-500 text-sky-950 border-sky-400"
-          : data.cat === "IFR"
-          ? "bg-rose-500 text-white border-rose-400"
-          : "bg-purple-600 text-white border-purple-400";
+          : currentCat === "IFR"
+          ? "bg-rose-500 text-white border-rose-400 animate-pulse"
+          : "bg-purple-600 text-white border-purple-400 animate-pulse";
+
+      const catColorHex =
+        currentCat === "VFR"
+          ? "#059669"
+          : currentCat === "MVFR"
+          ? "#0284c7"
+          : currentCat === "IFR"
+          ? "#e11d48"
+          : "#9333ea";
 
       const icon = L.divIcon({
         className: "custom-foreflight-airport-marker",
@@ -636,10 +732,17 @@ export default function BriefingMap({
         }
       });
 
+      const obsDetails = live
+        ? `<div style="font-size: 9.5px; color: #475569; margin-top: 3px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;">${live.winds ? `Winds: <strong>${live.winds}</strong>` : ""}${live.tempC !== undefined ? ` • <strong>${live.tempC}°C</strong>` : ""}${live.altimInHg ? ` • <strong>${live.altimInHg}"</strong>` : ""}</div>`
+        : "";
+
       marker.bindTooltip(`
-        <div style="font-family: sans-serif; font-weight: 700; font-size: 11px; color: #0f172a;">
-          ${code} - ${data.name}
-          <div style="font-size: 9px; color: #0284c7; margin-top: 2px;">Flight Category: ${data.cat}</div>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; font-weight: 700; font-size: 11px; color: #0f172a; min-width: 130px;">
+          <div style="font-size: 12px; font-weight: 900; color: #0f172a;">${code} - ${data.name}</div>
+          <div style="font-size: 10px; font-weight: 800; color: ${catColorHex}; margin-top: 3px; display: flex; align-items: center; gap: 4px;">
+            <span>● LIVE ${currentCat}</span>
+          </div>
+          ${obsDetails}
         </div>
       `, { sticky: true });
 
@@ -650,7 +753,7 @@ export default function BriefingMap({
       airportNodeMarkersRef.current.forEach((m) => m.remove());
       airportNodeMarkersRef.current = [];
     };
-  }, [onAirportSelect, showAllAirports, showAirportMarkers, depAirport, arrAirport, waypoints]);
+  }, [onAirportSelect, showAllAirports, showAirportMarkers, depAirport, arrAirport, waypoints, mapZoom, liveAirportConditions]);
 
   // Update Multi-Waypoint Route, Corridor Buffer, and Map bounds
   useEffect(() => {
@@ -752,7 +855,12 @@ export default function BriefingMap({
       const bounds = L.latLngBounds(fitPoints);
       latestBoundsRef.current = bounds;
       activeMap.invalidateSize();
-      activeMap.fitBounds(bounds, { padding: [50, 50], animate: false });
+      activeMap.fitBounds(bounds, { padding: [80, 80], maxZoom: 8, animate: false });
+
+      // Auto-precache map tiles along active flight route into persistent storage for offline Airplane Mode
+      if (typeof navigator !== "undefined" && navigator.onLine && coordsList.length >= 2) {
+        precacheFlightRoute(coordsList, corridorNm > 0 && corridorNm < 9999 ? corridorNm : 80, 3, 9).catch(() => {});
+      }
     }
 
     updateRoute();
@@ -766,7 +874,7 @@ export default function BriefingMap({
     };
   }, [depAirport, arrAirport, waypoints, corridorNm, onAirportSelect, showFlightPlan]);
 
-  // Real-Time NWS WSR-88D Level III Base Reflectivity (N0Q 0.5° Tilt Radar Scan)
+  // Real-Time NOAA WSR-88D NEXRAD Base Reflectivity (High-Res 0.5° Scan - Classic Green)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -782,13 +890,66 @@ export default function BriefingMap({
         format: "image/png",
         transparent: true,
         version: "1.1.1",
-        opacity: 0.78,
+        opacity: 0.8,
         zIndex: 20,
-        attribution: "NOAA NWS WSR-88D Level III Base Reflectivity (N0Q)"
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        keepBuffer: 2,
+        attribution: "NOAA NWS WSR-88D NEXRAD"
       }).addTo(map);
       radarLayerRef.current = radar;
     }
   }, [showRadar]);
+
+  // Handle Demo Rain / Storm Overlay
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (demoRainLayersRef.current) {
+      demoRainLayersRef.current.forEach((layer) => layer.remove());
+      demoRainLayersRef.current = [];
+    }
+
+    if (showDemoRain) {
+      const depLatLng = AIRPORT_COORDS[depAirport.toUpperCase()];
+      const arrLatLng = AIRPORT_COORDS[arrAirport.toUpperCase()];
+
+      if (!depLatLng || !arrLatLng) return;
+
+      const midLat = (depLatLng[0] + arrLatLng[0]) / 2;
+      const midLng = (depLatLng[1] + arrLatLng[1]) / 2;
+
+      // Draw light rain (green) circle - 60km radius
+      const lightRain = L.circle([midLat, midLng], {
+        radius: 60000,
+        color: "#22c55e",
+        fillColor: "#22c55e",
+        fillOpacity: 0.35,
+        weight: 1,
+      }).addTo(map);
+
+      // Draw moderate rain (yellow) circle offset slightly - 35km radius
+      const modRain = L.circle([midLat + 0.1, midLng + 0.1], {
+        radius: 35000,
+        color: "#eab308",
+        fillColor: "#eab308",
+        fillOpacity: 0.5,
+        weight: 1,
+      }).addTo(map);
+
+      // Draw heavy thunderstorm (red) circle offset - 15km radius
+      const heavyRain = L.circle([midLat + 0.15, midLng + 0.15], {
+        radius: 15000,
+        color: "#ef4444",
+        fillColor: "#ef4444",
+        fillOpacity: 0.65,
+        weight: 1.5,
+      }).addTo(map);
+
+      demoRainLayersRef.current = [lightRain, modRain, heavyRain];
+    }
+  }, [showDemoRain, depAirport, arrAirport]);
 
   // Live GOES Infrared Satellite Cloud Tops Overlay
   useEffect(() => {
@@ -808,6 +969,11 @@ export default function BriefingMap({
         version: "1.1.1",
         opacity: 0.55,
         zIndex: 18,
+        minZoom: 1,
+        maxZoom: 18,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        keepBuffer: 2,
         attribution: "NOAA GOES Satellite"
       }).addTo(map);
       satelliteLayerRef.current = sat;
@@ -832,6 +998,9 @@ export default function BriefingMap({
         version: "1.1.1",
         opacity: 0.75,
         zIndex: 19,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        keepBuffer: 2,
         attribution: "NWS Severe Weather Warnings"
       }).addTo(map);
       nwsWarningsLayerRef.current = nwa;
@@ -950,7 +1119,7 @@ export default function BriefingMap({
           const statusText = hasActiveCells ? "#991b1b" : "#166534";
 
           stationMarker.bindPopup(`
-            <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #0f172a; padding: 6px; min-width: 270px; max-width: 320px;">
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 6px; min-width: 270px; max-width: 320px;">
               <div style="font-weight: 900; font-size: 13px; color: #059669; display: flex; align-items: center; justify-content: space-between;">
                 <span>📡 ${st.id} DOPPLER RADAR</span>
                 <span style="font-size: 10px; background: #dcfce7; border: 1px solid #86efac; color: #166534; padding: 2px 6px; border-radius: 6px; font-weight: 800;">SCANNING (0.5° N0Q)</span>
@@ -1042,17 +1211,17 @@ export default function BriefingMap({
             const color = isConvective ? "#ef4444" : isTurb ? "#f59e0b" : isIce ? "#06b6d4" : "#a855f7";
             const fillColor = isConvective ? "#dc2626" : isTurb ? "#d97706" : isIce ? "#0891b2" : "#9333ea";
 
+            // 1. Draw Bold Advisory Polygon
             const poly = L.polygon(hazard.coords, {
               color,
               fillColor,
-              fillOpacity: 0.25,
-              weight: 2,
-              dashArray: "4, 4",
+              fillOpacity: 0.32,
+              weight: isConvective ? 2.5 : 2.0,
+              dashArray: isConvective ? undefined : "6, 4",
             }).addTo(activeMap);
 
-            poly.on("click", (e: L.LeafletMouseEvent) => {
-              L.DomEvent.stopPropagation(e);
-              const clickPt: [number, number] = [e.latlng.lat, e.latlng.lng];
+            const openHazardPopup = (latlng: L.LatLng) => {
+              const clickPt: [number, number] = [latlng.lat, latlng.lng];
 
               // Find ALL active hazards overlapping this tapped location
               const matchingHazards = (liveHazards || []).filter((h) => {
@@ -1074,7 +1243,7 @@ export default function BriefingMap({
               if (matchingHazards.length === 0) return;
 
               let popupHtml = `
-                <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #0f172a; padding: 4px; max-width: 320px; max-height: 380px; overflow-y: auto;">
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 4px; max-width: 320px; max-height: 380px; overflow-y: auto;">
                   <div style="font-weight: 900; font-size: 12px; text-transform: uppercase; color: #0284c7; background: #e0f2fe; padding: 6px 10px; border-radius: 8px; border: 1px solid #bae6fd; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
                     <span>⚠️ ${matchingHazards.length} OVERLAPPING NOAA ADVISORIES</span>
                     <span style="font-size: 10px; font-weight: 800; background: #0284c7; color: white; padding: 2px 6px; border-radius: 12px;">ACTIVE</span>
@@ -1102,7 +1271,7 @@ export default function BriefingMap({
                     <div style="font-size: 11px; font-weight: 800; color: #0f172a; margin-bottom: 4px;">
                       ${hz.title}
                     </div>
-                    <p style="font-size: 10.5px; line-height: 1.4; color: #334155; margin: 0; font-family: monospace; background: white; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    <p style="font-size: 10.5px; line-height: 1.4; color: #334155; margin: 0; font-family: 'SF Mono', 'SFProMono-Regular', ui-monospace, Menlo, Monaco, Consolas, monospace; background: white; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0;">
                       ${hz.decodedSummary || hz.rawText}
                     </p>
                   </div>
@@ -1112,12 +1281,50 @@ export default function BriefingMap({
               popupHtml += `</div></div>`;
 
               L.popup({ maxWidth: 340 })
-                .setLatLng(e.latlng)
+                .setLatLng(latlng)
                 .setContent(popupHtml)
                 .openOn(activeMap);
+            };
+
+            poly.on("click", (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e);
+              openHazardPopup(e.latlng);
             });
 
             sigmetLayersRef.current.push(poly);
+
+            // 2. Draw Center Identification Badge inside the Polygon
+            const centerLat = hazard.coords.reduce((acc, c) => acc + c[0], 0) / hazard.coords.length;
+            const centerLng = hazard.coords.reduce((acc, c) => acc + c[1], 0) / hazard.coords.length;
+
+            const iconText = isConvective
+              ? `⚡ SIGMET ${hazard.seriesId}`
+              : isTurb
+              ? `🌬 TANGO ${hazard.seriesId}`
+              : isIce
+              ? `❄️ ZULU ${hazard.seriesId}`
+              : `🌫 SIERRA ${hazard.seriesId}`;
+
+            const badgeBorderColor = isConvective ? "#ef4444" : isTurb ? "#f59e0b" : isIce ? "#06b6d4" : "#a855f7";
+
+            const badgeIcon = L.divIcon({
+              className: "",
+              iconSize: [84, 22],
+              iconAnchor: [42, 11],
+              html: `
+                <div style="background: rgba(15, 23, 42, 0.92); border: 1.5px solid ${badgeBorderColor}; border-radius: 9999px; height: 22px; padding: 0 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.4); pointer-events: auto; cursor: pointer; white-space: nowrap;">
+                  <span style="color: #ffffff; font-weight: 800; font-size: 9.5px; font-family: 'SF Mono', 'SFProMono-Regular', ui-monospace, Menlo, Monaco, Consolas, monospace; letter-spacing: 0.02em;">${iconText}</span>
+                </div>
+              `,
+            });
+
+            const centerMarker = L.marker([centerLat, centerLng], { icon: badgeIcon }).addTo(activeMap);
+            centerMarker.on("click", (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e);
+              openHazardPopup(L.latLng(centerLat, centerLng));
+            });
+
+            sigmetLayersRef.current.push(centerMarker);
           }
         });
       }
@@ -1130,7 +1337,7 @@ export default function BriefingMap({
     };
   }, [liveHazards, showSigmet, showSigmetConvective, showSigmetTurbulence, showSigmetIcing, showSigmetIfr]);
 
-  // Render Real-Time Individual Lightning Strike Locations (100% Co-Located inside Radar Storm Cells)
+  // Render Real-Time Lightning Strikes with Dynamic Zoom Consolidation & Clustering
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -1148,11 +1355,9 @@ export default function BriefingMap({
       let strikesToDraw: LiveLightningStrike[] = [];
 
       if (liveLightning && liveLightning.length > 0) {
-        // Filter nationwide strikes strictly by age <= lightningMaxAge
         strikesToDraw = liveLightning.filter((st) => (st.ageMinutes ?? 0) <= lightningMaxAge);
       }
 
-      // If liveLightning API is loading or empty, build clean co-located strikes for active convective cells
       if (strikesToDraw.length === 0 && convectiveCells.length > 0) {
         convectiveCells.forEach((cell, cellIdx) => {
           const polyCoords = cell.coords;
@@ -1167,7 +1372,6 @@ export default function BriefingMap({
           const leadLatVec = Math.sin(rad);
           const leadLonVec = Math.cos(rad);
 
-          // Generate interior points co-located strictly inside the convective storm polygon
           const cellPoints: Array<{ lat: number; lng: number; forwardScore: number }> = [];
           let attempts = 0;
 
@@ -1183,9 +1387,7 @@ export default function BriefingMap({
           }
 
           if (cellPoints.length > 0) {
-            // Sort by forwardScore so fresh 0-3m strikes sit directly on the leading storm front edge
             cellPoints.sort((a, b) => b.forwardScore - a.forwardScore);
-
             const count = Math.min(14, cellPoints.length);
             for (let k = 0; k < count; k++) {
               const ptIdx = Math.floor((k / count) * cellPoints.length);
@@ -1215,63 +1417,173 @@ export default function BriefingMap({
         });
       }
 
-      // Limit to 45 top-priority recent strikes to keep rendering lightweight and 60 FPS
-      const cappedStrikes = strikesToDraw.slice(0, 45);
+      // Zoom Level Consolidation:
+      // When zoomed out (mapZoom <= 5), cluster strikes within 45 NM into a single storm cluster badge
+      if (mapZoom <= 5) {
+        interface StormCluster {
+          lat: number;
+          lng: number;
+          count: number;
+          freshCount: number;
+          strikes: LiveLightningStrike[];
+        }
+        const clusters: StormCluster[] = [];
 
-      cappedStrikes.forEach((st) => {
-        const isCG = st.type === "CG";
-        const age = st.ageMinutes ?? 0;
-
-        // Clean ForeFlight/Garmin Pilot style vector lightning bolt (no heavy pulsing circles)
-        const isFresh = age <= 3;
-        const isMid = age > 3 && age <= 8;
-
-        const fill = isFresh ? "#eab308" : isMid ? "#f59e0b" : "#d97706";
-        const stroke = isFresh ? "#854d0e" : isMid ? "#78350f" : "#451a03";
-        const opacity = isFresh ? 1.0 : isMid ? 0.75 : 0.45;
-        const size = isFresh ? 14 : isMid ? 12 : 10;
-        const ageLabel = age <= 1 ? "JUST NOW (< 1 min)" : `${age} MIN AGO`;
-
-        const lightningIcon = L.divIcon({
-          className: "custom-lightning-strike-icon",
-          html: `
-            <div style="opacity: ${opacity}; display: flex; align-items: center; justify-content: center; width: ${size}px; height: ${size}px; cursor: pointer; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));">
-              <svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${fill}" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-            </div>
-          `,
-          iconSize: [size, size],
-          iconAnchor: [size / 2, size / 2],
+        strikesToDraw.forEach((st) => {
+          const existing = clusters.find((c) => destinationDistanceNm(st.lat, st.lng, c.lat, c.lng) <= 45);
+          if (existing) {
+            existing.count++;
+            if ((st.ageMinutes ?? 0) <= 3) existing.freshCount++;
+            existing.strikes.push(st);
+          } else {
+            clusters.push({
+              lat: st.lat,
+              lng: st.lng,
+              count: 1,
+              freshCount: (st.ageMinutes ?? 0) <= 3 ? 1 : 0,
+              strikes: [st],
+            });
+          }
         });
 
-        const marker = L.marker([st.lat, st.lng], { icon: lightningIcon });
-        marker.bindPopup(`
-          <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #0f172a; padding: 4px; min-width: 220px;">
-            <div style="font-weight: 900; font-size: 12px; color: #b45309; display: flex; align-items: center; justify-content: space-between;">
-              <span>⚡ LIGHTNING STRIKE</span>
-              <span style="font-size: 10px; background: ${isFresh ? "#fef08a" : "#fef3c7"}; border: 1px solid #fde68a; color: #92400e; padding: 1px 5px; border-radius: 4px; font-weight: 800;">${st.type === "CG" ? "Cloud-to-Ground" : "Cloud-to-Cloud"}</span>
+        clusters.slice(0, 20).forEach((cl) => {
+          if (cl.count > 1) {
+            const clusterIcon = L.divIcon({
+              className: "custom-lightning-cluster-pill",
+              html: `
+                <div style="
+                  box-sizing: border-box;
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 3px;
+                  padding: 2px 6px;
+                  background: rgba(15, 23, 42, 0.94);
+                  border: 1px solid rgba(234, 179, 8, 0.7);
+                  border-radius: 9999px;
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+                  color: #fef08a;
+                  font-family: 'SF Mono', 'SFProMono-Regular', ui-monospace, Menlo, Monaco, Consolas, monospace;
+                  font-size: 9.5px;
+                  font-weight: 800;
+                  cursor: pointer;
+                  white-space: nowrap;
+                ">
+                  <span style="color: #eab308; font-size: 10px;">⚡</span>
+                  <span>${cl.count}</span>
+                </div>
+              `,
+              iconSize: [44, 20],
+              iconAnchor: [22, 10],
+            });
+
+            const marker = L.marker([cl.lat, cl.lng], { icon: clusterIcon });
+            marker.on("click", () => {
+              if (mapRef.current) {
+                mapRef.current.flyTo([cl.lat, cl.lng], 8, { animate: true, duration: 1.0 });
+              }
+            });
+            marker.bindPopup(`
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 4px; min-width: 220px;">
+                <div style="font-weight: 900; font-size: 12px; color: #b45309; display: flex; align-items: center; justify-content: space-between;">
+                  <span>⚡ CONVECTIVE STORM CELL</span>
+                  <span style="font-size: 10px; background: #fef08a; border: 1px solid #fde68a; color: #92400e; padding: 1px 5px; border-radius: 4px; font-weight: 800;">${cl.count} Strikes</span>
+                </div>
+                <div style="font-size: 11px; font-weight: 700; color: #475569; margin-top: 4px;">
+                  Active Strikes within 45 NM: <strong>${cl.count}</strong>
+                </div>
+                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+                  Recent (0-3 min): <strong>${cl.freshCount}</strong>
+                </div>
+                <div style="font-size: 9.5px; color: #0284c7; margin-top: 4px; font-weight: 600;">
+                  Tap to zoom in and inspect individual discharge points.
+                </div>
+              </div>
+            `);
+            group.addLayer(marker);
+          } else {
+            // Single isolated strike
+            const st = cl.strikes[0];
+            const age = st.ageMinutes ?? 0;
+            const isFresh = age <= 3;
+            const isMid = age > 3 && age <= 8;
+            const fill = isFresh ? "#eab308" : isMid ? "#f59e0b" : "#d97706";
+            const stroke = isFresh ? "#854d0e" : isMid ? "#78350f" : "#451a03";
+            const opacity = isFresh ? 1.0 : isMid ? 0.75 : 0.45;
+            const size = isFresh ? 14 : isMid ? 12 : 10;
+
+            const lightningIcon = L.divIcon({
+              className: "custom-lightning-strike-icon",
+              html: `
+                <div style="opacity: ${opacity}; display: flex; align-items: center; justify-content: center; width: ${size}px; height: ${size}px; cursor: pointer; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));">
+                  <svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${fill}" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                </div>
+              `,
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2],
+            });
+            const marker = L.marker([st.lat, st.lng], { icon: lightningIcon });
+            group.addLayer(marker);
+          }
+        });
+      } else {
+        // Granular zoomed in view (mapZoom >= 6): show individual strikes
+        const cappedStrikes = strikesToDraw.slice(0, 45);
+
+        cappedStrikes.forEach((st) => {
+          const age = st.ageMinutes ?? 0;
+          const isFresh = age <= 3;
+          const isMid = age > 3 && age <= 8;
+
+          const fill = isFresh ? "#eab308" : isMid ? "#f59e0b" : "#d97706";
+          const stroke = isFresh ? "#854d0e" : isMid ? "#78350f" : "#451a03";
+          const opacity = isFresh ? 1.0 : isMid ? 0.75 : 0.45;
+          const size = isFresh ? 14 : isMid ? 12 : 10;
+          const ageLabel = age <= 1 ? "JUST NOW (< 1 min)" : `${age} MIN AGO`;
+
+          const lightningIcon = L.divIcon({
+            className: "custom-lightning-strike-icon",
+            html: `
+              <div style="opacity: ${opacity}; display: flex; align-items: center; justify-content: center; width: ${size}px; height: ${size}px; cursor: pointer; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));">
+                <svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${fill}" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+              </div>
+            `,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+          });
+
+          const marker = L.marker([st.lat, st.lng], { icon: lightningIcon });
+          marker.bindPopup(`
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 4px; min-width: 220px;">
+              <div style="font-weight: 900; font-size: 12px; color: #b45309; display: flex; align-items: center; justify-content: space-between;">
+                <span>⚡ LIGHTNING STRIKE</span>
+                <span style="font-size: 10px; background: ${isFresh ? "#fef08a" : "#fef3c7"}; border: 1px solid #fde68a; color: #92400e; padding: 1px 5px; border-radius: 4px; font-weight: 800;">${st.type === "CG" ? "Cloud-to-Ground" : "Cloud-to-Cloud"}</span>
+              </div>
+              <div style="font-size: 11px; font-weight: 700; color: #475569; margin-top: 3px;">
+                Flashed: <strong>${ageLabel}</strong>
+              </div>
+              <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+                Location: <strong>${st.station || "Convective Storm Core"}</strong>
+              </div>
+              <div style="font-size: 10px; font-family: 'SF Mono', 'SFProMono-Regular', ui-monospace, Menlo, Monaco, Consolas, monospace; color: #64748b; margin-top: 2px;">
+                Peak Current: <strong>${st.peakCurrent}</strong>
+              </div>
             </div>
-            <div style="font-size: 11px; font-weight: 700; color: #475569; margin-top: 3px;">
-              Flashed: <strong>${ageLabel}</strong>
-            </div>
-            <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
-              Location: <strong>${st.station || "Convective Storm Core"}</strong>
-            </div>
-            <div style="font-size: 10px; font-family: monospace; color: #64748b; margin-top: 2px;">
-              Peak Current: <strong>${st.peakCurrent}</strong>
-            </div>
-          </div>
-        `);
-        group.addLayer(marker);
-      });
+          `);
+          group.addLayer(marker);
+        });
+      }
 
       group.addTo(map);
       lightningLayerRef.current = group;
     }
-  }, [showLightning, liveLightning, lightningMaxAge, liveHazards]);
+  }, [showLightning, liveLightning, lightningMaxAge, liveHazards, mapZoom]);
 
-  // Real-Time NOAA PIREP Turbulence & EDR Intelligence Layer
+  // Real-Time NOAA PIREP Turbulence & EDR Intelligence Layer with Dynamic Zoom Consolidation
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -1284,7 +1596,8 @@ export default function BriefingMap({
     if (showTurbulence && liveTurbulence && liveTurbulence.length > 0) {
       const group = L.layerGroup();
 
-      const filteredReports = liveTurbulence.filter((rep) => {
+      // 1. Filter by altitude band and remove NEG/smooth reports
+      const rawFiltered = liveTurbulence.filter((rep) => {
         if (rep.severity === "NEG") return false;
         const fl = rep.fltLvl || 330;
         if (turbulenceAltBand === "LOW") return fl >= 180 && fl <= 280;
@@ -1293,55 +1606,93 @@ export default function BriefingMap({
         return true;
       });
 
-      filteredReports.forEach((rep) => {
+      // 2. Dynamic Spatial Deduplication based on map zoom:
+      // - Zoom <= 4 (Continental US): 150 NM separation (only top 6-8 country-wide reports)
+      // - Zoom 5..6 (Multi-State Regional): 70 NM separation
+      // - Zoom >= 7 (Terminal): 25 NM separation
+      const minDistanceNm = mapZoom <= 4 ? 150 : mapZoom <= 6 ? 70 : 25;
+
+      const decluttered: LiveTurbulenceReport[] = [];
+      // Sort by severity (SVR > MOD > LGT) so the most critical report always wins in a cluster
+      const severityRank: Record<string, number> = { EXTRM: 4, SVR: 3, MOD: 2, LGT: 1, NEG: 0 };
+      const sorted = [...rawFiltered].sort((a, b) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0));
+
+      for (const rep of sorted) {
+        const isDuplicate = decluttered.some((existing) => {
+          const dist = destinationDistanceNm(rep.lat, rep.lng, existing.lat, existing.lng);
+          return dist < minDistanceNm;
+        });
+        if (!isDuplicate) {
+          decluttered.push(rep);
+        }
+      }
+
+      decluttered.forEach((rep) => {
         const isSvr = rep.severity === "SVR" || rep.severity === "EXTRM";
         const isMod = rep.severity === "MOD";
         const edrVal = rep.edr.toFixed(2);
+        
+        let flNum = rep.fltLvl || 330;
+        if (flNum > 999) flNum = Math.round(flNum / 100);
 
-        const badgeColor = isSvr
-          ? "bg-rose-600 text-white border-rose-400 shadow-rose-600/50 animate-pulse"
-          : isMod
-          ? "bg-amber-500 text-slate-950 border-amber-300 shadow-amber-500/40"
-          : "bg-yellow-400 text-slate-950 border-yellow-200 shadow-yellow-400/30";
+        // Minimalist ForeFlight-style pill styling:
+        const dotBg = isSvr ? "#ef4444" : isMod ? "#f59e0b" : "#94a3b8";
+        const badgeBorder = isSvr ? "rgba(239,68,68,0.7)" : isMod ? "rgba(245,158,11,0.6)" : "rgba(100,116,139,0.5)";
+        const textColor = isSvr ? "#fca5a5" : isMod ? "#fde68a" : "#e2e8f0";
+        const sevLabel = isSvr ? "SVR" : isMod ? "MOD" : "LGT";
 
         const turbIcon = L.divIcon({
-          className: "custom-edr-turbulence-icon",
+          className: "custom-edr-turbulence-pill",
           html: `
-            <div class="relative flex items-center gap-1 cursor-pointer group">
-              <div class="w-7 h-7 rounded-full ${badgeColor} border-2 flex items-center justify-center font-mono font-black text-[10px] shadow-lg">
-                🌬
-              </div>
-              <div class="hidden group-hover:flex flex-col bg-slate-900 text-white text-[9.5px] font-mono p-1 rounded-lg shadow-xl border border-slate-700 pointer-events-none whitespace-nowrap">
-                <span class="font-bold text-amber-400">${rep.aircraftType} • FL${rep.fltLvl}</span>
-                <span>EDR: ${edrVal} (${rep.severity})</span>
-              </div>
+            <div style="
+              box-sizing: border-box;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 4px;
+              width: 64px;
+              height: 22px;
+              padding: 0 6px;
+              background: rgba(15, 23, 42, 0.94);
+              border: 1px solid ${badgeBorder};
+              border-radius: 9999px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+              cursor: pointer;
+              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+              font-size: 9.5px;
+              font-weight: 700;
+              color: ${textColor};
+              white-space: nowrap;
+              overflow: hidden;
+            ">
+              <span style="width: 5px; height: 5px; border-radius: 9999px; background: ${dotBg}; flex-shrink: 0;"></span>
+              <span>${sevLabel}</span>
+              <span style="font-weight: 500; opacity: 0.85; font-size: 9px;">${flNum}</span>
             </div>
           `,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15],
+          iconSize: [64, 22],
+          iconAnchor: [32, 11],
         });
 
         const marker = L.marker([rep.lat, rep.lng], { icon: turbIcon });
 
         marker.bindPopup(`
-          <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #0f172a; padding: 6px; min-width: 250px;">
-            <div style="font-weight: 900; font-size: 13px; color: ${isSvr ? "#e11d48" : isMod ? "#d97706" : "#ca8a04"}; display: flex; align-items: center; justify-content: space-between;">
-              <span>🌬 NOAA EDR TURBULENCE</span>
-              <span style="font-size: 10px; background: ${isSvr ? "#ffe4e6" : "#fef3c7"}; border: 1px solid ${isSvr ? "#fca5a5" : "#fde68a"}; color: ${isSvr ? "#9f1239" : "#92400e"}; padding: 2px 6px; border-radius: 6px; font-weight: 800;">${rep.severity} (${rep.aircraftType})</span>
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 4px; min-width: 240px; max-width: 280px;">
+            <div style="font-weight: 900; font-size: 12px; color: ${isSvr ? "#e11d48" : isMod ? "#d97706" : "#475569"}; display: flex; align-items: center; justify-content: space-between;">
+              <span>TURBULENCE PIREP</span>
+              <span style="font-size: 9.5px; background: ${isSvr ? "#ffe4e6" : isMod ? "#fef3c7" : "#f1f5f9"}; border: 1px solid ${isSvr ? "#fca5a5" : isMod ? "#fde68a" : "#cbd5e1"}; color: ${isSvr ? "#9f1239" : isMod ? "#92400e" : "#334155"}; padding: 1px 5px; border-radius: 4px; font-weight: 800;">FL${rep.fltLvl} • ${rep.severity}</span>
             </div>
 
-            <div style="margin-top: 6px; padding: 6px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <div style="font-size: 11px; font-weight: 900; color: #0f172a; display: flex; align-items: center; justify-content: space-between;">
-                <span>Flight Level: <strong>FL${rep.fltLvl} (${(rep.fltLvl * 100).toLocaleString()} FT)</strong></span>
+            <div style="margin-top: 5px; padding: 5px 6px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 10.5px; color: #334155;">
+              <div style="display: flex; justify-content: space-between; font-weight: 700;">
+                <span>Type: <strong>${rep.aircraftType}</strong></span>
                 <span>EDR: <strong>${edrVal}</strong></span>
-              </div>
-              <div style="font-size: 10px; color: #475569; margin-top: 4px;">
-                Aircraft Type: <strong>${rep.aircraftType}</strong> | Report Age: <strong>${rep.ageMinutes}m ago</strong>
+                <span>Age: <strong>${rep.ageMinutes}m</strong></span>
               </div>
             </div>
 
-            <div style="margin-top: 6px; font-size: 10px; font-family: monospace; background: #0f172a; color: #38bdf8; padding: 6px; border-radius: 6px; border: 1px solid #1e293b; overflow-x: auto;">
-              NOAA PIREP: ${rep.rawText}
+            <div style="margin-top: 5px; font-size: 9.5px; font-family: 'SF Mono', 'SFProMono-Regular', ui-monospace, Menlo, Monaco, Consolas, monospace; background: #0f172a; color: #7dd3fc; padding: 5px; border-radius: 5px; border: 1px solid #1e293b; overflow-x: auto; word-break: break-all;">
+              ${rep.rawText}
             </div>
           </div>
         `);
@@ -1352,67 +1703,11 @@ export default function BriefingMap({
       group.addTo(map);
       turbulenceLayerRef.current = group;
     }
-  }, [showTurbulence, liveTurbulence, turbulenceAltBand]);
-
-
-
-  // Render Alert & PIREP Markers along route
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    alertMarkersRef.current.forEach((m) => m.remove());
-    alertMarkersRef.current = [];
-
-    filteredAlerts.forEach((alert) => {
-      const isSigmet = alert.type === "SIGMET";
-      const isTurb = alert.subtype === "TURB" || alert.subtype === "TURBULENCE" || alert.text.includes("turbulence");
-      const isIce = alert.subtype === "ICE" || alert.subtype === "ICING" || alert.text.includes("icing");
-      const isConvective = alert.subtype === "CONVECTIVE" || alert.text.includes("CONVECTIVE");
-
-      const bgColor = isSigmet || isConvective
-        ? "bg-rose-500"
-        : isTurb
-        ? "bg-amber-500"
-        : isIce
-        ? "bg-cyan-500"
-        : "bg-sky-500";
-
-      const icon = L.divIcon({
-        className: "custom-alert-marker",
-        html: `
-          <div class="relative flex items-center justify-center">
-            <span class="absolute w-6 h-6 rounded-full ${bgColor}/30 animate-ping"></span>
-            <span class="w-4 h-4 rounded-full ${bgColor} border-2 border-white shadow-lg flex items-center justify-center text-[8px] font-black text-slate-950">
-              ${isSigmet ? "⚡" : isTurb ? "〰" : isIce ? "❄" : "!"}
-            </span>
-          </div>
-        `,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-      });
-
-      const marker = L.marker([alert.lat, alert.lng], { icon }).addTo(map);
-      marker.bindPopup(`
-        <div style="font-family: ui-sans-serif, system-ui, sans-serif; color: #0f172a; padding: 6px; max-width: 260px;">
-          <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #0284c7; background: #e0f2fe; padding: 3px 8px; border-radius: 6px; border: 1px solid #bae6fd; display: inline-block; margin-bottom: 6px;">
-            ${alert.type} ${alert.subtype || ""}
-          </div>
-          <p style="font-size: 11px; line-height: 1.45; color: #334155; font-family: monospace; background: #f8fafc; padding: 8px; border-radius: 8px; border: 1px solid #cbd5e1; margin: 0;">${alert.text}</p>
-        </div>
-      `);
-      alertMarkersRef.current.push(marker);
-    });
-
-    return () => {
-      alertMarkersRef.current.forEach((m) => m.remove());
-      alertMarkersRef.current = [];
-    };
-  }, [filteredAlerts]);
+  }, [showTurbulence, liveTurbulence, turbulenceAltBand, mapZoom]);
 
   return (
-    <div className="relative w-full h-full min-h-[520px] bg-slate-100 border border-slate-200 rounded-3xl overflow-hidden shadow-md">
-      <div ref={mapContainerRef} className="w-full h-full min-h-[520px] z-0" />
+    <div className="relative w-full h-full bg-[#e2e8f0] overflow-hidden">
+      <div ref={mapContainerRef} className="w-full h-full z-0" />
     </div>
   );
 }

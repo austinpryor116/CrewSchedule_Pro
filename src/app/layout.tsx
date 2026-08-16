@@ -1,16 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -46,7 +35,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased selection:bg-sky-500 selection:text-white`}
+      className="h-full antialiased selection:bg-sky-500 selection:text-white"
     >
       <head>
         <meta
@@ -56,7 +45,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-touch-fullscreen" content="yes" />
       </head>
-      <body className="h-full w-full overflow-hidden flex flex-col bg-[#f8fafc] text-slate-900 select-none touch-manipulation">
+      <body className="h-full w-full overflow-hidden flex flex-col bg-[#f8fafc] text-slate-900 select-none touch-manipulation font-sans">
         {children}
       </body>
     </html>

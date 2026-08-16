@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { X, Calendar as CalendarIcon, SlidersHorizontal, Eye, EyeOff, ShoppingBag, Palmtree, Clock, Check, Plus, RefreshCw, Rss, ShieldCheck, FileSpreadsheet, Trash2, Link, Loader2, Share2, Globe, Copy, Smartphone, Download, Info } from "lucide-react";
+import { X, Calendar as CalendarIcon, SlidersHorizontal, Eye, EyeOff, ShoppingBag, Palmtree, Clock, Check, Plus, Rss, ShieldCheck, FileSpreadsheet, Trash2, Link, Loader2, Share2, Globe, Copy, Smartphone, Download, Info } from "lucide-react";
 import { fetchRemoteIcsFeed, parseIcsText, downloadRosterIcsFile } from "../../lib/icalExporter";
 import { PersonalCalendarEvent } from "../../types";
 
@@ -104,9 +104,7 @@ export default function CalendarToolsModal({
   const [vacStart, setVacStart] = useState(currentVacation.startDate);
   const [vacEnd, setVacEnd] = useState(currentVacation.endDate);
   const [vacCredit, setVacCredit] = useState(currentVacation.creditHours || 24.5);
-  const [isVacSaved, setIsVacSaved] = useState(false);
-
-  if (!isOpen) return null;
+  const [vacSaved, setVacSaved] = useState(false);
 
   const handleSaveVacation = (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,123 +117,123 @@ export default function CalendarToolsModal({
       },
     ];
     setVacations(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_vacations", JSON.stringify(updated));
-    }
-    setIsVacSaved(true);
-    setTimeout(() => setIsVacSaved(false), 2500);
+    setVacSaved(true);
+    setTimeout(() => setVacSaved(false), 2500);
   };
 
-  return (
-    <div className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-md animate-fadeIn">
-      <div
-        className="fixed inset-0"
-        onClick={onClose}
-      />
-      <div className="relative w-full max-w-xl bg-white border-t sm:border border-slate-200 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] z-10 animate-slideUp text-slate-900 font-sans pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
-        {/* Mobile Drag Handle */}
-        <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-2 shrink-0 sm:hidden" />
+  const handleCopyShareLink = () => {
+    const shareUrl = typeof window !== "undefined"
+      ? `${window.location.origin}/api/ical?token=crew-${userProfile?.employeeId || "742840"}-live`
+      : `https://crewschedulepro.app/api/ical?token=crew-742840-live`;
+    navigator.clipboard.writeText(shareUrl);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 3000);
+  };
 
-        {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100001] bg-slate-950/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn font-sans">
+      <div className="bg-white text-slate-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] animate-slideUp">
+        {/* Modal Header */}
+        <div className="bg-white border-b border-slate-200 text-slate-900 p-4 sm:p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 sm:p-2.5 bg-sky-600 text-white rounded-2xl shadow-sm">
-              <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="p-2 sm:p-2.5 bg-sky-100 border border-sky-200 rounded-2xl text-sky-700 shrink-0">
+              <SlidersHorizontal className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
-                Calendar Tools & Controls
-              </h2>
+              <h3 className="text-base sm:text-lg font-black tracking-tight text-slate-900 leading-tight">
+                Calendar Tools & Schedule Manager
+              </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Manage schedule filters, open time, vacation blocks & feeds
+                Overlays, Vacation Manager, External iCal Feeds & Family Share
               </p>
             </div>
           </div>
 
           <button
-            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-900 rounded-xl hover:bg-slate-200/60 transition cursor-pointer"
+            className="text-slate-400 hover:text-slate-900 p-2 rounded-xl hover:bg-slate-100 transition cursor-pointer active-press"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-100/70 p-1 shrink-0 gap-1 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-1.5 p-2 bg-slate-50 border-b border-slate-200 overflow-x-auto scrollbar-none shrink-0">
           <button
             type="button"
             onClick={() => setActiveTabSection("filters")}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === "filters"
-                ? "bg-white text-sky-700 shadow-sm border border-slate-200"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                ? "bg-sky-600 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <CalendarIcon className="w-3.5 h-3.5 text-sky-600" />
+            <SlidersHorizontal className="w-3.5 h-3.5" />
             Display & Filters
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTabSection("opentime")}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === "opentime"
-                ? "bg-white text-amber-700 shadow-sm border border-slate-200"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <ShoppingBag className="w-3.5 h-3.5 text-amber-600" />
+            <ShoppingBag className="w-3.5 h-3.5" />
             Open Time
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTabSection("vacation")}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === "vacation"
-                ? "bg-white text-emerald-700 shadow-sm border border-slate-200"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <Palmtree className="w-3.5 h-3.5 text-emerald-600" />
-            Vacation Manager
+            <Palmtree className="w-3.5 h-3.5" />
+            Vacation
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTabSection("calendars")}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === "calendars"
-                ? "bg-white text-purple-700 shadow-sm border border-slate-200"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                ? "bg-purple-600 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <Rss className="w-3.5 h-3.5 text-purple-600" />
+            <Rss className="w-3.5 h-3.5" />
             External Feeds
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTabSection("share")}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-extrabold transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === "share"
-                ? "bg-white text-indigo-700 shadow-sm border border-slate-200"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                ? "bg-indigo-600 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <Share2 className="w-3.5 h-3.5 text-indigo-600" />
+            <Share2 className="w-3.5 h-3.5" />
             Family Share
           </button>
         </div>
 
         {/* Tab Content Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto scrollbar-thin flex-grow space-y-5">
+        <div className="p-4 sm:p-5 overflow-y-auto scrollbar-thin flex-grow space-y-5 bg-white">
           {/* TAB 1: Display & Filters */}
           {activeTab === "filters" && (
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block mb-2">
+                <label className="text-xs font-extrabold text-slate-900 uppercase tracking-wider block mb-2">
                   Calendar Grid View Mode
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -268,7 +266,7 @@ export default function CalendarToolsModal({
               </div>
 
               <div>
-                <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block mb-2">
+                <label className="text-xs font-extrabold text-slate-900 uppercase tracking-wider block mb-2">
                   Trip Status Filter Presets
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -284,7 +282,7 @@ export default function CalendarToolsModal({
                       onClick={() => setFilterMode(item.id as any)}
                       className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer text-center ${
                         filterMode === item.id
-                          ? "bg-sky-100 text-sky-900 border-sky-400 font-black shadow-xs"
+                          ? "bg-sky-600 text-white border-sky-600 font-black shadow-sm"
                           : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                       }`}
                     >
@@ -294,8 +292,8 @@ export default function CalendarToolsModal({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-200">
-                <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block mb-2">
+              <div className="pt-2 border-t border-slate-100">
+                <label className="text-xs font-extrabold text-slate-900 uppercase tracking-wider block mb-2">
                   Schedule Visibility Toggles
                 </label>
                 <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
@@ -306,7 +304,7 @@ export default function CalendarToolsModal({
                       <EyeOff className="w-4 h-4 text-slate-400" />
                     )}
                     <div>
-                      <span className="text-xs font-extrabold text-slate-800 block">
+                      <span className="text-xs font-extrabold text-slate-900 block">
                         Show Dropped & DTS Trades
                       </span>
                       <span className="text-[10px] text-slate-500 font-medium">
@@ -336,7 +334,7 @@ export default function CalendarToolsModal({
           {/* TAB 2: Open Time & Simulation */}
           {activeTab === "opentime" && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-3.5 bg-amber-50/70 border border-amber-300 rounded-2xl">
+              <div className="flex items-center justify-between p-3.5 bg-amber-50 border border-amber-200 rounded-2xl">
                 <div className="flex items-center gap-2.5">
                   <ShoppingBag className="w-5 h-5 text-amber-600" />
                   <div>
@@ -365,23 +363,25 @@ export default function CalendarToolsModal({
               </div>
 
               <div>
-                <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block mb-2">
+                <label className="text-xs font-extrabold text-slate-900 uppercase tracking-wider block mb-2">
                   Open Time Filtering Presets
                 </label>
-                <div className="space-y-1.5">
+                <div className="grid grid-cols-2 gap-2">
                   {openTimePresets.map((preset) => (
                     <button
                       key={preset.id}
                       type="button"
                       onClick={() => setOpenTimeFilter(preset.id)}
-                      className={`w-full p-2.5 rounded-2xl border text-left text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                      className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
                         openTimeFilter === preset.id
-                          ? "bg-amber-100 text-amber-950 border-amber-400 font-black shadow-xs"
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          ? "bg-amber-50 border-2 border-amber-600 text-amber-950 shadow-sm"
+                          : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
                       }`}
                     >
-                      <span>{preset.name}</span>
-                      {openTimeFilter === preset.id && <Check className="w-4 h-4 text-amber-700" />}
+                      <div className="font-extrabold text-xs text-slate-900">{preset.name}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {preset.fitsOnly ? "Only trips that fit roster legality" : "All station open time"}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -392,407 +392,298 @@ export default function CalendarToolsModal({
           {/* TAB 3: Vacation Manager */}
           {activeTab === "vacation" && (
             <form onSubmit={handleSaveVacation} className="space-y-4">
-              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl">
-                <div className="flex items-center gap-2 mb-1">
-                  <Palmtree className="w-4 h-4 text-emerald-600" />
-                  <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wider">
-                    Active Scheduled Vacation Block
-                  </h4>
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3 text-emerald-950">
+                <Palmtree className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div className="text-xs space-y-1">
+                  <div className="font-black text-emerald-900">Annual Vacation Block Management</div>
+                  <p className="text-emerald-800 leading-relaxed text-[11px]">
+                    Configure your awarded 7-day vacation block. Scheduled sequences overlapping this window are automatically tagged for DTS (Direct Trip Swap) dropping.
+                  </p>
                 </div>
-                <p className="text-[11px] text-emerald-800 font-medium">
-                  Configured from August 1st to August 7th (7 Days • 24.50 Hours Pay Credit).
-                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Vacation Start Date</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">Block Start Date</label>
                   <input
                     type="date"
                     value={vacStart}
                     onChange={(e) => setVacStart(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                    required
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Vacation End Date</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">Block End Date</label>
                   <input
                     type="date"
                     value={vacEnd}
                     onChange={(e) => setVacEnd(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                    required
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Vacation Pay Credit (Hours)</label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">Vacation Pay Credit (Hours)</label>
                 <input
                   type="number"
                   step="0.1"
                   value={vacCredit}
-                  onChange={(e) => setVacCredit(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                  required
+                  onChange={(e) => setVacCredit(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
                 />
               </div>
 
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                {isVacSaved ? "Vacation Saved!" : "Update Vacation Dates"}
-              </button>
-
-              <div className="pt-3 border-t border-slate-200">
-                <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block mb-2">
-                  Schedule Studio Quick Actions
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab("import");
-                      onClose();
-                    }}
-                    className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600" />
-                    Parser & Import
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab("compliance");
-                      onClose();
-                    }}
-                    className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    FAR 117 Audit
-                  </button>
-                </div>
+              <div className="flex items-center justify-between pt-2">
+                {vacSaved && (
+                  <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+                    <Check className="w-4 h-4" /> Vacation dates updated!
+                  </span>
+                )}
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition cursor-pointer shadow-sm ml-auto active-press"
+                >
+                  Save Vacation Block
+                </button>
               </div>
             </form>
           )}
 
-          {/* TAB 4: External Feeds */}
+          {/* TAB 4: External iCal Feeds */}
           {activeTab === "calendars" && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider block">
-                  Subscribed Calendar Feeds ({subscribedCalendars.length})
-                </label>
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                    Subscribed Calendar Feeds
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Live iCal / Google / Outlook calendar feeds overlaying on your grid
+                  </p>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setShowAddFeedForm(!showAddFeedForm)}
-                  className="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  Add Feed
+                  <span>Add Feed</span>
                 </button>
               </div>
 
               {/* Add Feed Inline Form */}
               {showAddFeedForm && (
-                <form onSubmit={handleCreateFeed} className="p-3 bg-slate-100 border border-slate-300 rounded-2xl space-y-3 animate-fadeIn">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                      <Link className="w-3.5 h-3.5 text-sky-600" />
-                      Add External iCal Feed
-                    </span>
-                    <button type="button" onClick={() => setShowAddFeedForm(false)} className="text-slate-500 hover:text-slate-900">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div>
+                <form onSubmit={handleCreateFeed} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                  <div className="font-extrabold text-xs text-slate-900">Subscribe to Remote iCal URL</div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-700 block">Feed Name</label>
                     <input
                       type="text"
-                      placeholder="Feed Name (e.g. Personal iCal / Google Calendar)"
+                      placeholder="e.g. Spouse Schedule, Commute Flights, Kid Activities"
                       value={newFeedName}
                       onChange={(e) => setNewFeedName(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-purple-600 font-medium"
                       required
                     />
                   </div>
-                  <div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-700 block">iCal Feed URL (Webcal / HTTPS)</label>
                     <input
                       type="url"
-                      placeholder="Feed URL (https://... or webcal://...)"
+                      placeholder="https://calendar.google.com/calendar/ical/..."
                       value={newFeedUrl}
                       onChange={(e) => setNewFeedUrl(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-purple-600 font-mono"
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-2">
+
+                  <div className="flex items-center justify-between pt-1">
                     <div className="flex items-center gap-1.5">
-                      {["purple", "teal", "sky", "amber", "rose", "emerald"].map((c) => (
+                      <span className="text-[11px] font-bold text-slate-700">Badge Color:</span>
+                      {["purple", "emerald", "amber", "rose", "sky"].map((c) => (
                         <button
                           key={c}
                           type="button"
                           onClick={() => setNewFeedColor(c)}
-                          className={`w-5 h-5 rounded-full border ${
-                            newFeedColor === c ? "ring-2 ring-sky-500 ring-offset-1 scale-110" : ""
-                          } ${
-                            c === "purple"
-                              ? "bg-purple-500"
-                              : c === "teal"
-                              ? "bg-teal-500"
-                              : c === "sky"
-                              ? "bg-sky-500"
-                              : c === "amber"
-                              ? "bg-amber-500"
-                              : c === "rose"
-                              ? "bg-rose-500"
-                              : "bg-emerald-500"
+                          className={`w-5 h-5 rounded-full transition cursor-pointer ${
+                            newFeedColor === c ? "ring-2 ring-purple-600 ring-offset-1" : "opacity-60"
                           }`}
+                          style={{
+                            backgroundColor:
+                              c === "purple"
+                                ? "#9333ea"
+                                : c === "emerald"
+                                ? "#10b981"
+                                : c === "amber"
+                                ? "#f59e0b"
+                                : c === "rose"
+                                ? "#f43f5e"
+                                : "#0284c7",
+                          }}
                         />
                       ))}
                     </div>
-                    <button
-                      type="submit"
-                      disabled={isFetchingFeed}
-                      className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {isFetchingFeed && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      {isFetchingFeed ? "Fetching Feed..." : "Subscribe"}
-                    </button>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddFeedForm(false)}
+                        className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-300 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isFetchingFeed}
+                        className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        {isFetchingFeed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        <span>Save & Sync</span>
+                      </button>
+                    </div>
                   </div>
                 </form>
               )}
 
+              {/* List of Subscribed Feeds */}
               <div className="space-y-2">
-                {subscribedCalendars.length === 0 ? (
-                  <div className="p-4 bg-slate-50 border border-dashed border-slate-300 rounded-2xl text-center text-xs text-slate-500">
-                    No active calendar feeds. Click <strong>Add Feed</strong> above to subscribe.
-                  </div>
-                ) : (
-                  subscribedCalendars.map((cal) => (
-                    <div
-                      key={cal.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl gap-2.5"
-                    >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <div className="flex items-center gap-1 shrink-0">
-                          {["purple", "teal", "sky", "amber", "rose", "emerald"].map((c) => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => updateSubscribedCalColor(cal.id, c)}
-                              className={`w-3.5 h-3.5 rounded-full border transition cursor-pointer ${
-                                cal.color === c ? "ring-2 ring-sky-500 scale-125 z-10" : "opacity-60 hover:opacity-100"
-                              } ${
-                                c === "purple"
-                                  ? "bg-purple-500"
-                                  : c === "teal"
-                                  ? "bg-teal-500"
-                                  : c === "sky"
-                                  ? "bg-sky-500"
-                                  : c === "amber"
-                                  ? "bg-amber-500"
-                                  : c === "rose"
-                                  ? "bg-rose-500"
-                                  : "bg-emerald-500"
-                              }`}
-                              title={`Change color to ${c}`}
-                            />
-                          ))}
-                        </div>
-
-                        <div className="truncate min-w-0">
-                          <span className="text-xs font-extrabold text-slate-900 block truncate">{cal.name}</span>
-                          <span className="text-[10px] text-slate-500 font-medium">
-                            Synced: {cal.lastSyncedAt || "Live"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2 shrink-0">
-                        {/* Toggle Switch */}
-                        <button
-                          type="button"
-                          onClick={() => toggleSubscribedCal(cal.id)}
-                          className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                            cal.enabled ? "bg-purple-600" : "bg-slate-300"
-                          }`}
-                          title={cal.enabled ? "Disable feed" : "Enable feed"}
-                        >
-                          <span
-                            className={`block w-4 h-4 rounded-full bg-white transition-transform absolute top-1 ${
-                              cal.enabled ? "left-6" : "left-1"
-                            }`}
-                          />
-                        </button>
-
-                        {/* Delete Feed Button */}
-                        <button
-                          type="button"
-                          onClick={() => removeSubscribedCal(cal.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
-                          title="Delete calendar feed"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                {subscribedCalendars.map((cal) => (
+                  <div
+                    key={cal.id}
+                    className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleSubscribedCal(cal.id)}
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 cursor-pointer ${
+                          cal.enabled ? "bg-purple-600 border-purple-600" : "border-slate-400 bg-transparent"
+                        }`}
+                      >
+                        {cal.enabled && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                      </button>
+                      <div className="min-w-0">
+                        <span className="font-extrabold text-xs text-slate-900 block truncate">{cal.name}</span>
+                        <span className="text-[10px] text-slate-500 font-mono block">
+                          Sync: {cal.lastSyncedAt || "Active"} &bull; {cal.eventsCount || 0} events
+                        </span>
                       </div>
                     </div>
-                  ))
-                )}
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        {["purple", "emerald", "amber", "rose", "sky"].map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => updateSubscribedCalColor(cal.id, c)}
+                            className={`w-3.5 h-3.5 rounded-full transition cursor-pointer ${
+                              cal.color === c ? "ring-2 ring-purple-600 ring-offset-1" : "opacity-60"
+                            }`}
+                            style={{
+                              backgroundColor:
+                                c === "purple"
+                                  ? "#9333ea"
+                                  : c === "emerald"
+                                  ? "#10b981"
+                                  : c === "amber"
+                                  ? "#f59e0b"
+                                  : c === "rose"
+                                  ? "#f43f5e"
+                                  : "#0284c7",
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeSubscribedCal(cal.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-white transition cursor-pointer"
+                        title="Remove calendar feed"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* TAB 5: Family Share & Live Sync */}
+          {/* TAB 5: Family Share */}
           {activeTab === "share" && (
             <div className="space-y-4">
-              <div className="bg-gradient-to-r from-sky-900 via-indigo-900 to-slate-900 p-4 rounded-2xl text-white space-y-2">
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-start gap-3 text-indigo-950">
+                <Share2 className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="text-xs space-y-1">
+                  <div className="font-black text-indigo-900">Live Roster Share with Family & Spouses</div>
+                  <p className="text-indigo-800 leading-relaxed text-[11px]">
+                    Share your live flight duty times, hotel layovers, report times, and release schedules directly to your family members&apos; Apple Calendar or Google Calendar.
+                  </p>
+                </div>
+              </div>
+
+              {/* Share URL Box */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 text-sky-300">
-                    <Globe className="w-4 h-4" />
-                    Live Schedule Feed
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-mono font-bold">
-                    100% FREE
+                  <span className="text-xs font-black text-slate-900">Your Private Family Subscription URL</span>
+                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">
+                    Live Auto-Sync
                   </span>
                 </div>
-                <p className="text-xs text-slate-200 leading-relaxed font-medium">
-                  Share this link with your family or spouse. When added to their phone or Google Calendar once, it will <strong>automatically stay updated</strong> whenever your schedule changes!
-                </p>
-                <div className="flex items-center gap-2 pt-1">
+
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     readOnly
-                    value={`${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`}
-                    className="w-full bg-slate-950/60 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 select-all font-bold"
+                    value={`https://crewschedulepro.app/api/ical?token=crew-${userProfile?.employeeId || "742840"}-live`}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 select-all focus:outline-none"
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const url = `${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`;
-                      navigator.clipboard.writeText(url);
-                      setShareCopied(true);
-                      setTimeout(() => setShareCopied(false), 2000);
-                    }}
-                    className="px-3.5 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-black rounded-xl text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer active-press"
+                    onClick={handleCopyShareLink}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 active-press shadow-2xs"
                   >
-                    {shareCopied ? <Check className="w-4 h-4 text-emerald-950" /> : <Copy className="w-4 h-4" />}
-                    <span>{shareCopied ? "Copied!" : "Copy"}</span>
+                    {shareCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{shareCopied ? "Copied!" : "Copy Link"}</span>
                   </button>
                 </div>
               </div>
 
-              {/* 1-Tap Quick Actions */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <a
-                  href={`${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}`.replace(/^http:\/\//, "webcal://").replace(/^https:\/\//, "webcal://") + `/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`}
-                  className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-xs transition cursor-pointer"
-                >
-                  <Smartphone className="w-5 h-5 text-slate-800 mb-1" />
-                  <span className="text-xs font-extrabold text-slate-900">Apple Calendar</span>
-                  <span className="text-[10px] text-slate-500 font-medium">1-Tap Subscribe</span>
-                </a>
-
-                <a
-                  href={`https://calendar.google.com/calendar/r/settings/addbyurl?cid=${encodeURIComponent(`${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/api/calendar/subscribe?token=crew-${userProfile.employeeId || "742840"}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-xs transition cursor-pointer"
-                >
-                  <CalendarIcon className="w-5 h-5 text-sky-600 mb-1" />
-                  <span className="text-xs font-extrabold text-slate-900">Google Calendar</span>
-                  <span className="text-[10px] text-slate-500 font-medium">Add to Gmail</span>
-                </a>
+              {/* Direct .ics File Export */}
+              <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                <div className="flex items-center gap-2.5">
+                  <Download className="w-5 h-5 text-sky-600" />
+                  <div>
+                    <span className="text-xs font-extrabold text-slate-900 block">Direct .ICS Calendar File</span>
+                    <span className="text-[10px] text-slate-500 font-medium">Download offline snapshot file for manual import</span>
+                  </div>
+                </div>
 
                 <button
                   type="button"
                   onClick={() => downloadRosterIcsFile(sequences, payRates)}
-                  className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-xs transition cursor-pointer"
+                  className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs active-press"
                 >
-                  <Download className="w-5 h-5 text-emerald-600 mb-1" />
-                  <span className="text-xs font-extrabold text-slate-900">Download .ICS</span>
-                  <span className="text-[10px] text-slate-500 font-medium">AirDrop / Email</span>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download .ICS</span>
                 </button>
-              </div>
-
-              {/* Free Setup Guides */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Info className="w-3.5 h-3.5 text-indigo-600" />
-                    How to Share for Free
-                  </span>
-                  <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-slate-200 text-[10px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setGuidePlatform("apple")}
-                      className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                        guidePlatform === "apple" ? "bg-sky-600 text-white" : "text-slate-600"
-                      }`}
-                    >
-                      iPhone / iCloud
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGuidePlatform("google")}
-                      className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                        guidePlatform === "google" ? "bg-sky-600 text-white" : "text-slate-600"
-                      }`}
-                    >
-                      Google
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGuidePlatform("free")}
-                      className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                        guidePlatform === "free" ? "bg-sky-600 text-white" : "text-slate-600"
-                      }`}
-                    >
-                      Hosting
-                    </button>
-                  </div>
-                </div>
-
-                {guidePlatform === "apple" && (
-                  <div className="text-[11px] text-slate-600 space-y-1 font-medium leading-relaxed">
-                    <strong className="text-slate-900 block">📱 Apple Calendar (iPhone, iPad, Mac):</strong>
-                    <p>1. Copy your live link above or tap <strong>Apple Calendar</strong>.</p>
-                    <p>2. On iPhone: Go to <strong>Settings ➔ Calendar ➔ Accounts ➔ Add Account ➔ Other ➔ Add Subscribed Calendar</strong>.</p>
-                    <p>3. Paste your link and tap <strong>Save</strong>. It updates automatically in background!</p>
-                  </div>
-                )}
-
-                {guidePlatform === "google" && (
-                  <div className="text-[11px] text-slate-600 space-y-1 font-medium leading-relaxed">
-                    <strong className="text-slate-900 block">🌐 Google Calendar (Android / Gmail):</strong>
-                    <p>1. Copy your live link above.</p>
-                    <p>2. On <strong>calendar.google.com</strong>, click <strong>+ ➔ From URL</strong> next to Other Calendars.</p>
-                    <p>3. Paste the link and save. Google will sync your schedule for free!</p>
-                  </div>
-                )}
-
-                {guidePlatform === "free" && (
-                  <div className="text-[11px] text-slate-600 space-y-1 font-medium leading-relaxed">
-                    <strong className="text-slate-900 block">💡 100% Free Hosting & Remote Sync:</strong>
-                    <p>&bull; <strong>Home WiFi:</strong> Family devices on your WiFi can sync directly via local IP.</p>
-                    <p>&bull; <strong>Cloudflare Tunnel:</strong> Run free <code className="font-mono bg-slate-200 px-1 rounded">cloudflared</code> tunnel for a free public HTTPS endpoint.</p>
-                    <p>&bull; <strong>Free Vercel Deploy:</strong> Deploy to Vercel for free 24/7 global uptime.</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-end shrink-0">
+        {/* Modal Footer */}
+        <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-end shrink-0">
           <button
-            type="button"
             onClick={onClose}
-            className="py-2 px-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-extrabold transition shadow-sm cursor-pointer"
+            className="px-6 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs rounded-xl transition cursor-pointer shadow-sm active-press"
           >
             Done
           </button>

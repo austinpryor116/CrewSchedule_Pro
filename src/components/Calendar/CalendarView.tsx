@@ -6,7 +6,7 @@ import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
 import { SequenceTrip, DutyPeriod } from "../../types";
 import { checkOpenSequenceConflict } from "../../lib/parser";
 import { PersonalCalendarEvent } from "../../types";
-import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, Info, Plane, Sun, Moon, Eye, EyeOff, ShoppingBag, Rss, X, Globe, Plus, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, Info, Plane, Sun, Moon, Palmtree, Eye, EyeOff, ShoppingBag, Rss, X, Globe, Plus, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import CalendarSyncModal from "./CalendarSyncModal";
 import DayDetailModal from "./DayDetailModal";
 import GridFilterModal from "./GridFilterModal";
@@ -39,6 +39,33 @@ export default function CalendarView() {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [activeTimezone, setActiveTimezone] = useState("BASE");
+
+  // Today Auto-Scroll Reference
+  const todayElementRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToToday = (smooth = true) => {
+    if (todayElementRef.current && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const el = todayElementRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const relativeTop = elRect.top - containerRect.top + container.scrollTop;
+      const targetScroll = relativeTop - (container.clientHeight / 2) + (el.clientHeight / 2);
+      container.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: smooth ? "smooth" : "auto",
+      });
+    }
+  };
+
+  useEffect(() => {
+    // Immediate alignment on mount without animation or window displacement
+    const timer = setTimeout(() => {
+      scrollToToday(false);
+    }, 60);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Movable / Draggable FAB state
   const [fabPosition, setFabPosition] = useState<{ x: number; y: number } | null>(null);
@@ -246,34 +273,47 @@ export default function CalendarView() {
     return seq.totalCreditMinutes >= highCreditThresholdHours * 60;
   };
 
-  // Calendar dates generation (memoized by currentDate)
-  const monthDays = useMemo(() => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
+  // Helper: get duty period & layover info for a specific date
+  const getDayDutyInfo = (seq: SequenceTrip | null, date: Date) => {
+    if (!seq) return null;
+    const dp = getDutyPeriodForDate(seq, date);
+    const ronCity = getRonForDate(seq, date);
     
-    const firstDay = new Date(year, month, 1);
-    const startOfWeek = firstDay.getDay(); // 0 is Sunday
+    let legsSummary = "";
+    if (dp && dp.legs && dp.legs.length > 0) {
+      if (dp.legs.length === 1) {
+        legsSummary = `${dp.legs[0].depAirport}→${dp.legs[0].arrAirport}`;
+      } else {
+        const first = dp.legs[0].depAirport;
+        const last = dp.legs[dp.legs.length - 1].arrAirport;
+        legsSummary = `${first}→${last}`;
+      }
+    }
     
+    return { dp, ronCity, legsSummary };
+  };
+
+  // Continuous Infinite Stream Calendar Days across 7 months (2 prior, current, 5 future)
+  const streamDays = useMemo(() => {
+    const baseYear = currentDate.getFullYear();
+    const baseMonth = currentDate.getMonth();
+
+    // Start 2 months prior, aligned to Sunday
+    const firstDay = new Date(baseYear, baseMonth - 2, 1);
+    const startDay = new Date(firstDay);
+    startDay.setDate(startDay.getDate() - startDay.getDay());
+
+    // End 5 months ahead, aligned to Saturday
+    const lastDay = new Date(baseYear, baseMonth + 6, 0);
+    const endDay = new Date(lastDay);
+    endDay.setDate(endDay.getDate() + (6 - endDay.getDay()));
+
     const days: Date[] = [];
-    
-    // Previous month padding days
-    for (let i = startOfWeek - 1; i >= 0; i--) {
-      days.push(new Date(year, month, -i));
+    const curr = new Date(startDay);
+    while (curr <= endDay) {
+      days.push(new Date(curr));
+      curr.setDate(curr.getDate() + 1);
     }
-    
-    // Active month days
-    const totalDays = new Date(year, month + 1, 0).getDate();
-    for (let i = 1; i <= totalDays; i++) {
-      days.push(new Date(year, month, i));
-    }
-    
-    // Next month padding days to complete 5 or 6 rows
-    const totalRowsNeeded = Math.ceil(days.length / 7);
-    const remaining = totalRowsNeeded * 7 - days.length;
-    for (let i = 1; i <= remaining; i++) {
-      days.push(new Date(year, month + 1, i));
-    }
-    
     return days;
   }, [currentDate]);
 
@@ -292,7 +332,7 @@ export default function CalendarView() {
 
   // Memoize sequence segments calculation so mouse hover and selection do not trigger recalculations
   const sequenceSegments = useMemo(() => {
-    const days = monthDays;
+    const days = streamDays;
     const segments: {
       seq: SequenceTrip & { isGhost?: boolean; hasConflict?: boolean; isVacation?: boolean };
       row: number;
@@ -522,38 +562,173 @@ export default function CalendarView() {
     simulatedIds,
     showOpenTimeOverlay,
     openTimeFilter,
-    monthDays,
+    streamDays,
     rawSequences,
     stationTurnLimits,
     defaultTurnLimit,
   ]);
 
-  const rowActivityMap = useMemo(() => {
-    const map: Record<number, { maxSlot: number; hasEvents: boolean }> = {};
-    
-    sequenceSegments.forEach((seg) => {
-      if (!map[seg.row]) map[seg.row] = { maxSlot: -1, hasEvents: false };
-      map[seg.row].maxSlot = Math.max(map[seg.row].maxSlot, seg.slot);
+  // Memoize multi-day personal calendar events segments
+  const multiDayPersonalEventSegments = useMemo(() => {
+    const days = streamDays;
+    const segments: {
+      evt: PersonalCalendarEvent;
+      row: number;
+      startCol: number;
+      endCol: number;
+      isRealStart?: boolean;
+      isRealEnd?: boolean;
+    }[] = [];
+
+    const multiDayEvents = personalEvents.filter((e) => {
+      const enabledCal = subscribedCalendars.find((c) => c.id === e.calendarId);
+      if (enabledCal && !enabledCal.enabled) return false;
+      return e.startDate && e.endDate && e.startDate !== e.endDate;
     });
 
-    monthDays.forEach((date, idx) => {
-      const row = Math.floor(idx / 7) + 1;
-      if (!map[row]) map[row] = { maxSlot: -1, hasEvents: false };
+    multiDayEvents.forEach((evt) => {
+      const startObj = parseLocalDateString(evt.startDate);
+      const endObj = parseLocalDateString(evt.endDate);
 
-      const dStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-      const hasEvt = personalEvents.some((e) => {
-        const enabledCal = subscribedCalendars.find((c) => c.id === e.calendarId);
-        if (enabledCal && !enabledCal.enabled) return false;
-        return e.startDate === dStr || (e.startDate <= dStr && e.endDate >= dStr);
-      });
+      let startIdx = days.findIndex(
+        (d) =>
+          d.getFullYear() === startObj.getFullYear() &&
+          d.getMonth() === startObj.getMonth() &&
+          d.getDate() === startObj.getDate()
+      );
+      let endIdx = days.findIndex(
+        (d) =>
+          d.getFullYear() === endObj.getFullYear() &&
+          d.getMonth() === endObj.getMonth() &&
+          d.getDate() === endObj.getDate()
+      );
 
-      if (hasEvt) {
-        map[row].hasEvents = true;
+      if (startIdx === -1 && endIdx === -1) return;
+
+      if (startIdx === -1) {
+        if (startObj < days[0]) startIdx = 0;
+        else return;
+      }
+
+      if (endIdx === -1) {
+        if (endObj > days[days.length - 1]) endIdx = days.length - 1;
+        else return;
+      }
+
+      let currentStart = startIdx;
+      while (currentStart <= endIdx) {
+        const row = Math.floor(currentStart / 7) + 1;
+        const startCol = (currentStart % 7) + 1;
+        const endOfWeekIdx = Math.floor(currentStart / 7) * 7 + 6;
+        const currentEnd = Math.min(endOfWeekIdx, endIdx);
+        const endCol = (currentEnd % 7) + 1;
+
+        segments.push({
+          evt,
+          row,
+          startCol,
+          endCol,
+          isRealStart: currentStart === startIdx,
+          isRealEnd: currentEnd === endIdx,
+        });
+
+        currentStart = currentEnd + 1;
       }
     });
 
+    const rowSegments: Record<number, typeof segments> = {};
+    segments.forEach((seg) => {
+      if (!rowSegments[seg.row]) rowSegments[seg.row] = [];
+      rowSegments[seg.row].push(seg);
+    });
+
+    interface MultiDayPersonalEventSegment {
+      evt: PersonalCalendarEvent;
+      row: number;
+      startCol: number;
+      endCol: number;
+      slot: number;
+      isRealStart?: boolean;
+      isRealEnd?: boolean;
+    }
+
+    const segmentsWithSlots: MultiDayPersonalEventSegment[] = [];
+
+    Object.keys(rowSegments).forEach((rowStr) => {
+      const row = Number(rowStr);
+      const rowSegs = rowSegments[row];
+
+      rowSegs.sort((a, b) => {
+        const spanA = a.endCol - a.startCol;
+        const spanB = b.endCol - b.startCol;
+        if (spanA !== spanB) return spanB - spanA;
+        return a.startCol - b.startCol;
+      });
+
+      const colOccupied: Record<number, boolean[]> = {};
+      for (let c = 1; c <= 7; c++) {
+        colOccupied[c] = [];
+      }
+
+      rowSegs.forEach((seg) => {
+        let slot = 0;
+        while (true) {
+          let occupied = false;
+          for (let col = seg.startCol; col <= seg.endCol; col++) {
+            if (colOccupied[col][slot]) {
+              occupied = true;
+              break;
+            }
+          }
+          if (!occupied) break;
+          slot++;
+        }
+
+        for (let col = seg.startCol; col <= seg.endCol; col++) {
+          colOccupied[col][slot] = true;
+        }
+
+        segmentsWithSlots.push({
+          ...seg,
+          slot,
+        });
+      });
+    });
+
+    return segmentsWithSlots;
+  }, [personalEvents, subscribedCalendars, streamDays]);
+
+  const rowActivityMap = useMemo(() => {
+    const map: Record<number, { maxSeqSlot: number; maxMultiDaySlot: number; maxSingleEventCount: number }> = {};
+    
+    sequenceSegments.forEach((seg) => {
+      if (!map[seg.row]) map[seg.row] = { maxSeqSlot: -1, maxMultiDaySlot: -1, maxSingleEventCount: 0 };
+      map[seg.row].maxSeqSlot = Math.max(map[seg.row].maxSeqSlot, seg.slot);
+    });
+
+    multiDayPersonalEventSegments.forEach((seg) => {
+      if (!map[seg.row]) map[seg.row] = { maxSeqSlot: -1, maxMultiDaySlot: -1, maxSingleEventCount: 0 };
+      map[seg.row].maxMultiDaySlot = Math.max(map[seg.row].maxMultiDaySlot, seg.slot);
+    });
+
+    streamDays.forEach((date, idx) => {
+      const row = Math.floor(idx / 7) + 1;
+      if (!map[row]) map[row] = { maxSeqSlot: -1, maxMultiDaySlot: -1, maxSingleEventCount: 0 };
+
+      const dStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      const count = personalEvents.filter((e) => {
+        const enabledCal = subscribedCalendars.find((c) => c.id === e.calendarId);
+        if (enabledCal && !enabledCal.enabled) return false;
+        // Only count single-day events inside the day box
+        if (e.startDate && e.endDate && e.startDate !== e.endDate) return false;
+        return e.startDate === dStr;
+      }).length;
+
+      map[row].maxSingleEventCount = Math.max(map[row].maxSingleEventCount, count);
+    });
+
     return map;
-  }, [sequenceSegments, monthDays, personalEvents, subscribedCalendars]);
+  }, [sequenceSegments, multiDayPersonalEventSegments, streamDays, personalEvents, subscribedCalendars]);
 
   // Navigation handlers
   const handlePrevMonth = () => {
@@ -657,7 +832,7 @@ export default function CalendarView() {
     const dayOts: boolean[] = [];
     for (let col = seg.startCol; col <= seg.endCol; col++) {
       const dayIdx = (seg.row - 1) * 7 + (col - 1);
-      const date = monthDays[dayIdx];
+      const date = streamDays[dayIdx];
       const dp = date ? getDutyPeriodForDate(seg.seq, date) : undefined;
       dayOts.push(!!dp?.isOvertime);
     }
@@ -693,38 +868,33 @@ export default function CalendarView() {
     <>
       {/* View Grid */}
       {viewMode === "month" ? (
-        /* Month Grid View */
-        <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-md h-full flex flex-col">
-          {/* Weekday headers */}
-          <div className="grid grid-cols-7 border-b border-slate-200 text-center py-3 bg-slate-100 shrink-0">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <span key={day} className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-                {day}
-              </span>
-            ))}
-          </div>
-
+        /* Month Grid View (Continuous Timeline Stream across months) */
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-xs min-h-full flex flex-col">
           {/* Days */}
           {(() => {
-            const totalRows = Math.ceil(monthDays.length / 7);
+            const totalRows = Math.ceil(streamDays.length / 7);
             const gridTemplateRows = Array.from({ length: totalRows }, (_, r) => {
               const rowNum = r + 1;
-              const activity = rowActivityMap[rowNum] || { maxSlot: -1, hasEvents: false };
-              const slotCount = Math.max(0, activity.maxSlot + 1);
-              const slotPx = isMobile ? 24 : 32;
-              const basePx = isMobile ? 28 : 34;
-              const evtPx = activity.hasEvents ? (isMobile ? 22 : 28) : 0;
-              const minHeight = Math.max(isMobile ? 100 : 125, basePx + slotCount * slotPx + evtPx + 8);
-              return `minmax(${minHeight}px, 1fr)`;
+              const activity = rowActivityMap[rowNum] || { maxSeqSlot: -1, maxMultiDaySlot: -1, maxSingleEventCount: 0 };
+              const seqSlotCount = Math.max(0, activity.maxSeqSlot + 1);
+              const multiSlotCount = Math.max(0, activity.maxMultiDaySlot + 1);
+              const seqSlotPx = isMobile ? 28 : 34;
+              const multiSlotPx = isMobile ? 24 : 28;
+              const basePx = isMobile ? 36 : 42;
+              const evtPx = Math.min(activity.maxSingleEventCount, 4) * (isMobile ? 24 : 28);
+              const contentMinHeight = basePx + seqSlotCount * seqSlotPx + multiSlotCount * multiSlotPx + evtPx + 36;
+              const viewportWeekHeight = isMobile ? "calc((100vh - 128px) / 3.4)" : "calc((100vh - 140px) / 3.4)";
+              return `minmax(max(${contentMinHeight}px, ${viewportWeekHeight}), 1fr)`;
             }).join(" ");
 
             return (
-              <div className="grid grid-cols-7 bg-slate-50 flex-grow h-full min-h-0" style={{ gridTemplateRows }}>
-                {monthDays.map((date, idx) => {
+              <div className="grid grid-cols-7 bg-slate-50 min-h-full rounded-2xl overflow-hidden" style={{ gridTemplateRows }}>
+                {streamDays.map((date, idx) => {
                   const seq = getSequenceForDate(date);
                   const isCurrentMonth = date.getMonth() === currentDate.getMonth();
                   const isToday = new Date().toDateString() === date.toDateString();
-                  const dp = seq ? getDutyPeriodForDate(seq, date) : undefined;
+                  const dutyInfo = getDayDutyInfo(seq, date);
+                  const ronCity = dutyInfo?.ronCity;
                   
                   // Apply filters
                   let hide = false;
@@ -732,7 +902,7 @@ export default function CalendarView() {
                   if (filterMode === "off" && seq) hide = true;
                   if (filterMode === "high-credit" && (!seq || !isHighCredit(seq))) hide = true;
 
-                  const isDfp = !seq && isCurrentMonth;
+                  const isDfp = !seq;
                   const row = Math.floor(idx / 7) + 1;
                   const col = (idx % 7) + 1;
 
@@ -750,95 +920,144 @@ export default function CalendarView() {
                   return (
                     <div
                       key={idx}
+                      ref={isToday ? todayElementRef : undefined}
                       style={{
                         gridRow: row,
                         gridColumn: col,
-                        ...(isFirstOfMonth ? { borderLeft: "4px solid #0284c7" } : {}),
-                        ...(isFirstOfMonth && date.getDay() === 0 ? { borderTop: "4px solid #0284c7" } : {}),
                       }}
                       onClick={() => setSelectedDayDetail(date)}
-                      className={`relative p-1 sm:p-2 border-r border-b border-slate-200 flex flex-col justify-start gap-0.5 transition-all duration-200 min-h-0 overflow-hidden cursor-pointer ${
+                      className={`relative p-1 sm:p-2 border-r border-b border-slate-200 flex flex-col justify-between transition-all duration-200 min-h-0 overflow-hidden cursor-pointer ${
                         isVacationDay
                           ? "bg-emerald-50/70 border-emerald-300"
-                          : isFirstOfMonth
-                          ? "bg-sky-50/70"
-                          : isCurrentMonth
-                          ? "bg-white hover:bg-slate-50/80"
-                          : "bg-slate-100/80 opacity-40 pointer-events-none"
+                          : isToday
+                          ? "bg-sky-50/40"
+                          : "bg-white hover:bg-slate-50/80"
                       } ${hide ? "opacity-10" : ""}`}
                     >
-                      {/* Date cell header bar */}
-                      <div className="flex items-center justify-between w-full min-w-0 gap-0.5">
+                      {/* 1. Date cell header bar */}
+                      <div className="flex items-center justify-between w-full min-w-0 z-10">
                         <div className="flex items-center gap-1 min-w-0">
-                          <span
-                            className={`text-[10px] sm:text-xs font-bold font-mono px-1.5 py-0.2 rounded-full shrink-0 ${
-                              isToday
-                                ? "bg-sky-600 text-white font-black shadow-sm"
-                                : isFirstOfMonth
-                                ? "bg-sky-600 text-white font-black shadow-xs"
-                                : isCurrentMonth
-                                ? "text-slate-800 font-extrabold"
-                                : "text-slate-500"
-                            }`}
-                          >
-                            {date.getDate()}
-                          </span>
-
-                          {/* Month Transition Badge on Day 1 */}
-                          {isFirstOfMonth && (
-                            <span className="px-1.5 py-0.2 rounded-full text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-2xs shrink-0 font-mono">
-                              ✨ {monthAbbrev} {date.getFullYear()}
+                          {isFirstOfMonth ? (
+                            <div className="flex items-baseline gap-1 min-w-0">
+                              <span
+                                className={`text-[10px] sm:text-xs font-black font-mono px-1.5 py-0.5 rounded-full shrink-0 ${
+                                  isToday
+                                    ? "bg-sky-600 text-white shadow-xs ring-2 ring-sky-300"
+                                    : "text-sky-700 font-extrabold bg-sky-50 border border-sky-200"
+                                }`}
+                              >
+                                {date.getDate()}
+                              </span>
+                              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-sky-700 font-sans">
+                                {monthAbbrev}
+                              </span>
+                            </div>
+                          ) : (
+                            <span
+                              className={`text-[10px] sm:text-xs font-bold font-mono px-1.5 py-0.5 rounded-full shrink-0 ${
+                                isToday
+                                  ? "bg-sky-600 text-white font-black shadow-xs ring-2 ring-sky-300"
+                                  : "text-slate-800 font-extrabold"
+                              }`}
+                            >
+                              {date.getDate()}
                             </span>
                           )}
                         </div>
 
-                        {seq && getRonForDate(seq, date) && (
-                          <span className="inline-flex items-center gap-0.5 px-1 py-0.2 text-[7.5px] sm:text-[9px] font-extrabold text-amber-900 bg-amber-100 border border-amber-300 rounded tracking-tight uppercase shrink-0 max-w-[46px] sm:max-w-none truncate">
-                            <Moon className="w-2 h-2 fill-amber-500 text-amber-600 shrink-0" />
-                            <span className="truncate">{getRonForDate(seq, date)}</span>
+                        {isVacationDay ? (
+                          <span className="text-[8px] sm:text-[9px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-1 py-0.5 rounded uppercase tracking-wider shrink-0 font-mono">
+                            VA
                           </span>
-                        )}
-
-                        {isDfp && !isVacationDay && !seq && filterMode !== "trips" && !isFirstOfMonth && (
-                          <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-600 tracking-wide uppercase px-1 py-0.2 rounded bg-slate-100 border border-slate-200 shrink-0">
-                            DFP
+                        ) : isDfp && !seq && filterMode !== "trips" && !isFirstOfMonth ? (
+                          <span className="text-[8px] sm:text-[9px] font-extrabold text-slate-400 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded uppercase tracking-wider shrink-0 font-mono">
+                            OFF
                           </span>
-                        )}
+                        ) : null}
                       </div>
 
-                      {/* Personal Events Container */}
+                      {/* 2. Bottom Layover / RON and Flight Leg Summary */}
+                      <div className="mt-auto w-full pt-1 flex items-center justify-between gap-1 overflow-hidden pointer-events-none z-10">
+                        {ronCity ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] sm:text-[9.5px] font-black text-amber-950 bg-amber-100/90 border border-amber-300 rounded-md shadow-2xs truncate">
+                            <Moon className="w-2.5 h-2.5 fill-amber-500 text-amber-600 shrink-0" />
+                            <span className="truncate font-mono font-black">{ronCity}</span>
+                          </span>
+                        ) : dutyInfo?.legsSummary ? (
+                          <span className="text-[7.5px] sm:text-[9px] font-mono font-bold text-slate-500 truncate bg-slate-100/90 px-1 py-0.5 rounded border border-slate-200 ml-auto">
+                            {dutyInfo.legsSummary}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* 3. Personal Events Container (Single-Day Events) */}
                       {(() => {
-                        const cellSegs = sequenceSegments.filter(
+                        const cellSeqSegs = sequenceSegments.filter(
                           (s) => s.row === row && s.startCol <= col && s.endCol >= col
                         );
-                        const maxSlot = cellSegs.length > 0 ? Math.max(...cellSegs.map((s) => s.slot)) : -1;
-                        const topPx = isMobile ? 24 + (maxSlot + 1) * 24 : 32 + (maxSlot + 1) * 32;
+                        const maxSeqSlot = cellSeqSegs.length > 0 ? Math.max(...cellSeqSegs.map((s) => s.slot)) : -1;
+
+                        const cellMultiSegs = multiDayPersonalEventSegments.filter(
+                          (s) => s.row === row && s.startCol <= col && s.endCol >= col
+                        );
+                        const maxMultiSlot = cellMultiSegs.length > 0 ? Math.max(...cellMultiSegs.map((s) => s.slot)) : -1;
+
+                        const seqHeight = maxSeqSlot >= 0 ? (maxSeqSlot + 1) * (isMobile ? 26 : 32) : 0;
+                        const multiHeight = maxMultiSlot >= 0 ? (maxMultiSlot + 1) * (isMobile ? 22 : 26) : 0;
+                        const topPx = (isMobile ? 28 : 34) + seqHeight + multiHeight + (seqHeight > 0 || multiHeight > 0 ? 6 : 4);
 
                         const dateEvents = personalEvents.filter((e) => {
                           const enabledCal = subscribedCalendars.find((c) => c.id === e.calendarId);
                           if (enabledCal && !enabledCal.enabled) return false;
+                          // If it's a multi-day event, it's already rendered as a continuous spanning ribbon across the grid
+                          if (e.startDate && e.endDate && e.startDate !== e.endDate) return false;
                           const dStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-                          return e.startDate === dStr || (e.startDate <= dStr && e.endDate >= dStr);
+                          return e.startDate === dStr;
                         });
 
                         if (dateEvents.length === 0) return null;
 
-                        const maxVisible = 1;
+                        const maxVisible = maxSeqSlot >= 0 || maxMultiSlot >= 0 ? 3 : 5;
                         const visibleEvents = dateEvents.slice(0, maxVisible);
                         const overflowCount = dateEvents.length - maxVisible;
+
+                        const formatCompactTime = (timeStr?: string) => {
+                          if (!timeStr) return "";
+                          const clean = timeStr.trim();
+                          const ampmMatch = clean.match(/^(\d{1,2}):?(\d{2})?\s*([AP]M)?$/i);
+                          if (ampmMatch) {
+                            let hour = parseInt(ampmMatch[1], 10);
+                            const mins = ampmMatch[2] || "00";
+                            let period = (ampmMatch[3] || "").toLowerCase();
+                            if (!period && hour >= 12) {
+                              if (hour > 12) hour -= 12;
+                              period = "p";
+                            } else if (!period && hour < 12) {
+                              if (hour === 0) hour = 12;
+                              period = "a";
+                            } else if (period) {
+                              period = period[0];
+                            }
+                            const minStr = mins === "00" ? "" : `:${mins}`;
+                            return `${hour}${minStr}${period}`;
+                          }
+                          return clean.slice(0, 5);
+                        };
 
                         return (
                           <div
                             style={{ top: `${topPx}px` }}
-                            className="absolute left-0.5 right-0.5 space-y-0.5 z-30 pointer-events-auto max-h-[44px] overflow-hidden"
+                            className="absolute left-0.5 right-0.5 space-y-1 z-30 pointer-events-auto overflow-hidden pb-1"
                           >
                             {visibleEvents.map((evt) => {
-                              let pillStyle = "bg-purple-100 border-purple-300 text-purple-950 hover:bg-purple-200";
-                              if (evt.color === "teal") pillStyle = "bg-teal-100 border-teal-300 text-teal-950";
-                              else if (evt.color === "rose") pillStyle = "bg-rose-100 border-rose-300 text-rose-950";
-                              else if (evt.color === "amber") pillStyle = "bg-amber-100 border-amber-300 text-amber-950";
-                              else if (evt.color === "emerald") pillStyle = "bg-emerald-100 border-emerald-300 text-emerald-950";
-                              else if (evt.color === "sky") pillStyle = "bg-sky-100 border-sky-300 text-sky-950";
+                              let pillStyle = "bg-purple-100/95 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs";
+                              if (evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 shadow-2xs";
+                              else if (evt.color === "rose") pillStyle = "bg-rose-100/95 border-rose-300 text-rose-950 shadow-2xs";
+                              else if (evt.color === "amber") pillStyle = "bg-amber-100/95 border-amber-300 text-amber-950 shadow-2xs";
+                              else if (evt.color === "emerald") pillStyle = "bg-emerald-100/95 border-emerald-300 text-emerald-950 shadow-2xs";
+                              else if (evt.color === "sky") pillStyle = "bg-sky-100/95 border-sky-300 text-sky-950 shadow-2xs";
+
+                              const cTime = formatCompactTime(evt.startTime);
 
                               return (
                                 <div
@@ -847,11 +1066,17 @@ export default function CalendarView() {
                                     e.stopPropagation();
                                     setSelectedPersonalEvent(evt);
                                   }}
-                                  className={`px-1 py-0.2 rounded border text-[8px] sm:text-[9.5px] font-bold truncate transition cursor-pointer flex items-center justify-between gap-0.5 leading-none ${pillStyle}`}
-                                  title={evt.title}
+                                  className={`px-1 py-0.5 rounded-md border text-[8px] sm:text-[9.5px] font-bold cursor-pointer leading-[1.15] active-press shadow-2xs ${pillStyle}`}
+                                  title={`${evt.title}${evt.startTime ? ` (${evt.startTime})` : ""}`}
                                 >
-                                  <span className="truncate">{evt.title}</span>
-                                  {evt.startTime && <span className="text-[7.5px] font-mono opacity-80 shrink-0">{evt.startTime}</span>}
+                                  <div className="line-clamp-2 break-words">
+                                    {cTime && (
+                                      <span className="font-mono font-black opacity-80 text-[7px] sm:text-[8.5px] mr-0.5 inline-block bg-black/10 px-0.5 rounded">
+                                        {cTime}
+                                      </span>
+                                    )}
+                                    <span>{evt.title}</span>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -863,7 +1088,7 @@ export default function CalendarView() {
                                   e.stopPropagation();
                                   setSelectedDayDetail(date);
                                 }}
-                                className="w-full text-center text-[7.5px] font-extrabold text-sky-700 bg-sky-50 border border-sky-200 rounded py-0.2 cursor-pointer leading-none"
+                                className="w-full text-center text-[7.5px] font-extrabold text-sky-700 bg-sky-50 border border-sky-200 rounded py-0.5 cursor-pointer leading-none active-press"
                               >
                                 +{overflowCount} more
                               </button>
@@ -879,6 +1104,7 @@ export default function CalendarView() {
                   );
                 })}
 
+                {/* Sequence Trip Bars */}
                 {sequenceSegments
                   .filter((seg) => {
                     if (filterMode === "off") return false;
@@ -893,12 +1119,12 @@ export default function CalendarView() {
                     const isVacation = seg.seq.statusTag === "VA" || !!(seg.seq as any).isVacation;
                     const isMultiDay = seg.endCol - seg.startCol >= 1;
 
-                    let cardStyle = "bg-sky-600 text-white border-sky-700 shadow-sm hover:bg-sky-700";
+                    let cardStyle = "bg-sky-600 text-white border-sky-700 shadow-sm hover:bg-sky-700 font-bold";
                     let subtextColor = "text-sky-100";
 
                     if (isVacation) {
-                      cardStyle = "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 text-white border-emerald-700 font-extrabold shadow-sm hover:from-emerald-700 hover:to-teal-700";
-                      subtextColor = "text-emerald-100";
+                      cardStyle = "bg-emerald-600 text-white border-emerald-700 shadow-sm hover:bg-emerald-700 font-bold";
+                      subtextColor = "text-emerald-200";
                     } else if (isDropped) {
                       cardStyle = "bg-rose-100 text-rose-900 border border-dashed border-rose-400 font-bold hover:bg-rose-200";
                       subtextColor = "text-rose-800";
@@ -922,50 +1148,87 @@ export default function CalendarView() {
                           gridColumnStart: seg.startCol,
                           gridColumnEnd: seg.endCol + 1,
                           alignSelf: "start",
-                          marginTop: `${isMobile ? 22 + seg.slot * 24 : 30 + seg.slot * 32}px`,
-                          height: isMobile ? "20px" : "26px",
+                          marginTop: `${isMobile ? 28 + seg.slot * 26 : 34 + seg.slot * 32}px`,
+                          height: isMobile ? "22px" : "26px",
                           zIndex: 20,
                           position: "relative",
                         }}
                         className={`mx-0.5 py-0.5 px-1.5 rounded-lg border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden ${cardStyle} ${
                           isSelected ? "ring-2 ring-sky-300 ring-offset-1" : ""
                         }`}
-                        title={`Sequence #${seg.seq.sequenceNumber}\nBase: ${seg.seq.base} ${seg.seq.equipment}\nCredit: ${credHrs}h\nLayovers: ${seg.seq.layoverCities.join(" → ") || "None"}`}
+                        title={isVacation ? `Vacation Block\nDuration: 7 Days\nCredit: ${credHrs}h` : `Sequence #${seg.seq.sequenceNumber}\nBase: ${seg.seq.base} ${seg.seq.equipment}\nCredit: ${credHrs}h\nLayovers: ${seg.seq.layoverCities.join(" → ") || "None"}`}
                       >
                         <div className="flex items-center gap-1 truncate min-w-0">
                           <span className="flex items-center gap-0.5 font-black text-[9px] sm:text-xs truncate">
-                            <Plane className="w-3 h-3 shrink-0" />
+                            {isVacation ? <Palmtree className="w-3 h-3 shrink-0 text-emerald-200" /> : <Plane className="w-3 h-3 shrink-0" />}
                             <span className="truncate">{isVacation ? "VACATION" : `#${seg.seq.sequenceNumber}`}</span>
                           </span>
 
-                          {!isVacation && (
-                            <span className={`text-[8px] sm:text-[10px] font-bold font-mono ${subtextColor} hidden sm:inline truncate`}>
-                              [{seg.seq.base}]
-                            </span>
-                          )}
+                          <span className={`text-[8px] sm:text-[10px] font-bold font-mono ${subtextColor} hidden sm:inline truncate`}>
+                            [{isVacation ? "VA" : seg.seq.base}]
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-1 text-[8px] sm:text-[10px] font-mono font-bold shrink-0">
-                          {isVacation ? (
-                            <span className="text-[7.5px] bg-emerald-700/80 text-white px-1 py-0.2 rounded uppercase font-black">
-                              7 Days
+                          {seg.seq.layoverCities.length > 0 && !isMobile && !isVacation && (
+                            <span className="text-[8px] opacity-95 hidden lg:inline-flex items-center gap-0.5 bg-black/20 px-1 py-0.2 rounded">
+                              <Moon className="w-2 h-2 text-amber-300" /> {seg.seq.layoverCities.join("→")}
                             </span>
-                          ) : (
-                            <>
-                              {seg.seq.layoverCities.length > 0 && !isMobile && (
-                                <span className="text-[8px] opacity-95 hidden lg:inline-flex items-center gap-0.5 bg-black/20 px-1 py-0.2 rounded">
-                                  <Moon className="w-2 h-2 text-amber-300" /> {seg.seq.layoverCities.join("→")}
-                                </span>
-                              )}
-                              <span className="px-1 py-0.2 bg-black/20 rounded font-black text-[8px] sm:text-[10px]">
-                                {credHrs}h
-                              </span>
-                            </>
                           )}
+                          <span className="px-1 py-0.2 bg-black/20 rounded font-black text-[8px] sm:text-[10px]">
+                            {credHrs}h
+                          </span>
                         </div>
                       </div>
                     );
                   })}
+
+                {/* Multi-Day Personal Calendar Event Spanning Ribbons */}
+                {multiDayPersonalEventSegments.map((seg, idx) => {
+                  let pillStyle = "bg-purple-100/95 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs";
+                  if (seg.evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 hover:bg-teal-200 shadow-2xs";
+                  else if (seg.evt.color === "rose") pillStyle = "bg-rose-100/95 border-rose-300 text-rose-950 hover:bg-rose-200 shadow-2xs";
+                  else if (seg.evt.color === "amber") pillStyle = "bg-amber-100/95 border-amber-300 text-amber-950 hover:bg-amber-200 shadow-2xs";
+                  else if (seg.evt.color === "emerald") pillStyle = "bg-emerald-100/95 border-emerald-300 text-emerald-950 hover:bg-emerald-200 shadow-2xs";
+                  else if (seg.evt.color === "sky") pillStyle = "bg-sky-100/95 border-sky-300 text-sky-950 hover:bg-sky-200 shadow-2xs";
+
+                  const rowSeqSegs = sequenceSegments.filter((s) => s.row === seg.row);
+                  const maxSeqSlotInRow = rowSeqSegs.length > 0 ? Math.max(...rowSeqSegs.map((s) => s.slot)) : -1;
+                  const seqHeight = maxSeqSlotInRow >= 0 ? (maxSeqSlotInRow + 1) * (isMobile ? 26 : 32) : 0;
+                  const topPx = (isMobile ? 28 : 34) + seqHeight + seg.slot * (isMobile ? 22 : 26);
+
+                  return (
+                    <div
+                      key={`multi-evt-${idx}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPersonalEvent(seg.evt);
+                      }}
+                      style={{
+                        gridRow: seg.row,
+                        gridColumnStart: seg.startCol,
+                        gridColumnEnd: seg.endCol + 1,
+                        alignSelf: "start",
+                        marginTop: `${topPx}px`,
+                        height: isMobile ? "20px" : "24px",
+                        zIndex: 22,
+                        position: "relative",
+                      }}
+                      className={`mx-0.5 py-0.5 px-2 rounded-lg border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden font-bold active-press ${pillStyle}`}
+                      title={`${seg.evt.title} (${seg.evt.startDate} to ${seg.evt.endDate})`}
+                    >
+                      <div className="flex items-center gap-1 truncate min-w-0">
+                        <CalendarIcon className="w-2.5 h-2.5 shrink-0 opacity-85" />
+                        <span className="truncate text-[8.5px] sm:text-[10px] font-black">{seg.evt.title}</span>
+                      </div>
+                      {seg.evt.location && (
+                        <span className="text-[7.5px] sm:text-[9px] opacity-85 truncate hidden sm:inline font-mono">
+                          📍 {seg.evt.location}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
@@ -1006,10 +1269,22 @@ export default function CalendarView() {
                             {seq.base}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-700 mt-0.5 flex items-center gap-2 font-medium">
-                          <Clock className="w-3.5 h-3.5 text-slate-500" />
-                          Duty credit: {Math.floor(seq.totalCreditMinutes / 60)}h {seq.totalCreditMinutes % 60}m
-                        </p>
+                        {(() => {
+                          const dayLegsBlock = dutyPeriod?.legs ? dutyPeriod.legs.reduce((acc, l) => acc + (l.blockMinutes || 0), 0) : 0;
+                          const dayCreditMins = dutyPeriod?.payCreditMinutes !== undefined && dutyPeriod.payCreditMinutes > 0
+                            ? dutyPeriod.payCreditMinutes
+                            : (dayLegsBlock > 0 ? dayLegsBlock : Math.round(seq.totalCreditMinutes / Math.max(1, seq.dutyPeriods?.length || 1)));
+
+                          return (
+                            <p className="text-xs text-slate-700 mt-0.5 flex items-center gap-2 font-medium flex-wrap">
+                              <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              <span>Day credit: {Math.floor(dayCreditMins / 60)}h {dayCreditMins % 60}m</span>
+                              {seq.dutyPeriods && seq.dutyPeriods.length > 1 && (
+                                <span className="text-[10px] text-slate-400 font-mono font-semibold">(Trip Total: {Math.floor(seq.totalCreditMinutes / 60)}h {seq.totalCreditMinutes % 60}m)</span>
+                              )}
+                            </p>
+                          );
+                        })()}
                       </div>
                     ) : (
                       <div>
@@ -1181,26 +1456,25 @@ export default function CalendarView() {
           onClick={() => setSelectedSequenceId(null)}
         >
           <div
-            className="bg-white rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 shadow-2xl max-w-xl w-full max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slideUp pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+            className="bg-white rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 shadow-2xl max-w-xl w-full max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col animate-slideUp"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Mobile Drag Handle */}
-            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-2.5 sm:hidden shrink-0" />
-
-            <div className="p-3 sm:p-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <span className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-2">
+            {/* Sticky Header that NEVER scrolls off screen */}
+            <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-white/95 backdrop-blur-xl shrink-0">
+              <span className="text-xs sm:text-sm font-black uppercase text-slate-800 tracking-wider flex items-center gap-2">
                 <Plane className="w-4 h-4 text-sky-600" />
                 Trip Inspector & Legality
               </span>
               <button
                 onClick={() => setSelectedSequenceId(null)}
-                className="p-1.5 rounded-xl bg-slate-200/80 hover:bg-slate-300 text-slate-700 transition cursor-pointer active-press"
+                className="px-3 py-1.5 text-xs font-black text-slate-700 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 transition cursor-pointer active-press flex items-center gap-1"
                 title="Close Inspector"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
+                <span>Done</span>
               </button>
             </div>
-            <div className="p-3 sm:p-5 overflow-y-auto scrollbar-thin flex-1">
+            <div className="p-3 sm:p-5 overflow-y-auto scrollbar-thin flex-1 pb-[max(1.5rem,calc(env(safe-area-inset-bottom,0px)+1rem))]">
               <SequenceInspector isEmbedded={true} />
             </div>
           </div>
@@ -1394,422 +1668,110 @@ export default function CalendarView() {
     );
   }
 
-  // Single Unified Continuous Stream Grid across all months
-  const streamDays = useMemo(() => {
-    const baseYear = currentDate.getFullYear();
-    const baseMonth = currentDate.getMonth();
-
-    // Start 1 month prior, start on Sunday
-    const firstDay = new Date(baseYear, baseMonth - 1, 1);
-    const startDay = new Date(firstDay);
-    startDay.setDate(startDay.getDate() - startDay.getDay());
-
-    // End 4 months ahead, end on Saturday
-    const lastDay = new Date(baseYear, baseMonth + 4, 0);
-    const endDay = new Date(lastDay);
-    endDay.setDate(endDay.getDate() + (6 - endDay.getDay()));
-
-    const days: Date[] = [];
-    const curr = new Date(startDay);
-    while (curr <= endDay) {
-      days.push(new Date(curr));
-      curr.setDate(curr.getDate() + 1);
-    }
-    return days;
-  }, [currentDate]);
-
-  // Compute sequence segments across streamDays
-  const streamSegmentsRaw = useMemo(() => {
-    const segments: {
-      seq: SequenceTrip;
-      row: number;
-      startCol: number;
-      endCol: number;
-      isRealStart?: boolean;
-      isRealEnd?: boolean;
-      isDayOt?: boolean;
-      isOtAddon?: boolean;
-      originalSeqId?: string;
-    }[] = [];
-
-    const vacationTrips: SequenceTrip[] = vacations.map((v) => ({
-      id: v.id,
-      sequenceNumber: "VACATION",
-      startDate: v.startDate,
-      endDate: v.endDate,
-      base: "ORD",
-      equipment: "VAC",
-      totalBlockMinutes: 0,
-      totalCreditMinutes: Math.round((v.creditHours || 24.5) * 60),
-      layoverCities: ["VACATION"],
-      dutyPeriods: [],
-      colorTag: "emerald",
-      statusTag: "VA",
-      isVacation: true,
-    }));
-
-    const allTripsToRender = [...sequences, ...vacationTrips];
-
-    allTripsToRender.forEach((seq) => {
-      if (seq.isDropped || seq.statusTag === "DROP" || seq.statusTag === "DTS DROP") {
-        if (!showDtsDropped) return;
-      }
-
-      const sDate = parseLocalDateString(seq.startDate);
-      const eDate = parseLocalDateString(seq.endDate);
-
-      const startIdx = streamDays.findIndex(
-        (d) =>
-          d.getFullYear() === sDate.getFullYear() &&
-          d.getMonth() === sDate.getMonth() &&
-          d.getDate() === sDate.getDate()
-      );
-      const endIdx = streamDays.findIndex(
-        (d) =>
-          d.getFullYear() === eDate.getFullYear() &&
-          d.getMonth() === eDate.getMonth() &&
-          d.getDate() === eDate.getDate()
-      );
-
-      if (startIdx === -1 && endIdx === -1) return;
-
-      const effStart = startIdx !== -1 ? startIdx : 0;
-      const effEnd = endIdx !== -1 ? endIdx : streamDays.length - 1;
-
-      let curr = effStart;
-      while (curr <= effEnd) {
-        const row = Math.floor(curr / 7) + 1;
-        const endOfWeek = Math.floor(curr / 7) * 7 + 6;
-        const currEnd = Math.min(endOfWeek, effEnd);
-
-        segments.push({
-          seq,
-          row,
-          startCol: (curr % 7) + 1,
-          endCol: (currEnd % 7) + 1,
-          isRealStart: curr === startIdx,
-          isRealEnd: currEnd === endIdx,
-          isDayOt: seq.isOvertime || seq.statusTag === "OT",
-          originalSeqId: seq.id,
-        });
-
-        curr = currEnd + 1;
-      }
-    });
-
-    return segments;
-  }, [sequences, streamDays, showDtsDropped]);
-
-  // Group by row and assign slots
-  const { streamSegmentsWithSlots, streamRowMaxSlots } = useMemo(() => {
-    const rowSegments: Record<number, typeof streamSegmentsRaw> = {};
-    streamSegmentsRaw.forEach((seg) => {
-      if (!rowSegments[seg.row]) rowSegments[seg.row] = [];
-      rowSegments[seg.row].push(seg);
-    });
-
-    const segmentsWithSlots: {
-      seq: SequenceTrip;
-      row: number;
-      startCol: number;
-      endCol: number;
-      slot: number;
-      isRealStart?: boolean;
-      isRealEnd?: boolean;
-      isDayOt?: boolean;
-      isOtAddon?: boolean;
-      originalSeqId?: string;
-    }[] = [];
-    const rowMaxSlots: Record<number, number> = {};
-
-    Object.keys(rowSegments).forEach((rowStr) => {
-      const row = Number(rowStr);
-      const rowSegs = rowSegments[row];
-
-      rowSegs.sort((a, b) => {
-        const spanA = a.endCol - a.startCol;
-        const spanB = b.endCol - b.startCol;
-        if (spanA !== spanB) return spanB - spanA;
-        return a.startCol - b.startCol;
-      });
-
-      const colOccupied: Record<number, boolean[]> = {};
-      for (let c = 1; c <= 7; c++) colOccupied[c] = [];
-
-      rowSegs.forEach((seg) => {
-        let slot = 0;
-        while (true) {
-          let occupied = false;
-          for (let col = seg.startCol; col <= seg.endCol; col++) {
-            if (colOccupied[col][slot]) {
-              occupied = true;
-              break;
-            }
-          }
-          if (!occupied) break;
-          slot++;
-        }
-
-        for (let col = seg.startCol; col <= seg.endCol; col++) {
-          colOccupied[col][slot] = true;
-        }
-
-        segmentsWithSlots.push({ ...seg, slot });
-        rowMaxSlots[row] = Math.max(rowMaxSlots[row] ?? -1, slot);
-      });
-    });
-
-    return { streamSegmentsWithSlots: segmentsWithSlots, streamRowMaxSlots: rowMaxSlots };
-  }, [streamSegmentsRaw]);
-
-  const totalStreamRows = Math.ceil(streamDays.length / 7);
-  const streamGridTemplateRows = Array.from({ length: totalStreamRows }, (_, r) => {
-    const rowNum = r + 1;
-    const maxSlot = streamRowMaxSlots[rowNum] ?? -1;
-    const slotCount = Math.max(0, maxSlot + 1);
-    const slotPx = isMobile ? 24 : 32;
-    const basePx = isMobile ? 28 : 34;
-    const minHeight = Math.max(isMobile ? 100 : 125, basePx + slotCount * slotPx + 20);
-    return `minmax(${minHeight}px, 1fr)`;
-  }).join(" ");
-
   return (
-    <div className="w-full h-full flex flex-col bg-[#f8fafc] overflow-hidden font-sans text-slate-900">
-      {/* Sticky Weekday Header (Safe below camera notch) */}
-      <div className="grid grid-cols-7 border-b border-slate-200 text-center pt-[max(2.5rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-2 bg-slate-100/95 shrink-0 sticky top-0 z-40 backdrop-blur-md shadow-xs">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-          <span key={day} className="text-[10px] sm:text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-            {day}
+    <div className="w-full h-full flex flex-col bg-[#f8fafc] overflow-hidden font-sans text-slate-900 relative">
+      {/* 1. Mobile & Desktop Top Calendar Header Bar */}
+      <div className="flex items-center justify-between px-3 pt-[max(2.5rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-2 bg-white/95 border-b border-slate-200 shadow-xs backdrop-blur-md shrink-0 z-40">
+        {/* Month Navigation */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handlePrevMonth}
+            className="p-1.5 hover:bg-slate-100 text-slate-700 hover:text-slate-900 rounded-xl transition cursor-pointer active-press"
+            title="Previous Month"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <span className="text-xs sm:text-sm font-black font-mono px-1.5 text-slate-900 tracking-tight">
+            {viewMode === "month"
+              ? `${monthName} ${activeYear}`
+              : `Week of ${weekDays[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
           </span>
-        ))}
-      </div>
 
-      {/* Unified Continuous Stream Grid */}
-      <div className="flex-grow h-full min-h-0 overflow-y-auto scrollbar-thin pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
-        <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200" style={{ gridTemplateRows: streamGridTemplateRows }}>
-          {streamDays.map((date, idx) => {
-            const seq = getSequenceForDate(date);
-            const isToday = new Date().toDateString() === date.toDateString();
-            const isFirstOfMonth = date.getDate() === 1;
-            const isDfp = !seq;
-            const row = Math.floor(idx / 7) + 1;
-            const col = (idx % 7) + 1;
+          <button
+            onClick={handleNextMonth}
+            className="p-1.5 hover:bg-slate-100 text-slate-700 hover:text-slate-900 rounded-xl transition cursor-pointer active-press"
+            title="Next Month"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
 
-            const isVacationDay = vacations.some((v) => {
-              const y = date.getFullYear();
-              const m = String(date.getMonth() + 1).padStart(2, "0");
-              const d = String(date.getDate()).padStart(2, "0");
-              const dateStr = `${y}-${m}-${d}`;
-              return dateStr >= v.startDate && dateStr <= v.endDate;
-            });
+        {/* Right Controls */}
+        <div className="flex items-center gap-1.5">
+          {/* Today Button */}
+          <button
+            onClick={() => {
+              setCurrentDate(new Date());
+              setTimeout(scrollToToday, 50);
+            }}
+            className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-black transition cursor-pointer active-press shadow-2xs"
+          >
+            Today
+          </button>
 
-            const monthAbbrev = date.toLocaleString("default", { month: "short" }).toUpperCase();
+          {/* Month / Week toggle */}
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs">
+            <button
+              onClick={() => setViewMode("month")}
+              className={`px-2 py-0.5 rounded-lg font-bold transition cursor-pointer ${
+                viewMode === "month" ? "bg-white text-slate-900 shadow-xs font-extrabold" : "text-slate-500"
+              }`}
+            >
+              Mo
+            </button>
+            <button
+              onClick={() => setViewMode("week")}
+              className={`px-2 py-0.5 rounded-lg font-bold transition cursor-pointer ${
+                viewMode === "week" ? "bg-white text-slate-900 shadow-xs font-extrabold" : "text-slate-500"
+              }`}
+            >
+              Wk
+            </button>
+          </div>
 
-            return (
-              <div
-                key={idx}
-                style={{
-                  gridRow: row,
-                  gridColumn: col,
-                  ...(isFirstOfMonth ? { borderLeft: "4px solid #0284c7" } : {}),
-                  ...(isFirstOfMonth && date.getDay() === 0 ? { borderTop: "4px solid #0284c7" } : {}),
-                }}
-                onClick={() => setSelectedDayDetail(date)}
-                className={`relative p-1 sm:p-2 border-r border-b border-slate-200 flex flex-col justify-start gap-0.5 transition-all duration-200 min-h-0 overflow-hidden cursor-pointer ${
-                  isVacationDay
-                    ? "bg-emerald-50/70 border-emerald-300"
-                    : isFirstOfMonth
-                    ? "bg-sky-50/70"
-                    : "bg-white hover:bg-slate-50/80"
-                }`}
-              >
-                {/* Date cell header bar */}
-                <div className="flex items-center justify-between w-full min-w-0 gap-0.5">
-                  <div className="flex items-center gap-1 min-w-0">
-                    <span
-                      className={`text-[10px] sm:text-xs font-bold font-mono px-1.5 py-0.2 rounded-full shrink-0 ${
-                        isToday
-                          ? "bg-sky-600 text-white font-black shadow-sm"
-                          : isFirstOfMonth
-                          ? "bg-sky-600 text-white font-black"
-                          : "text-slate-800 font-extrabold"
-                      }`}
-                    >
-                      {date.getDate()}
-                    </span>
-
-                    {/* Creative Month Transition Badge on Day 1 */}
-                    {isFirstOfMonth && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[8px] sm:text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-2xs shrink-0 font-mono">
-                        ✨ {monthAbbrev} {date.getFullYear()}
-                      </span>
-                    )}
-                  </div>
-
-                  {seq && getRonForDate(seq, date) && (
-                    <span className="inline-flex items-center gap-0.5 px-1 py-0.2 text-[7.5px] sm:text-[9px] font-extrabold text-amber-900 bg-amber-100 border border-amber-300 rounded tracking-tight uppercase shrink-0 max-w-[46px] sm:max-w-none truncate">
-                      <Moon className="w-2 h-2 fill-amber-500 text-amber-600 shrink-0" />
-                      <span className="truncate">{getRonForDate(seq, date)}</span>
-                    </span>
-                  )}
-
-                  {isDfp && !isVacationDay && !seq && filterMode !== "trips" && !isFirstOfMonth && (
-                    <span className="text-[7.5px] sm:text-[9px] font-bold text-slate-600 tracking-wide uppercase px-1 py-0.2 rounded bg-slate-100 border border-slate-200 shrink-0">
-                      DFP
-                    </span>
-                  )}
-                </div>
-
-                {/* Personal Events Container */}
-                {(() => {
-                  const cellSegs = streamSegmentsWithSlots.filter(
-                    (s) => s.row === row && s.startCol <= col && s.endCol >= col
-                  );
-                  const maxSlot = cellSegs.length > 0 ? Math.max(...cellSegs.map((s) => s.slot)) : -1;
-                  const topPx = isMobile ? 24 + (maxSlot + 1) * 24 : 32 + (maxSlot + 1) * 32;
-
-                  const dateEvents = personalEvents.filter((e) => {
-                    const enabledCal = subscribedCalendars.find((c) => c.id === e.calendarId);
-                    if (enabledCal && !enabledCal.enabled) return false;
-                    const dStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-                    return e.startDate === dStr || (e.startDate <= dStr && e.endDate >= dStr);
-                  });
-
-                  if (dateEvents.length === 0) return null;
-
-                  const maxVisible = 1;
-                  const visibleEvents = dateEvents.slice(0, maxVisible);
-                  const overflowCount = dateEvents.length - maxVisible;
-
-                  return (
-                    <div
-                      style={{ top: `${topPx}px` }}
-                      className="absolute left-0.5 right-0.5 space-y-0.5 z-30 pointer-events-auto max-h-[44px] overflow-hidden"
-                    >
-                      {visibleEvents.map((evt) => {
-                        let pillStyle = "bg-purple-100 border-purple-300 text-purple-950";
-                        if (evt.color === "teal") pillStyle = "bg-teal-100 border-teal-300 text-teal-950";
-                        else if (evt.color === "rose") pillStyle = "bg-rose-100 border-rose-300 text-rose-950";
-                        else if (evt.color === "amber") pillStyle = "bg-amber-100 border-amber-300 text-amber-950";
-                        else if (evt.color === "emerald") pillStyle = "bg-emerald-100 border-emerald-300 text-emerald-950";
-                        else if (evt.color === "sky") pillStyle = "bg-sky-100 border-sky-300 text-sky-950";
-
-                        return (
-                          <div
-                            key={evt.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedPersonalEvent(evt);
-                            }}
-                            className={`px-1 py-0.2 rounded border text-[8px] sm:text-[9.5px] font-bold truncate transition cursor-pointer flex items-center justify-between gap-0.5 leading-none ${pillStyle}`}
-                            title={evt.title}
-                          >
-                            <span className="truncate">{evt.title}</span>
-                            {evt.startTime && <span className="text-[7.5px] font-mono opacity-80 shrink-0">{evt.startTime}</span>}
-                          </div>
-                        );
-                      })}
-
-                      {overflowCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedDayDetail(date);
-                          }}
-                          className="w-full text-center text-[7.5px] font-extrabold text-sky-700 bg-sky-50 border border-sky-200 rounded py-0.2 cursor-pointer leading-none"
-                        >
-                          +{overflowCount} more
-                        </button>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            );
-          })}
-
-          {streamSegmentsWithSlots.map((seg, idx) => {
-            const isOt = seg.isDayOt !== undefined ? seg.isDayOt : (seg.seq.isOvertime || seg.seq.statusTag === "OT");
-            const isDropped = seg.seq.isDropped || seg.seq.statusTag === "DROP" || seg.seq.statusTag === "DTS DROP";
-            const isVacation = seg.seq.statusTag === "VA" || !!(seg.seq as any).isVacation;
-            const isMultiDay = seg.endCol - seg.startCol >= 1;
-
-            let cardStyle = "bg-sky-600 text-white border-sky-700 shadow-sm hover:bg-sky-700";
-            let subtextColor = "text-sky-100";
-
-            if (isVacation) {
-              cardStyle = "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 text-white border-emerald-700 font-extrabold shadow-sm hover:from-emerald-700 hover:to-teal-700";
-              subtextColor = "text-emerald-100";
-            } else if (isDropped) {
-              cardStyle = "bg-rose-100 text-rose-900 border border-dashed border-rose-400 font-bold hover:bg-rose-200";
-              subtextColor = "text-rose-800";
-            } else if (isOt) {
-              cardStyle = "bg-gradient-to-r from-amber-500 to-amber-600 text-white border-amber-600 shadow-sm hover:from-amber-600 hover:to-amber-700 font-bold";
-              subtextColor = "text-amber-100";
-            }
-
-            const isSelected = seg.seq.id === selectedSequenceId;
-            const credHrs = (seg.seq.totalCreditMinutes / 60).toFixed(1);
-
-            return (
-              <div
-                key={`streamseg-${idx}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedSequenceId(seg.seq.id);
-                }}
-                style={{
-                  gridRow: seg.row,
-                  gridColumnStart: seg.startCol,
-                  gridColumnEnd: seg.endCol + 1,
-                  alignSelf: "start",
-                  marginTop: `${isMobile ? 22 + seg.slot * 24 : 30 + seg.slot * 32}px`,
-                  height: isMobile ? "20px" : "26px",
-                  zIndex: 20,
-                  position: "relative",
-                }}
-                className={`mx-0.5 py-0.5 px-1.5 rounded-lg border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden ${cardStyle} ${
-                  isSelected ? "ring-2 ring-sky-300 ring-offset-1" : ""
-                }`}
-                title={`Sequence #${seg.seq.sequenceNumber}\nBase: ${seg.seq.base} ${seg.seq.equipment}\nCredit: ${credHrs}h\nLayovers: ${seg.seq.layoverCities.join(" → ") || "None"}`}
-              >
-                <div className="flex items-center gap-1 truncate min-w-0">
-                  <span className="flex items-center gap-0.5 font-black text-[9px] sm:text-xs truncate">
-                    <Plane className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{isVacation ? "VACATION" : `#${seg.seq.sequenceNumber}`}</span>
-                  </span>
-
-                  {!isVacation && (
-                    <span className={`text-[8px] sm:text-[10px] font-bold font-mono ${subtextColor} hidden sm:inline truncate`}>
-                      [{seg.seq.base}]
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1 text-[8px] sm:text-[10px] font-mono font-bold shrink-0">
-                  {isVacation ? (
-                    <span className="text-[7.5px] bg-emerald-700/80 text-white px-1 py-0.2 rounded uppercase font-black">
-                      7 Days
-                    </span>
-                  ) : (
-                    <>
-                      {seg.seq.layoverCities.length > 0 && !isMobile && (
-                        <span className="text-[8px] opacity-95 hidden lg:inline-flex items-center gap-0.5 bg-black/20 px-1 py-0.2 rounded">
-                          <Moon className="w-2 h-2 text-amber-300" /> {seg.seq.layoverCities.join("→")}
-                        </span>
-                      )}
-                      <span className="px-1 py-0.2 bg-black/20 rounded font-black text-[8px] sm:text-[10px]">
-                        {credHrs}h
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {/* Calendar Tools */}
+          <button
+            onClick={() => setIsCalendarToolsOpen(true)}
+            className="p-1.5 text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-200 transition cursor-pointer active-press"
+            title="Calendar Tools & Filters"
+          >
+            <SlidersHorizontal className="w-4 h-4 text-sky-600" />
+          </button>
         </div>
       </div>
+
+      {/* 2. Sticky Weekday Headers */}
+      {viewMode === "month" && (
+        <div className="grid grid-cols-7 border-b border-slate-200 text-center py-1.5 bg-slate-100/95 shrink-0 z-30 shadow-2xs">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+            <span key={day} className="text-[10px] sm:text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+              {day}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* 3. Main Continuous Schedule Grid Container */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-grow h-full min-h-0 overflow-y-auto scrollbar-thin p-1.5 sm:p-3"
+      >
+        {renderGridContent()}
+      </div>
+
+      {/* Floating Jump to Today Button */}
+      <button
+        onClick={() => {
+          setCurrentDate(new Date());
+          setTimeout(scrollToToday, 50);
+        }}
+        className="fixed bottom-20 right-4 z-40 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-xl border border-slate-700/50 backdrop-blur-md text-xs font-extrabold flex items-center gap-1.5 cursor-pointer active-press transition duration-150"
+        title="Jump to Today"
+      >
+        <CalendarIcon className="w-3.5 h-3.5 text-sky-400" />
+        <span>Today</span>
+      </button>
 
       {renderModals()}
     </div>

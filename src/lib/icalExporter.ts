@@ -262,6 +262,7 @@ export async function fetchRemoteIcsFeed(rawUrl: string): Promise<string> {
   }
 
   const fetchCandidates = [
+    `/api/proxy?url=${encodeURIComponent(url)}`,
     url,
     `https://corsproxy.io/?${encodeURIComponent(url)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
 import {
   User,
@@ -32,9 +32,14 @@ import {
   CalendarDays,
   Sparkles,
   Zap,
+  MapPin,
+  HardDrive,
+  DownloadCloud,
+  Globe2,
 } from "lucide-react";
 import { PayRates, UserProfile } from "../../types";
 import { clearWeatherCache } from "../../lib/weatherService";
+import { getTileCacheStats, clearTileCache, precacheFullNorthAmericaMapPack } from "../../lib/mapTileCache";
 import {
   CBA_AIRLINE_PAY_SCALE,
   calculateLongevityYears,
@@ -121,6 +126,40 @@ export default function SettingsTab() {
 
   // Reset confirmation modal
   const [showResetModal, setShowResetModal] = useState(false);
+
+  // Offline Map Storage State
+  const [mapStats, setMapStats] = useState<{ count: number; sizeMb: number }>({ count: 0, sizeMb: 0 });
+  const [isPreCachingHubs, setIsPreCachingHubs] = useState(false);
+  const [hubPreCacheProgress, setHubPreCacheProgress] = useState(0);
+
+  useEffect(() => {
+    getTileCacheStats().then(setMapStats);
+  }, [activeSection]);
+
+  const handlePrecacheAllHubs = async () => {
+    if (isPreCachingHubs) return;
+    setIsPreCachingHubs(true);
+    setHubPreCacheProgress(0);
+    try {
+      await precacheFullNorthAmericaMapPack((done, total) => {
+        setHubPreCacheProgress(Math.round((done / total) * 100));
+      });
+      const updated = await getTileCacheStats();
+      setMapStats(updated);
+      triggerToast("Complete North America Map permanently cached for Offline Flight!");
+    } catch (e) {
+      console.warn("Hub precache failed:", e);
+    } finally {
+      setIsPreCachingHubs(false);
+    }
+  };
+
+  const handleClearMapTileStorage = async () => {
+    await clearTileCache();
+    const updated = await getTileCacheStats();
+    setMapStats(updated);
+    triggerToast("Offline map tiles cache cleared.");
+  };
 
   const triggerToast = (msg = "Settings updated!") => {
     setToastMessage(msg);
@@ -1297,6 +1336,57 @@ export default function SettingsTab() {
             </button>
           </div>
 
+          {/* Offline In-Flight Map Tile Cache */}
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-900 block">Offline Aeronautical Map Storage</span>
+                <span className="text-[11px] text-slate-500">
+                  {mapStats.count} cached tiles ({mapStats.sizeMb} MB stored locally) for In-Flight Airplane Mode
+                </span>
+              </div>
+              <span className="px-2.5 py-1 bg-sky-100 text-sky-800 text-[10px] font-black rounded-lg uppercase">
+                {mapStats.count > 0 ? "Ready Offline" : "Empty Cache"}
+              </span>
+            </div>
+
+            {isPreCachingHubs && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-bold text-sky-800">
+                  <span>Downloading Complete North America Map Pack...</span>
+                  <span>{hubPreCacheProgress}%</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-sky-600 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${hubPreCacheProgress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={handlePrecacheAllHubs}
+                disabled={isPreCachingHubs}
+                className="flex-1 px-3.5 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs active-press"
+              >
+                <Globe2 className="w-3.5 h-3.5" />
+                <span>{isPreCachingHubs ? `Caching (${hubPreCacheProgress}%)...` : "📥 Pre-Cache Full North America Map (~50 MB)"}</span>
+              </button>
+
+              {mapStats.count > 0 && (
+                <button
+                  onClick={handleClearMapTileStorage}
+                  className="px-3.5 py-2 bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-300 text-slate-700 hover:text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active-press"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear Tiles</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Reset Database */}
           <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200 flex items-center justify-between">
             <div>
@@ -1316,26 +1406,26 @@ export default function SettingsTab() {
 
       {/* FORMAL SEAT TRANSITION / UPGRADE MODAL */}
       {showUpgradeModal && (
-        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100000] animate-fadeIn">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-7 max-w-md w-full border-t sm:border border-slate-200 shadow-2xl space-y-4 sm:space-y-5 animate-slideUp pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
-            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0 sm:hidden" />
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
-              <div className="w-10 h-10 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100000] animate-fadeIn font-sans">
+          <div className="bg-slate-900 text-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-7 max-w-md w-full border-t sm:border border-slate-700/80 shadow-2xl space-y-4 sm:space-y-5 animate-slideUp pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+            <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 shrink-0 sm:hidden" />
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+              <div className="w-10 h-10 rounded-2xl bg-sky-500/20 border border-sky-400/30 text-sky-400 flex items-center justify-center shrink-0">
                 <Award className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-900 leading-tight">Seat Transition / Upgrade</h3>
-                <p className="text-xs text-slate-500">Permanent career position change & award</p>
+                <h3 className="text-base font-black text-white leading-tight">Seat Transition / Upgrade</h3>
+                <p className="text-xs text-slate-400">Permanent career position change & award</p>
               </div>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 block">New Awarded Seat / Position</label>
+                <label className="text-xs font-bold text-slate-300 block">New Awarded Seat / Position</label>
                 <select
                   value={targetUpgradeRole}
                   onChange={(e) => setTargetUpgradeRole(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600 cursor-pointer"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-sky-500 cursor-pointer"
                 >
                   <option value="CA">👨‍✈️ Captain (CA - 4 Gold Stripes • PIC)</option>
                   <option value="CHECK_PILOT">👨‍✈️ Check Airman / Evaluator (4 Gold Stripes • PIC)</option>
@@ -1346,21 +1436,21 @@ export default function SettingsTab() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-800 block">Effective Transition Date</label>
+                <label className="text-xs font-bold text-slate-300 block">Effective Transition Date</label>
                 <input
                   type="date"
                   value={upgradeEffectiveDate}
                   onChange={(e) => setUpgradeEffectiveDate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               {/* Transition Summary Notice */}
-              <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-xs space-y-1.5 text-sky-950">
-                <span className="font-bold block flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0" /> Operational Impact:
+              <div className="p-3.5 bg-sky-950/40 border border-sky-800/80 rounded-2xl text-xs space-y-1.5 text-sky-200">
+                <span className="font-bold block flex items-center gap-1.5 text-sky-300">
+                  <ShieldCheck className="w-4 h-4 text-sky-400 shrink-0" /> Operational Impact:
                 </span>
-                <ul className="list-disc pl-4 space-y-1 text-[11px] text-sky-900">
+                <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-300">
                   <li>
                     {targetUpgradeRole === "CA" || targetUpgradeRole === "CHECK_PILOT"
                       ? "All flight roster legs will be logged as PIC (Pilot in Command) in your electronic logbook."
@@ -1374,13 +1464,13 @@ export default function SettingsTab() {
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => setShowUpgradeModal(false)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer active-press"
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-xl transition cursor-pointer active-press border border-slate-700"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmSeatTransition}
-                className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-md active-press"
+                className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-md active-press"
               >
                 Confirm Upgrade
               </button>
@@ -1391,22 +1481,22 @@ export default function SettingsTab() {
 
       {/* Safety Reset Confirmation Modal */}
       {showResetModal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100000] animate-fadeIn">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-6 max-w-md w-full border-t sm:border border-slate-200 shadow-2xl space-y-4 animate-slideUp pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
-            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0 sm:hidden" />
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100000] animate-fadeIn font-sans">
+          <div className="bg-slate-900 text-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-6 max-w-md w-full border-t sm:border border-slate-700/80 shadow-2xl space-y-4 animate-slideUp pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+            <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-1 shrink-0 sm:hidden" />
+            <div className="w-12 h-12 rounded-2xl bg-rose-950/60 border border-rose-800/80 text-rose-400 flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div className="text-center space-y-1">
-              <h3 className="text-base font-black text-slate-900">Reset Local Schedule Data?</h3>
-              <p className="text-xs text-slate-600">
+              <h3 className="text-base font-black text-white">Reset Local Schedule Data?</h3>
+              <p className="text-xs text-slate-400">
                 This will clear all sequences, snapshots, and logbook records from your local computer. This action cannot be undone.
               </p>
             </div>
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => setShowResetModal(false)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer active-press"
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs rounded-xl transition cursor-pointer active-press border border-slate-700"
               >
                 Cancel
               </button>
@@ -1416,9 +1506,9 @@ export default function SettingsTab() {
                   setShowResetModal(false);
                   triggerToast("Local schedule database reset!");
                 }}
-                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm active-press"
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-md active-press"
               >
-                Confirm Reset
+                Reset Everything
               </button>
             </div>
           </div>

@@ -15,12 +15,14 @@ export interface FlightLeg {
   blockMinutes: number;
   groundMinutes?: number; // Time on ground before NEXT flight
   tailNumber?: string;
+  equipment?: string;
   actualBlockMinutes?: number;
   actualDepTime?: string;
   actualArrTime?: string;
   isDeadhead?: boolean;
   isOvertime?: boolean;
   isCancelled?: boolean;
+  flightPrefix?: string; // "-", "D", "C", "*XX", "X"
 }
 
 export interface DutyPeriod {
@@ -32,12 +34,16 @@ export interface DutyPeriod {
   odlMinutes?: number; // Extracted from ODL 
   legs: FlightLeg[];
   layoverCity: string;
-  layoverHotelInfo: string;
+  layoverHotelInfo?: string;
   actualBlockMinutes?: number;
   actualDutyMinutes?: number;
   actualReportTime?: string;
   actualReleaseTime?: string;
   isOvertime?: boolean;
+  removalCode?: string; // FOS RMV code, e.g. "VC", "SK", "FP"
+  addCode?: string;     // FOS ADD code, e.g. "TF", "RA", "SH"
+  payStatusCode?: string; // FOS ST code (1-17)
+  miscCreditDescription?: string; // e.g. "Home Study Pay Credit"
 }
 
 export interface VacationPeriod {
@@ -107,7 +113,7 @@ export interface SequenceTrip {
   totalCreditMinutes: number;
   layoverCities: string[];
   dutyPeriods: DutyPeriod[];
-  colorTag: string; // Tailwind color class suffix (e.g. "sky", "emerald", "amber")
+  colorTag?: string; // Tailwind color class suffix (e.g. "sky", "emerald", "amber")
   isOvertime?: boolean;
   statusTag?: string; // e.g. "OT", "TT", "RA", "DROP", "DTS"
   isDropped?: boolean;
@@ -117,6 +123,8 @@ export interface SequenceTrip {
   isGhost?: boolean;
   hasConflict?: boolean;
   conflictReason?: string;
+  expTafbHours?: number; // Total EXP TAFB (Time Away From Base)
+  hasContinuityIssue?: boolean; // Sequence continuity flag (*)
 }
 
 

@@ -11,6 +11,10 @@ import BriefingView from "../components/Briefing/BriefingView";
 import RevisionStudio from "../components/RevisionHistory/RevisionStudio";
 import LogbookStudio from "../components/Logbook/LogbookStudio";
 import PortalBrowserStudio from "../components/PortalBrowser/PortalBrowserStudio";
+import ScheduleImportReviewModal from "../components/ImportModal/ScheduleImportReviewModal";
+
+import { parseRawSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime } from "../lib/parser";
+import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "../types/index";
 
 import {
   Calendar as CalendarIcon,
@@ -41,23 +45,74 @@ export default function Home() {
   const rosterMetrics = useCrewStore((state) => state.getRosterMetrics)();
   const selectedSequenceId = useCrewStore((state) => state.selectedSequenceId);
   const setSelectedSequenceId = useCrewStore((state) => state.setSelectedSequenceId);
+  const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
+  const setOpenSequences = useCrewStore((state) => state.setOpenSequences);
 
   const droppedSeqsCount = sequences.filter((s) => s.isDropped || s.statusTag === "DROP" || s.statusTag === "DTS DROP").length;
 
   // Sidebar states for desktop
   // Modal / Menu States
   const [showToolsModal, setShowToolsModal] = useState(false);
+  const [importReviewData, setImportReviewData] = useState<{
+    sequences: SequenceTrip[];
+    vacations: VacationPeriod[];
+    metadata?: MonthlyHIMetadata | null;
+    rawText?: string;
+  } | null>(null);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
 
+  // Global listener for native Android DECS schedule imports (works across all tabs)
+  useEffect(() => {
+    const handleGlobalNativeImport = (e: any) => {
+      const text = e.detail;
+      if (!text || typeof text !== "string" || text.trim().length === 0) return;
+      console.log("[Global] Received native schedule import event:", text.length, "bytes");
+
+      try {
+        if (text.includes("OPEN TIME") || text.includes("POSSIBLE TRIPS") || text.includes("SEQ/DATE") || text.includes("N4/")) {
+          const parsedOpen = parseN4OpenTime(text);
+          if (parsedOpen && parsedOpen.length > 0) {
+            setOpenSequences(parsedOpen);
+            return;
+          }
+        }
+
+        const parsedSeqs = parseRawSchedule(text);
+        if (parsedSeqs && parsedSeqs.length > 0) {
+          const meta = parseMonthlyHIMetadata(text);
+          const vacs = extractVacationsFromHI1(text);
+          importMonthlyHISchedule(parsedSeqs, vacs, meta, "DECS_Live_Screen.txt", text);
+          setImportReviewData({
+            sequences: parsedSeqs,
+            vacations: vacs,
+            metadata: meta,
+            rawText: text,
+          });
+          console.log("[Global] Successfully imported", parsedSeqs.length, "trips and", vacs.length, "vacations into store!");
+        }
+      } catch (err) {
+        console.error("[Global] Native import parse error:", err);
+      }
+    };
+
+    window.addEventListener("nativeScheduleImport", handleGlobalNativeImport);
+    return () => {
+      window.removeEventListener("nativeScheduleImport", handleGlobalNativeImport);
+    };
+  }, [importMonthlyHISchedule, setOpenSequences]);
+
   if (!isHydrated) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-sky-400 font-mono text-sm">
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-200 font-mono text-sm">
         <div className="flex flex-col items-center gap-4">
-          <RefreshCwIcon className="w-8 h-8 animate-spin text-sky-500" />
-          <span>INITIALIZING CREWSCHEDULE PRO...</span>
+          <img src="/logo.png" alt="CrewSchedule Pro" className="w-20 h-20 rounded-2xl shadow-2xl shadow-amber-500/20 animate-pulse object-cover" />
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-amber-400 font-black tracking-widest text-xs">CREWSCHEDULE PRO</span>
+            <span className="text-[10px] text-slate-500 font-bold">INITIALIZING SUITE...</span>
+          </div>
         </div>
       </div>
     );
@@ -94,12 +149,14 @@ export default function Home() {
           <BriefingView />
         </div>
         
-        {/* Keep Portal alive in the DOM so the iframe doesn't lose session/login state */}
-        <div className={`h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin ${activeTab === "portal" ? "block relative" : "absolute opacity-0 pointer-events-none -z-50 invisible"}`}>
-          <PortalBrowserStudio />
-        </div>
+        {/* Mount Portal only when active so background iframes/SSO do not cause WebView glitches */}
+        {activeTab === "portal" && (
+          <div className="h-full w-full flex flex-col pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-16 overflow-hidden">
+            <PortalBrowserStudio />
+          </div>
+        )}
 
-        {/* Other tabs can unmount normally */}
+        {/* Other tabs unmount normally */}
         {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "portal" && (
           <div className="h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
             {activeTab === "logbook" && <LogbookStudio />}
@@ -119,30 +176,29 @@ export default function Home() {
             className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100000] animate-fadeIn"
             onClick={() => setShowToolsModal(false)}
           />
-          <div className="fixed inset-x-0 bottom-0 z-[100001] max-w-lg mx-auto bg-white border-t border-slate-200 rounded-t-3xl p-4 sm:p-5 shadow-2xl backdrop-blur-2xl animate-slideUp max-h-[85vh] overflow-y-auto scrollbar-thin pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
-            {/* Mobile Drag Handle */}
-            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-3.5 shrink-0" />
-
-            <div className="flex justify-between items-center pb-3 mb-3.5 border-b border-slate-200">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-sky-100 border border-sky-300 rounded-xl text-sky-700">
-                  <SlidersHorizontal className="w-4 h-4" />
-                </div>
+          <div className="fixed inset-x-0 bottom-0 z-[100001] w-full max-w-lg mx-auto bg-white border-t border-slate-200 rounded-t-3xl shadow-2xl flex flex-col animate-slideUp max-h-[85vh] overflow-hidden">
+            {/* Sticky Header that NEVER scrolls off screen */}
+            <div className="flex justify-between items-center px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-white/95 backdrop-blur-xl shrink-0">
+              <div className="flex items-center gap-3">
+                <img src="/logo.png" alt="CrewSchedule Pro" className="w-10 h-10 rounded-xl shadow-md border border-amber-400/40 object-cover" />
                 <div>
-                  <h3 className="text-sm font-black text-slate-900 leading-tight">Aviation Tools & Settings</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">Select a tool to launch studio view</p>
+                  <h3 className="text-sm font-black text-slate-900 leading-tight">CrewSchedule Pro Tools</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Select an aviation studio module</p>
                 </div>
               </div>
 
               <button
                 onClick={() => setShowToolsModal(false)}
-                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 transition cursor-pointer active-press"
+                className="px-3 py-1.5 text-xs font-black text-slate-700 hover:text-slate-900 rounded-xl bg-slate-100 hover:bg-slate-200 transition cursor-pointer active-press flex items-center gap-1"
               >
-                <X className="w-5 h-5" />
+                <X className="w-3.5 h-3.5" />
+                <span>Done</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 mb-4">
+            {/* Scrollable Content Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto scrollbar-thin flex-1 pb-[max(2rem,calc(env(safe-area-inset-bottom,0px)+1.5rem))]">
+              <div className="grid grid-cols-2 gap-2.5 mb-4">
               {toolsItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
@@ -193,7 +249,24 @@ export default function Home() {
               </button>
             </div>
           </div>
-        </>
+        </div>
+      </>
+    )}
+
+      {/* Schedule Import Review & Confirmation Modal */}
+      {importReviewData && (
+        <ScheduleImportReviewModal
+          isOpen={true}
+          onClose={() => setImportReviewData(null)}
+          onViewCalendar={() => {
+            setActiveTab("calendar");
+            setImportReviewData(null);
+          }}
+          sequences={importReviewData.sequences}
+          vacations={importReviewData.vacations}
+          metadata={importReviewData.metadata}
+          rawText={importReviewData.rawText}
+        />
       )}
 
       {/* Cell Phone First Mobile Bottom Navigation Dock */}

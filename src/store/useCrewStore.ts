@@ -1,21 +1,22 @@
 import { create } from "zustand";
 import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry, UserProfile } from "../types";
-import { DEFAULT_PAY_RATES, DEFAULT_LOGBOOK_ENTRIES } from "../lib/demoData";
+import { DEFAULT_PAY_RATES, DEFAULT_LOGBOOK_ENTRIES, MOCK_VACATIONS } from "../lib/demoData";
+import { USER_LIVE_SEQUENCES, USER_LOGBOOK_ENTRIES } from "../lib/userScheduleData";
 
 import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole } from "../lib/parser";
 import { getCbaRatesForProfile } from "../lib/cbaPayScale";
 export { convertOpenToTrip };
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
-  name: "CAPTAIN PILOT",
+  name: "Austin Pryor",
   employeeId: "742840",
-  seniorityNumber: "12345",
+  seniorityNumber: "01361",
   base: "ORD",
   equipment: "E175",
   crewRole: "CA",
-  hireDate: "2016-04-18",
-  email: "pilot.crew@aa.com",
-  phone: "(312) 555-0199",
+  hireDate: "2015-08-15",
+  email: "austin.pryor@envoyair.com",
+  phone: "(812) 399-2574",
   theme: "light",
   notificationsEnabled: true,
   syncCalendar: true,
@@ -261,8 +262,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     }
   },
 
-  sequences: [],
-  vacations: [],
+  sequences: USER_LIVE_SEQUENCES,
+  vacations: MOCK_VACATIONS,
   monthlyHIMetadata: null,
   payRates: DEFAULT_PAY_RATES,
   selectedSequenceId: null,
@@ -689,6 +690,9 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedProfile = localStorage.getItem("crewschedule_userprofile");
 
       let sanitizedSeqs = storedSeqs ? deduplicateSequences(JSON.parse(storedSeqs)) : [];
+      if (!sanitizedSeqs || sanitizedSeqs.length === 0) {
+        sanitizedSeqs = USER_LIVE_SEQUENCES;
+      }
 
       const parsedSnaps: ScheduleSnapshot[] = storedSnaps ? JSON.parse(storedSnaps) : [];
       let parsedLogbook: LogbookEntry[] = storedLogbook ? JSON.parse(storedLogbook) : [];
@@ -714,7 +718,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       set({
         userProfile: hydratedProfile,
         sequences: sanitizedSeqs,
-        vacations: storedVacations ? JSON.parse(storedVacations) : [],
+        vacations: storedVacations ? (JSON.parse(storedVacations).length > 0 ? JSON.parse(storedVacations) : MOCK_VACATIONS) : MOCK_VACATIONS,
         monthlyHIMetadata: storedMeta ? JSON.parse(storedMeta) : null,
         snapshots: parsedSnaps,
         logbookEntries: parsedLogbook,

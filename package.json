@@ -13,13 +13,17 @@
     "electron:build": "next build && npx electron-builder",
     "android:open": "npx cap open android",
     "android:sync": "npx cap sync android",
+    "build:standalone": "node scripts/build-standalone.js",
+    "dev:phone": "node scripts/switch-to-dev.js",
     "backup": "node scripts/backup-gdrive.js",
     "gdrive": "node scripts/backup-gdrive.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
+    "@capacitor/browser": "^8.0.4",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/geolocation": "^8.2.2",
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",
     "leaflet": "^1.9.4",
