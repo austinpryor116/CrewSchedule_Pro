@@ -301,12 +301,20 @@ export interface LogbookEntry {
   date: string; // YYYY-MM-DD
   flightNumber: string;
   tailNumber: string;
+  noseNumber?: string; // e.g. "739"
   aircraftType: string;
   depAirport: string;
   arrAirport: string;
-  outTime: string; // HHMM
-  inTime: string; // HHMM
+  outTime: string; // HHMM or HH:MM
+  offTime?: string; // HHMM or HH:MM (Takeoff)
+  onTime?: string; // HHMM or HH:MM (Landing)
+  inTime: string; // HHMM or HH:MM
   blockMinutes: number;
+  flightMinutes?: number; // Time from Off to On
+  outFuel?: number; // Fuel at OUT (k lbs)
+  offFuel?: number; // Fuel at OFF (k lbs)
+  onFuel?: number; // Fuel at ON (k lbs)
+  inFuel?: number; // Fuel at IN (k lbs)
   nightMinutes: number;
   instrumentMinutes: number;
   crossCountryMinutes: number;
@@ -319,7 +327,36 @@ export interface LogbookEntry {
   remarks: string;
   isAutoFilled: boolean;
   sourceSequenceNumber?: string;
+  sourceScanType?: "QR_PLACARD" | "FMS_OOOI" | "ROSTER" | "MANUAL";
   createdAt: string;
+}
+
+export interface AircraftScanResult {
+  tailNumber?: string; // e.g. "N739AE"
+  noseNumber?: string; // e.g. "739"
+  aircraftType?: string; // e.g. "E70F" or "E175"
+  rawText: string;
+  confidence: number;
+  detectedAt: string;
+}
+
+export interface FmsOooiScanResult {
+  flightNumber?: string; // e.g. "MQ3362" / "AA3362"
+  depAirport?: string; // e.g. "AVP"
+  arrAirport?: string; // e.g. "ORD"
+  outTime?: string; // e.g. "23:27"
+  offTime?: string; // e.g. "23:39"
+  onTime?: string; // e.g. "01:27"
+  inTime?: string; // e.g. "01:50"
+  outFuel?: number; // e.g. 14.4
+  offFuel?: number; // e.g. 13.9
+  onFuel?: number; // e.g. 6.5
+  inFuel?: number; // e.g. 6.2
+  blockMinutes?: number; // e.g. 143 (2h 23m)
+  flightMinutes?: number; // e.g. 108 (1h 48m)
+  rawText: string;
+  confidence: number;
+  detectedAt: string;
 }
 
 

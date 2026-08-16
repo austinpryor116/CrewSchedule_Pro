@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 *.apk
+*.traineddata
+scratch_*.ts
+scripts/test_*.mjs
 
 # debug
 npm-debug.log*

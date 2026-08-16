@@ -12,6 +12,7 @@ import RevisionStudio from "../components/RevisionHistory/RevisionStudio";
 import LogbookStudio from "../components/Logbook/LogbookStudio";
 import PortalBrowserStudio from "../components/PortalBrowser/PortalBrowserStudio";
 import ScheduleImportReviewModal from "../components/ImportModal/ScheduleImportReviewModal";
+import CockpitScannerStudio from "../components/Scanner/CockpitScannerStudio";
 
 import { parseRawSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime } from "../lib/parser";
 import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "../types/index";
@@ -30,6 +31,7 @@ import {
   Globe,
   X,
   SlidersHorizontal,
+  Camera,
 } from "lucide-react";
 
 export default function Home() {
@@ -127,6 +129,7 @@ export default function Home() {
   ];
 
   const toolsItems = [
+    { id: "scanner", name: "Cockpit Scanner", icon: Camera, desc: "Aircraft QR & FMS OOOI OCR" },
     { id: "calendar-tools", name: "Calendar Tools", icon: CalendarIcon, desc: "Filters, Open Time & Vacation" },
     { id: "logbook", name: "Pilot Logbook", icon: BookOpen, desc: "Logbook & Flight History" },
     { id: "revisions", name: "Revision Audit", icon: History, desc: "Schedule History & Audit" },
@@ -136,7 +139,7 @@ export default function Home() {
     { id: "settings", name: "System Settings", icon: Settings, desc: "Preferences & Config" },
   ];
 
-  const isToolsActive = ["logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
+  const isToolsActive = ["scanner", "logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
 
   return (
     <main className="w-screen h-screen flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans relative select-none">
@@ -159,6 +162,7 @@ export default function Home() {
         {/* Other tabs unmount normally */}
         {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "portal" && (
           <div className="h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
+            {activeTab === "scanner" && <CockpitScannerStudio />}
             {activeTab === "logbook" && <LogbookStudio />}
             {activeTab === "revisions" && <RevisionStudio />}
             {activeTab === "import" && <ParserStudio />}

@@ -123,6 +123,7 @@ export default function LogbookStudio() {
           e.depAirport.toLowerCase().includes(searchQuery.toLowerCase()) ||
           e.arrAirport.toLowerCase().includes(searchQuery.toLowerCase()) ||
           e.tailNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (e.noseNumber || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
           (e.remarks || "").toLowerCase().includes(searchQuery.toLowerCase());
 
         const matchesAircraft = filterAircraft === "all" || e.aircraftType === filterAircraft;
@@ -490,12 +491,16 @@ export default function LogbookStudio() {
                   </span>
                   <span className="text-xs font-bold text-slate-900 font-mono">{e.date}</span>
                   <span className="text-[11px] text-slate-500 font-mono">
-                    {e.tailNumber} &bull; {e.aircraftType}
+                    {e.tailNumber} {e.noseNumber ? `• #${e.noseNumber}` : ""} &bull; {e.aircraftType}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {e.isAutoFilled ? (
+                  {e.sourceScanType ? (
+                    <span className="px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-bold">
+                      Scanned
+                    </span>
+                  ) : e.isAutoFilled ? (
                     <span className="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">
                       Roster
                     </span>
@@ -526,7 +531,9 @@ export default function LogbookStudio() {
                 {/* Departure Station */}
                 <div className="space-y-0.5">
                   <span className="text-sm font-black text-slate-900 font-mono">{e.depAirport}</span>
-                  <p className="text-[10px] text-slate-500 font-mono">OUT: {formatTimeStr(e.outTime)}</p>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    OUT: {formatTimeStr(e.outTime)} {e.offTime ? `(OFF: ${formatTimeStr(e.offTime)})` : ""}
+                  </p>
                 </div>
 
                 {/* Duration Arrow Pill */}
@@ -537,13 +544,17 @@ export default function LogbookStudio() {
                   <div className="w-20 h-0.5 bg-slate-300 relative my-0.5">
                     <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 border-t-2 border-r-2 border-slate-400 rotate-45" />
                   </div>
-                  <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider">Block Time</span>
+                  <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider">
+                    {e.flightMinutes ? `Flt: ${(e.flightMinutes / 60).toFixed(1)}h` : "Block Time"}
+                  </span>
                 </div>
 
                 {/* Arrival Station */}
                 <div className="space-y-0.5 text-right">
                   <span className="text-sm font-black text-slate-900 font-mono">{e.arrAirport}</span>
-                  <p className="text-[10px] text-slate-500 font-mono">IN: {formatTimeStr(e.inTime)}</p>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    {e.onTime ? `(ON: ${formatTimeStr(e.onTime)}) ` : ""}IN: {formatTimeStr(e.inTime)}
+                  </p>
                 </div>
               </div>
 
