@@ -13,6 +13,7 @@ import LogbookStudio from "../components/Logbook/LogbookStudio";
 import PortalBrowserStudio from "../components/PortalBrowser/PortalBrowserStudio";
 import ScheduleImportReviewModal from "../components/ImportModal/ScheduleImportReviewModal";
 import CockpitScannerStudio from "../components/Scanner/CockpitScannerStudio";
+import ReserveStudio from "../components/Reserve/ReserveStudio";
 
 import { parseRawSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime } from "../lib/parser";
 import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "../types/index";
@@ -32,7 +33,10 @@ import {
   X,
   SlidersHorizontal,
   Camera,
+  PhoneCall,
+  Layers,
 } from "lucide-react";
+import HSSSequencesModal from "@/components/PortalBrowser/HSSSequencesModal";
 
 export default function Home() {
   const isHydrated = useCrewStore((state) => state.isHydrated);
@@ -46,6 +50,8 @@ export default function Home() {
   const vacations = useCrewStore((state) => state.vacations);
   const rosterMetrics = useCrewStore((state) => state.getRosterMetrics)();
   const selectedSequenceId = useCrewStore((state) => state.selectedSequenceId);
+  const isHssModalOpen = useCrewStore((state) => state.isHssModalOpen);
+  const setIsHssModalOpen = useCrewStore((state) => state.setIsHssModalOpen);
   const setSelectedSequenceId = useCrewStore((state) => state.setSelectedSequenceId);
   const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
   const setOpenSequences = useCrewStore((state) => state.setOpenSequences);
@@ -129,6 +135,8 @@ export default function Home() {
   ];
 
   const toolsItems = [
+    { id: "reserve", name: "Reserve List", icon: PhoneCall, desc: "N6D Callout Queue & Roster" },
+    { id: "hss-modal", name: "HSS Sequences", icon: Layers, desc: "Monthly Legs & DECS Roster" },
     { id: "scanner", name: "Cockpit Scanner", icon: Camera, desc: "Aircraft QR & FMS OOOI OCR" },
     { id: "calendar-tools", name: "Calendar Tools", icon: CalendarIcon, desc: "Filters, Open Time & Vacation" },
     { id: "logbook", name: "Pilot Logbook", icon: BookOpen, desc: "Logbook & Flight History" },
@@ -139,7 +147,7 @@ export default function Home() {
     { id: "settings", name: "System Settings", icon: Settings, desc: "Preferences & Config" },
   ];
 
-  const isToolsActive = ["scanner", "logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
+  const isToolsActive = ["reserve", "scanner", "logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
 
   return (
     <main className="w-screen h-screen flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans relative select-none">
@@ -154,7 +162,7 @@ export default function Home() {
         
         {/* Mount Portal only when active so background iframes/SSO do not cause WebView glitches */}
         {activeTab === "portal" && (
-          <div className="h-full w-full flex flex-col pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-16 overflow-hidden">
+          <div className="h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
             <PortalBrowserStudio />
           </div>
         )}
@@ -162,6 +170,7 @@ export default function Home() {
         {/* Other tabs unmount normally */}
         {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "portal" && (
           <div className="h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
+            {activeTab === "reserve" && <ReserveStudio />}
             {activeTab === "scanner" && <CockpitScannerStudio />}
             {activeTab === "logbook" && <LogbookStudio />}
             {activeTab === "revisions" && <RevisionStudio />}
@@ -210,7 +219,10 @@ export default function Home() {
                   <button
                     key={item.id}
                     onClick={() => {
-                      if (item.id === "calendar-tools") {
+                      if (item.id === "hss-modal") {
+                        setIsHssModalOpen(true);
+                        setShowToolsModal(false);
+                      } else if (item.id === "calendar-tools") {
                         setActiveTab("calendar");
                         useCrewStore.getState().setIsCalendarToolsOpen(true);
                         setShowToolsModal(false);
@@ -257,6 +269,12 @@ export default function Home() {
       </>
     )}
 
+      {/* HSS Sequences Breakdown by Month Modal */}
+      <HSSSequencesModal
+        isOpen={isHssModalOpen}
+        onClose={() => setIsHssModalOpen(false)}
+      />
+
       {/* Schedule Import Review & Confirmation Modal */}
       {importReviewData && (
         <ScheduleImportReviewModal
@@ -274,7 +292,7 @@ export default function Home() {
       )}
 
       {/* Cell Phone First Mobile Bottom Navigation Dock */}
-      <nav className="bg-white/95 border-t border-slate-200/90 shadow-xl flex items-center justify-around px-2 sm:px-12 shrink-0 z-50 backdrop-blur-xl pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))]">
+      <nav className="bg-white/95 border-t border-slate-200/90 shadow-xl flex items-center justify-around px-2 sm:px-12 shrink-0 z-[10000] relative backdrop-blur-xl pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))]">
         {mainNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = item.id === "tools" ? isToolsActive : activeTab === item.id;

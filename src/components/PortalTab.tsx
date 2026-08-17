@@ -58,14 +58,17 @@ export default function PortalTab() {
       const decodedOutput = await executeCommand(macroCmd, {
         timeoutMs: 5000,
         executor: {
-          executeJS: async (script: string) => {
+          flushBuffer: async () => {
             if (webviewRef.current && webviewRef.current.executeJavaScript) {
-              return await webviewRef.current.executeJavaScript(script);
+              return await webviewRef.current.executeJavaScript("window._flushSabreBuffer ? window._flushSabreBuffer() : []");
             }
             if (typeof window !== "undefined" && window.electronAPI?.flushSabreBuffer) {
               return await window.electronAPI.flushSabreBuffer();
             }
-            return eval(script);
+            if (typeof window !== "undefined" && (window as any)._flushSabreBuffer) {
+              return (window as any)._flushSabreBuffer();
+            }
+            return [];
           },
         },
       });

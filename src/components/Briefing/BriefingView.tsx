@@ -121,6 +121,8 @@ interface MapLayerPreferences {
   showLightning: boolean;
   lightningMaxAge: number;
   showTurbulence: boolean;
+  turbulenceMaxAge: number;
+  turbulenceAltBand: "ALL" | "LOW" | "MID" | "HIGH";
   showAllAirports: boolean;
   showAirportMarkers: boolean;
 }
@@ -138,6 +140,8 @@ const DEFAULT_MAP_PREFERENCES: MapLayerPreferences = {
   showLightning: false,
   lightningMaxAge: 15,
   showTurbulence: true,   // Default true per user request
+  turbulenceMaxAge: 90,   // Default 90 minutes max age (auto-pruned after 1.5h)
+  turbulenceAltBand: "ALL",
   showAllAirports: false,
   showAirportMarkers: true,
 };
@@ -488,7 +492,7 @@ export default function BriefingView() {
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       loadLiveWeather(false);
-    }, 5 * 60 * 1000);
+    }, 2.5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [loadLiveWeather]);
 
@@ -810,7 +814,8 @@ export default function BriefingView() {
           liveLightning={liveLightning}
           liveAirportConditions={liveAirportConditions}
           showTurbulence={mapPrefs.showTurbulence}
-          turbulenceAltBand="ALL"
+          turbulenceAltBand={mapPrefs.turbulenceAltBand || "ALL"}
+          turbulenceMaxAge={mapPrefs.turbulenceMaxAge || 90}
           liveTurbulence={liveTurbulence}
           userLocation={userLocation}
           onLocateMe={handleLocateMe}
@@ -971,21 +976,87 @@ export default function BriefingView() {
                       </span>
 
                       {/* PIREP Turbulence */}
-                      <label className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100">
-                        <div className="flex items-center gap-2.5">
-                          <Wind className="w-4 h-4 text-amber-600" />
-                          <div>
-                            <span className="font-bold block text-slate-900">Live PIREP Turbulence Reports</span>
-                            <span className="text-[10px] text-slate-500">Real-time aircraft EDR & pilot ride reports</span>
+                      <div className="rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden">
+                        <label className="flex items-center justify-between p-3 cursor-pointer hover:bg-slate-100/80">
+                          <div className="flex items-center gap-2.5">
+                            <Wind className="w-4 h-4 text-amber-600" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900">Live PIREP Turbulence Reports</span>
+                                <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-amber-100 text-amber-800 border border-amber-200">
+                                  {liveTurbulence.length} Live
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500">Real-time aircraft EDR & pilot ride reports (auto-expiring)</span>
+                            </div>
                           </div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={mapPrefs.showTurbulence}
-                          onChange={(e) => updatePref("showTurbulence", e.target.checked)}
-                          className="w-4 h-4 rounded text-sky-600 border-slate-300 focus:ring-0 cursor-pointer"
-                        />
-                      </label>
+                          <input
+                            type="checkbox"
+                            checked={mapPrefs.showTurbulence}
+                            onChange={(e) => updatePref("showTurbulence", e.target.checked)}
+                            className="w-4 h-4 rounded text-sky-600 border-slate-300 focus:ring-0 cursor-pointer"
+                          />
+                        </label>
+
+                        {mapPrefs.showTurbulence && (
+                          <div className="px-3 pb-3 pt-1 border-t border-slate-200/60 bg-white/70 space-y-2">
+                            {/* Max Age Filter */}
+                            <div>
+                              <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 mb-1">
+                                <span>Max Report Age:</span>
+                                <span className="text-sky-700 font-extrabold">{mapPrefs.turbulenceMaxAge || 90} min</span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-1">
+                                {([30, 60, 90, 120] as const).map((age) => (
+                                  <button
+                                    key={age}
+                                    type="button"
+                                    onClick={() => updatePref("turbulenceMaxAge", age)}
+                                    className={`py-1 rounded-lg text-[10px] font-black border transition ${
+                                      (mapPrefs.turbulenceMaxAge || 90) === age
+                                        ? "bg-slate-900 border-slate-900 text-white shadow-2xs"
+                                        : "bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200"
+                                    }`}
+                                  >
+                                    {age}m
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Altitude Band Filter */}
+                            <div>
+                              <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 mb-1">
+                                <span>Altitude Layer:</span>
+                                <span className="text-sky-700 font-extrabold">{mapPrefs.turbulenceAltBand || "ALL"}</span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-1">
+                                {(
+                                  [
+                                    { id: "ALL", label: "ALL" },
+                                    { id: "LOW", label: "FL18-28" },
+                                    { id: "MID", label: "FL29-35" },
+                                    { id: "HIGH", label: "FL36+" },
+                                  ] as const
+                                ).map((band) => (
+                                  <button
+                                    key={band.id}
+                                    type="button"
+                                    onClick={() => updatePref("turbulenceAltBand", band.id)}
+                                    className={`py-1 rounded-lg text-[10px] font-black border transition ${
+                                      (mapPrefs.turbulenceAltBand || "ALL") === band.id
+                                        ? "bg-slate-900 border-slate-900 text-white shadow-2xs"
+                                        : "bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200"
+                                    }`}
+                                  >
+                                    {band.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Lightning */}
                       <label className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100">

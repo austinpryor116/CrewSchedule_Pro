@@ -5,6 +5,7 @@ import { useCrewStore } from "../../store/useCrewStore";
 import { X, Calendar as CalendarIcon, SlidersHorizontal, Eye, EyeOff, ShoppingBag, Palmtree, Clock, Check, Plus, Rss, ShieldCheck, FileSpreadsheet, Trash2, Link, Loader2, Share2, Globe, Copy, Smartphone, Download, Info } from "lucide-react";
 import { fetchRemoteIcsFeed, parseIcsText, downloadRosterIcsFile } from "../../lib/icalExporter";
 import { PersonalCalendarEvent } from "../../types";
+import { isPilotRole } from "../../lib/pilotBiddingDates";
 
 interface CalendarToolsModalProps {
   isOpen: boolean;
@@ -552,66 +553,87 @@ export default function CalendarToolsModal({
 
               {/* List of Subscribed Feeds */}
               <div className="space-y-2">
-                {subscribedCalendars.map((cal) => (
-                  <div
-                    key={cal.id}
-                    className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => toggleSubscribedCal(cal.id)}
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 cursor-pointer ${
-                          cal.enabled ? "bg-purple-600 border-purple-600" : "border-slate-400 bg-transparent"
-                        }`}
-                      >
-                        {cal.enabled && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                      </button>
-                      <div className="min-w-0">
-                        <span className="font-extrabold text-xs text-slate-900 block truncate">{cal.name}</span>
-                        <span className="text-[10px] text-slate-500 font-mono block">
-                          Sync: {cal.lastSyncedAt || "Active"} &bull; {cal.eventsCount || 0} events
-                        </span>
+                {subscribedCalendars
+                  .filter((cal) => {
+                    const isUserPilot = isPilotRole(userProfile?.crewRole);
+                    if (cal.isPilotOnly && !isUserPilot) return false;
+                    return true;
+                  })
+                  .map((cal) => (
+                    <div
+                      key={cal.id}
+                      className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleSubscribedCal(cal.id)}
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 cursor-pointer ${
+                            cal.enabled
+                              ? cal.color === "indigo"
+                                ? "bg-indigo-600 border-indigo-600"
+                                : "bg-purple-600 border-purple-600"
+                              : "border-slate-400 bg-transparent"
+                          }`}
+                        >
+                          {cal.enabled && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </button>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-xs text-slate-900 truncate">{cal.name}</span>
+                            {cal.isPilotOnly && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[8px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                ✈️ Pilot Only
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-mono block">
+                            Sync: {cal.lastSyncedAt || "Active"} &bull; {cal.eventsCount || 0} events
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        {["purple", "emerald", "amber", "rose", "sky"].map((c) => (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          {["indigo", "purple", "emerald", "amber", "rose", "sky"].map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => updateSubscribedCalColor(cal.id, c)}
+                              className={`w-3.5 h-3.5 rounded-full transition cursor-pointer ${
+                                cal.color === c ? "ring-2 ring-indigo-600 ring-offset-1" : "opacity-60"
+                              }`}
+                              style={{
+                                backgroundColor:
+                                  c === "indigo"
+                                    ? "#4f46e5"
+                                    : c === "purple"
+                                    ? "#9333ea"
+                                    : c === "emerald"
+                                    ? "#10b981"
+                                    : c === "amber"
+                                    ? "#f59e0b"
+                                    : c === "rose"
+                                    ? "#f43f5e"
+                                    : "#0284c7",
+                              }}
+                            />
+                          ))}
+                        </div>
+
+                        {!cal.isPilotOnly && (
                           <button
-                            key={c}
                             type="button"
-                            onClick={() => updateSubscribedCalColor(cal.id, c)}
-                            className={`w-3.5 h-3.5 rounded-full transition cursor-pointer ${
-                              cal.color === c ? "ring-2 ring-purple-600 ring-offset-1" : "opacity-60"
-                            }`}
-                            style={{
-                              backgroundColor:
-                                c === "purple"
-                                  ? "#9333ea"
-                                  : c === "emerald"
-                                  ? "#10b981"
-                                  : c === "amber"
-                                  ? "#f59e0b"
-                                  : c === "rose"
-                                  ? "#f43f5e"
-                                  : "#0284c7",
-                            }}
-                          />
-                        ))}
+                            onClick={() => removeSubscribedCal(cal.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-white transition cursor-pointer"
+                            title="Remove calendar feed"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => removeSubscribedCal(cal.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-white transition cursor-pointer"
-                        title="Remove calendar feed"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             </div>
           )}

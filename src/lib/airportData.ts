@@ -1,10 +1,30 @@
 export const MEGA_HUBS = new Set([
-  "ORD", "DFW", "CLT", "MIA", "ATL", "DEN", "LAX", "PHX", "JFK", "SFO", "SEA"
+  "ORD", "DFW", "CLT", "MIA", "ATL", "DEN", "LAX", "PHX", "JFK", "DCA", "SFO", "SEA"
 ]);
 
 export const MAJOR_HUBS = new Set([
-  "ORD", "DFW", "CLT", "MIA", "ATL", "DEN", "LAX", "PHX", "JFK", "LGA", "EWR", "DTW", "MSP", "SFO", "IAH", "BOS", "SEA", "LAS", "SLC", "PHL", "IAD", "DCA", "MDW", "DAL", "SAN", "AUS", "SAT", "YYZ"
+  "ORD", "DFW", "CLT", "MIA", "ATL", "DEN", "LAX", "PHX", "JFK", "DCA", "DTW", "MSP", "SFO", "IAH", "BOS", "SEA", "LAS", "SLC", "PHL", "SAN", "AUS", "MCO", "BNA", "RDU", "CLE", "IND", "STL", "MCI", "CVG", "YYZ"
 ]);
+
+// Map of secondary/adjacent metro airports to their flagship hub to prevent visual overlap on map
+export const METRO_SECONDARY_TO_PRIMARY: Record<string, string> = {
+  MDW: "ORD", // Chicago: Show ORD
+  LGA: "JFK", // New York Metro: Show JFK
+  EWR: "JFK",
+  HPN: "JFK",
+  IAD: "DCA", // Washington DC / Baltimore: Show DCA
+  BWI: "DCA",
+  DAL: "DFW", // Dallas / Fort Worth: Show DFW
+  HOU: "IAH", // Houston Metro: Show IAH
+  FLL: "MIA", // South Florida: Show MIA
+  PBI: "MIA",
+  OAK: "SFO", // SF Bay Area: Show SFO
+  SJC: "SFO",
+  BUR: "LAX", // Los Angeles Basin: Show LAX
+  SNA: "LAX",
+  ONT: "LAX",
+  LGB: "LAX",
+};
 
 export const ALL_MAJOR_AIRPORTS: Record<string, { name: string; lat: number; lng: number; cat: "VFR" | "MVFR" | "IFR" | "LIFR" }> = {
   // Texas & Gulf Coast

@@ -35,12 +35,14 @@ import {
 import { readUploadedFileAsText } from "../../lib/pdfExtractor";
 import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
+import HSSSequencesModal from "./HSSSequencesModal";
 
 export default function PortalBrowserStudio() {
   const isNative = typeof window !== "undefined" && Capacitor.isNativePlatform();
   const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
   const setOpenSequences = useCrewStore((state) => state.setOpenSequences);
   const existingOpenSeqs = useCrewStore((state) => state.openSequences);
+  const sequences = useCrewStore((state) => state.sequences);
 
   // Quick Bookmark Portals
   const QUICK_BOOKMARKS = [
@@ -51,6 +53,7 @@ export default function PortalBrowserStudio() {
     { name: "Jetnet Travel", url: "https://jetnet.aa.com", icon: "🛫", desc: "Pass bureau & listing" },
   ];
 
+  const setIsHssModalOpen = useCrewStore((state) => state.setIsHssModalOpen);
   const TARGET_URL = "https://webfos.aa.com/WebSabre/websabre";
   const [activeUrl, setActiveUrl] = useState(TARGET_URL);
   const [manualText, setManualText] = useState("");
@@ -207,7 +210,7 @@ export default function PortalBrowserStudio() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-slate-100 font-sans select-none overflow-y-auto p-3 sm:p-5 space-y-4">
+    <div className="flex flex-col w-full font-sans select-none space-y-4 pb-12">
       {/* Hidden File Input for PDF/Text Uploads */}
       <input
         type="file"
@@ -268,19 +271,30 @@ export default function PortalBrowserStudio() {
         <div className="flex flex-wrap gap-2.5 pt-1">
           <button
             onClick={() => handleLaunchNativeBrowser("https://webfos.aa.com/WebSabre/websabre")}
-            className="flex-1 sm:flex-initial px-5 py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2"
+            className="flex-1 sm:flex-initial px-4 py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2"
           >
             <Globe className="w-4 h-4" />
-            <span>Launch WebFOS / DECS Browser</span>
+            <span>Launch WebFOS / DECS</span>
           </button>
 
           <button
+            type="button"
+            onClick={() => setIsHssModalOpen(true)}
+            className="px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-md shadow-amber-500/20 flex items-center justify-center gap-2"
+            title="View HSS Sequences Breakdown by Month"
+          >
+            <Layers className="w-4 h-4" />
+            <span>⚡ HSS Sequences</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleReadClipboard}
             className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2"
             title="Read Copied HI1 text from Clipboard"
           >
             <Clipboard className="w-4 h-4" />
-            <span>📋 Paste HI1 from Clipboard</span>
+            <span>📋 Paste HI1</span>
           </button>
         </div>
       </div>
@@ -289,6 +303,31 @@ export default function PortalBrowserStudio() {
       <div className="space-y-2">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 px-1">Quick AA Portals & Resources</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          {/* HSS Sequence Roster Card */}
+          <button
+            type="button"
+            onClick={() => setIsHssModalOpen(true)}
+            className="p-3.5 bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white border border-indigo-500/30 rounded-2xl transition cursor-pointer active-press shadow-2xs flex items-center justify-between text-left group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-2xl p-2 bg-indigo-500/20 rounded-xl border border-indigo-400/30 shrink-0">📋</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-white block truncate group-hover:text-amber-400 transition">
+                    HSS Sequences
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 text-[9px] font-black font-mono">
+                    MONTHS
+                  </span>
+                </div>
+                <span className="text-[11px] text-indigo-200/80 font-medium block truncate">
+                  Monthly sequence legs & DECS roster
+                </span>
+              </div>
+            </div>
+            <Layers className="w-4 h-4 text-indigo-300 group-hover:text-amber-400 shrink-0 ml-2" />
+          </button>
+
           {QUICK_BOOKMARKS.map((bm) => (
             <button
               key={bm.name}

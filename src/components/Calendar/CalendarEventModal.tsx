@@ -37,7 +37,8 @@ const GOOGLE_COLORS = [
 
 const CATEGORIES: { id: PersonalCalendarEvent["category"]; label: string; icon: string; defaultColor: string }[] = [
   { id: "event", label: "Event", icon: "🗓️", defaultColor: "sky" },
-  { id: "commute", label: "Commute / Jumpseat", icon: "✈️", defaultColor: "amber" },
+  { id: "pilot_bidding", label: "Pilot Bidding & Transition", icon: "✈️", defaultColor: "indigo" },
+  { id: "commute", label: "Commute / Jumpseat", icon: "🛫", defaultColor: "amber" },
   { id: "medical", label: "FAA Medical / Training", icon: "👨‍⚕️", defaultColor: "emerald" },
   { id: "family", label: "Family & Personal", icon: "❤️", defaultColor: "rose" },
   { id: "task", label: "Task / Todo", icon: "✅", defaultColor: "indigo" },

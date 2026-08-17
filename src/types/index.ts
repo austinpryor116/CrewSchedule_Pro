@@ -185,19 +185,21 @@ export interface OpenTimePreset {
 
 export interface SubscribedCalendar {
   id: string;
-  name: string; // e.g., "Spouse Flight Schedule", "Google Personal Calendar", "Family Events"
+  name: string; // e.g., "Spouse Flight Schedule", "Google Personal Calendar", "Pilot Contractual Bid Dates"
   url?: string; // webcal:// or https://...ics
-  color: string; // "purple" | "rose" | "teal" | "amber" | "indigo"
+  color: string; // "purple" | "rose" | "teal" | "amber" | "indigo" | "emerald"
   enabled: boolean;
   lastSyncedAt?: string;
   eventsCount: number;
+  isPilotOnly?: boolean;
+  targetRole?: "pilot" | "flight_attendant" | "all";
 }
 
 export interface PersonalCalendarEvent {
   id: string;
   calendarId: string;
   title: string;
-  category?: "event" | "task" | "reminder" | "commute" | "medical" | "family";
+  category?: "event" | "task" | "reminder" | "commute" | "medical" | "family" | "bidding" | "pilot_bidding";
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   startTime?: string; // HH:MM
@@ -211,6 +213,8 @@ export interface PersonalCalendarEvent {
   busyStatus?: "busy" | "free";
   guests?: string[];
   color: string;
+  isPilotOnly?: boolean;
+  targetRole?: "pilot" | "flight_attendant" | "all";
 }
 
 export interface PayCalculations {
@@ -358,5 +362,47 @@ export interface FmsOooiScanResult {
   confidence: number;
   detectedAt: string;
 }
+export interface N6DPilotDayStatus {
+  day: number;
+  status: "RAP" | "SB" | "FLY" | "OFF" | "SK" | "VC" | "OT" | "OTHER";
+  rapType?: "RAP1" | "RAP2" | "STANDBY" | "CUSTOM";
+  rapWindow?: string; // e.g. "0400-1800" or "1200-2359"
+  sequenceNumber?: string; // e.g. "06742"
+  code?: string; // e.g. "24", "SK", "PW", "BK", "UM", "MV", "RD", "NR", "FLY", "SB"
+  rawText?: string;
+  isAvailable: boolean; // True if available on reserve eligible for callout
+}
 
+export interface N6DPilotRecord {
+  seniority: string; // e.g. "2221"
+  seniorityNum: number;
+  name: string; // e.g. "GRANTHAM TK"
+  employeeId: string; // SC e.g. "908386"
+  projHours: number; // e.g. 41.28
+  gtdHours: number; // e.g. 41.28
+  actSkdHours: number; // e.g. 9.07
+  days: Record<number, N6DPilotDayStatus>;
+  rawBlock?: string;
+}
 
+export interface N6DDailySummary {
+  day: number;
+  totalAvailable: number;
+  rap1Count: number;
+  rap2Count: number;
+  othersCount: number;
+}
+
+export interface N6DReservesData {
+  base: string; // e.g. "ORD"
+  equipment: string; // e.g. "E75"
+  seat: "CAPT" | "FO";
+  category: string; // e.g. "DOMESTIC"
+  asOfDate: string; // e.g. "15AUG26"
+  asOfTime: string; // e.g. "1718"
+  displayDays: number[]; // e.g. [15, 16, 17, 18, 19, 20, 21]
+  pilots: N6DPilotRecord[];
+  dailySummaries: N6DDailySummary[];
+  rawText: string;
+  importedAt: string;
+}

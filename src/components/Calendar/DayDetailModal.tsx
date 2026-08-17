@@ -17,6 +17,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import CalendarEventModal from "./CalendarEventModal";
+import { isPilotRole } from "../../lib/pilotBiddingDates";
 
 interface DayDetailModalProps {
   isOpen: boolean;
@@ -30,14 +31,52 @@ interface DayDetailModalProps {
 
 export type TimezoneMode = "BASE" | "UTC" | "ET" | "CT" | "MT" | "PT";
 
-// Timezone offset mapping relative to UTC for display conversion
-const TZ_OFFSETS: Record<TimezoneMode, { name: string; offsetHours: number }> = {
-  BASE: { name: "Base Local (CT)", offsetHours: -5 }, // ORD / DFW = Central Time (-5 UTC)
-  UTC: { name: "UTC / Zulu (Z)", offsetHours: 0 },
-  ET: { name: "Eastern (ET)", offsetHours: -4 },
-  CT: { name: "Central (CT)", offsetHours: -5 },
-  MT: { name: "Mountain (MT)", offsetHours: -6 },
-  PT: { name: "Pacific (PT)", offsetHours: -7 },
+const IANA_TIMEZONES: Record<TimezoneMode, string> = {
+  BASE: "America/Chicago",
+  UTC: "UTC",
+  ET: "America/New_York",
+  CT: "America/Chicago",
+  MT: "America/Denver",
+  PT: "America/Los_Angeles",
+};
+
+const BASE_IANA_MAP: Record<string, string> = {
+  ORD: "America/Chicago",
+  DFW: "America/Chicago",
+  MIA: "America/New_York",
+  JFK: "America/New_York",
+  LGA: "America/New_York",
+  PHL: "America/New_York",
+  DCA: "America/New_York",
+  BOS: "America/New_York",
+  CLT: "America/New_York",
+  PHX: "America/Phoenix",
+  LAX: "America/Los_Angeles",
+  SFO: "America/Los_Angeles",
+  SEA: "America/Los_Angeles",
+};
+
+export function getTimezoneOffsetHours(tzName: string, refDate: Date): number {
+  if (tzName === "UTC") return 0;
+  try {
+    const d = new Date(Date.UTC(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 12, 0, 0));
+    const utcStr = d.toLocaleString("en-US", { timeZone: "UTC" });
+    const tzStr = d.toLocaleString("en-US", { timeZone: tzName });
+    const utcDate = new Date(utcStr);
+    const tzDate = new Date(tzStr);
+    return (tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60);
+  } catch {
+    return -5;
+  }
+}
+
+const TZ_LABELS: Record<TimezoneMode, string> = {
+  BASE: "Base Local",
+  UTC: "UTC / Zulu (Z)",
+  ET: "Eastern (ET)",
+  CT: "Central (CT)",
+  MT: "Mountain (MT)",
+  PT: "Pacific (PT)",
 };
 
 /**
@@ -81,10 +120,12 @@ export default function DayDetailModal({
     year: "numeric",
   });
 
-  // Base timezone offset (ORD / DFW = -5 CT, JFK / MIA = -4 ET, LAX = -7 PT)
-  const baseTzOffset = primaryBase === "JFK" || primaryBase === "MIA" ? -4 : primaryBase === "LAX" ? -7 : -5;
-  const currentTzObj = TZ_OFFSETS[activeTz];
-  const targetOffset = activeTz === "BASE" ? baseTzOffset : currentTzObj.offsetHours;
+  // Dynamic IANA date-aware timezone resolution (handles Daylight Saving Time automatically)
+  const baseIana = BASE_IANA_MAP[primaryBase.toUpperCase()] || "America/Chicago";
+  const targetIana = activeTz === "BASE" ? baseIana : IANA_TIMEZONES[activeTz];
+  const baseTzOffset = getTimezoneOffsetHours(baseIana, date);
+  const targetOffset = getTimezoneOffsetHours(targetIana, date);
+  const activeTzLabel = `${TZ_LABELS[activeTz]} (${targetOffset >= 0 ? `+${targetOffset}` : targetOffset}h UTC)`;
 
   const vacations = useCrewStore((state) => state.vacations);
 
@@ -115,8 +156,14 @@ export default function DayDetailModal({
     ...vacationTrips,
   ];
 
+  const userProfile = useCrewStore((state) => state.userProfile);
+  const isUserPilot = isPilotRole(userProfile?.crewRole);
+
   // Filter personal events for this date
   const dayPersonalEvents = personalEvents.filter((evt) => {
+    if ((evt.isPilotOnly || evt.targetRole === "pilot" || evt.category === "pilot_bidding") && !isUserPilot) {
+      return false;
+    }
     const parentCal = subscribedCalendars.find((c) => c.id === evt.calendarId);
     if (parentCal && !parentCal.enabled) return false;
     return evt.startDate === dateStr || (evt.startDate <= dateStr && evt.endDate >= dateStr);
@@ -138,8 +185,16 @@ export default function DayDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn font-sans text-slate-900">
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full border-t sm:border border-slate-200 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slideUp">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn font-sans text-slate-900"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full border-t sm:border border-slate-200 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slideUp"
+      >
         {/* Mobile handle indicator */}
         <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-2 shrink-0 sm:hidden" />
 
@@ -158,7 +213,11 @@ export default function DayDetailModal({
           </div>
 
           <button
-            onClick={onClose}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             className="text-slate-400 hover:text-slate-900 p-2 rounded-xl hover:bg-slate-100 transition cursor-pointer active-press"
           >
             <X className="w-5 h-5" />
@@ -199,7 +258,7 @@ export default function DayDetailModal({
                 Flight Duty Lines & Blocks ({daySequences.length})
               </span>
               <span className="text-[10px] text-slate-500 font-semibold">
-                Timezone: <strong className="text-slate-800">{TZ_OFFSETS[activeTz].name}</strong>
+                Timezone: <strong className="text-slate-800">{activeTzLabel}</strong>
               </span>
             </h4>
 
@@ -425,8 +484,10 @@ export default function DayDetailModal({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="text-sm">
-                            {evt.category === "commute"
+                            {evt.category === "pilot_bidding" || evt.category === "bidding"
                               ? "✈️"
+                              : evt.category === "commute"
+                              ? "🛫"
                               : evt.category === "medical"
                               ? "👨‍⚕️"
                               : evt.category === "family"
@@ -441,6 +502,11 @@ export default function DayDetailModal({
                         </div>
 
                         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          {evt.isPilotOnly && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[8.5px] font-black bg-indigo-100 text-indigo-900 border border-indigo-200">
+                              ✈️ Pilot Milestone
+                            </span>
+                          )}
                           <span className="text-[10px] font-extrabold opacity-75 uppercase tracking-wide">
                             {isCustom ? "Personal" : parentCal?.name || "Feed"}
                           </span>
@@ -524,7 +590,11 @@ export default function DayDetailModal({
           </button>
 
           <button
-            onClick={onClose}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition cursor-pointer active-press"
           >
             Close

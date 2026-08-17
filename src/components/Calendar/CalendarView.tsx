@@ -6,7 +6,8 @@ import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
 import { SequenceTrip, DutyPeriod } from "../../types";
 import { checkOpenSequenceConflict } from "../../lib/parser";
 import { PersonalCalendarEvent } from "../../types";
-import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, Info, Plane, Sun, Moon, Palmtree, Eye, EyeOff, ShoppingBag, Rss, X, Globe, Plus, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
+import { isPilotRole } from "../../lib/pilotBiddingDates";
+import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, ChevronDown, Info, Plane, Sun, Moon, Palmtree, Eye, EyeOff, ShoppingBag, Rss, X, Globe, Plus, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
 import CalendarSyncModal from "./CalendarSyncModal";
 import DayDetailModal from "./DayDetailModal";
 import GridFilterModal from "./GridFilterModal";
@@ -25,7 +26,18 @@ function parseLocalDateString(dateStr: string): Date {
 }
 
 export default function CalendarView() {
+  const [streamBaseDate] = useState(() => new Date());
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [visibleMonth, setVisibleMonth] = useState(new Date());
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
+  const [streamPastMonths, setStreamPastMonths] = useState(12);
+  const [streamFutureMonths, setStreamFutureMonths] = useState(24);
+  const [selectedPickerYear, setSelectedPickerYear] = useState(() => new Date().getFullYear());
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevScrollTopRef = useRef<number>(0);
+  const isExpandingTopRef = useRef<boolean>(false);
+  const isProgrammaticScrollRef = useRef<boolean>(false);
+  const lastExpansionTimeRef = useRef<number>(0);
   const [viewMode, setViewMode] = useState<"month" | "week">("month");
   const [filterMode, setFilterMode] = useState<"all" | "trips" | "off" | "high-credit">("all");
   const [hoveredSeqId, setHoveredSeqId] = useState<string | null>(null);
@@ -45,16 +57,83 @@ export default function CalendarView() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToToday = (smooth = true) => {
-    if (todayElementRef.current && scrollContainerRef.current) {
-      const container = scrollContainerRef.current;
-      const el = todayElementRef.current;
-      const containerRect = container.getBoundingClientRect();
+    const today = new Date();
+    isProgrammaticScrollRef.current = true;
+    setTimeout(() => { isProgrammaticScrollRef.current = false; }, 600);
+
+    if (!scrollContainerRef.current) return;
+    const c = scrollContainerRef.current;
+
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    const todayStr = `${y}-${m}-${d}`;
+
+    const el = c.querySelector(`[data-cell-date="${todayStr}"]`);
+    if (el) {
+      const cRect = c.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
-      const relativeTop = elRect.top - containerRect.top + container.scrollTop;
-      const targetScroll = relativeTop - (container.clientHeight / 2) + (el.clientHeight / 2);
-      container.scrollTo({
-        top: Math.max(0, targetScroll),
+      const rTop = elRect.top - cRect.top + c.scrollTop;
+      const targetScroll = Math.max(0, rTop - (c.clientHeight / 2) + (el.clientHeight / 2));
+      c.scrollTo({
+        top: targetScroll,
         behavior: smooth ? "smooth" : "auto",
+      });
+      setVisibleMonth(today);
+    } else {
+      scrollToMonth(today, smooth);
+    }
+  };
+
+  const scrollToMonth = (targetDate: Date, smooth = false) => {
+    if (viewMode !== "month" || !scrollContainerRef.current) {
+      setCurrentDate(targetDate);
+      setVisibleMonth(targetDate);
+      return;
+    }
+
+    isProgrammaticScrollRef.current = true;
+    setTimeout(() => { isProgrammaticScrollRef.current = false; }, 400);
+
+    const targetAnchor = `${targetDate.getFullYear()}-${targetDate.getMonth()}`;
+    const container = scrollContainerRef.current;
+    const targetEl = container.querySelector(`[data-month-anchor="${targetAnchor}"]`);
+
+    if (targetEl) {
+      const cRect = container.getBoundingClientRect();
+      const elRect = targetEl.getBoundingClientRect();
+      const rTop = elRect.top - cRect.top + container.scrollTop;
+      container.scrollTo({
+        top: Math.max(0, rTop - 4),
+        behavior: smooth ? "smooth" : "auto",
+      });
+      setVisibleMonth(targetDate);
+    } else {
+      // If outside current loaded buffer, expand buffer
+      const baseMonths = streamBaseDate.getFullYear() * 12 + streamBaseDate.getMonth();
+      const targetMonths = targetDate.getFullYear() * 12 + targetDate.getMonth();
+      const diff = targetMonths - baseMonths;
+      if (diff < -streamPastMonths) {
+        setStreamPastMonths(Math.abs(diff) + 12);
+      } else if (diff > streamFutureMonths) {
+        setStreamFutureMonths(diff + 18);
+      }
+      setVisibleMonth(targetDate);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (!scrollContainerRef.current) return;
+          const c = scrollContainerRef.current;
+          const newEl = c.querySelector(`[data-month-anchor="${targetAnchor}"]`);
+          if (newEl) {
+            const cRect = c.getBoundingClientRect();
+            const nRect = newEl.getBoundingClientRect();
+            const rTop = nRect.top - cRect.top + c.scrollTop;
+            c.scrollTo({
+              top: Math.max(0, rTop - 4),
+              behavior: "auto",
+            });
+          }
+        }, 80);
       });
     }
   };
@@ -192,6 +271,8 @@ export default function CalendarView() {
   const stationTurnLimits = useCrewStore((state) => state.stationTurnLimits);
   const defaultTurnLimit = useCrewStore((state) => state.defaultTurnLimit);
   const highCreditThresholdHours = useCrewStore((state) => state.highCreditThresholdHours);
+  const userProfile = useCrewStore((state) => state.userProfile);
+  const isUserPilot = isPilotRole(userProfile?.crewRole);
 
   // Update calendar to match the metadata month
   const prevMetadataRef = useRef<string | null>(null);
@@ -208,12 +289,117 @@ export default function CalendarView() {
         const months: Record<string, number> = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
         const monthIdx = months[monthAbbr];
         if (monthIdx !== undefined) {
-          setCurrentDate(new Date(yearNum, monthIdx, 20));
+          const target = new Date(yearNum, monthIdx, 20);
+          setCurrentDate(target);
+          setVisibleMonth(target);
         }
       }
     }
   }, [monthlyHIMetadata]);
 
+  // Synchronize visible month dynamically and trigger infinite bi-directional expansion
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || viewMode !== "month") return;
+
+    let animationFrameId: number | null = null;
+
+    const handleScroll = () => {
+      if (animationFrameId !== null) return;
+      animationFrameId = requestAnimationFrame(() => {
+        animationFrameId = null;
+        if (!scrollContainerRef.current) return;
+        const c = scrollContainerRef.current;
+        const cRect = c.getBoundingClientRect();
+
+        // 1. Check if user is scrolling near the top to load more past months
+        if (!isProgrammaticScrollRef.current) {
+          const now = Date.now();
+          if (now - lastExpansionTimeRef.current > 1500) {
+            if (c.scrollTop < 100 && !isExpandingTopRef.current && c.scrollTop >= 0 && c.scrollHeight > c.clientHeight) {
+              lastExpansionTimeRef.current = now;
+              isExpandingTopRef.current = true;
+              prevScrollHeightRef.current = c.scrollHeight;
+              prevScrollTopRef.current = c.scrollTop;
+              setStreamPastMonths((prev) => prev + 12);
+            } else if (c.scrollTop + c.clientHeight > c.scrollHeight - 250) {
+              lastExpansionTimeRef.current = now;
+              setStreamFutureMonths((prev) => prev + 12);
+            }
+          }
+        }
+
+        // 3. Probe cell near the vertical center of the visible viewport (dominant visible week)
+        const probeY = cRect.top + c.clientHeight * 0.45;
+        const probeX = cRect.left + c.clientWidth / 2;
+
+        const el = document.elementFromPoint(probeX, probeY);
+        if (el) {
+          const cell = el.closest("[data-cell-date]");
+          if (cell) {
+            const dateAttr = cell.getAttribute("data-cell-date");
+            if (dateAttr) {
+              const [yStr, mStr] = dateAttr.split("-");
+              const yNum = parseInt(yStr, 10);
+              const mNum = parseInt(mStr, 10) - 1;
+              if (!isNaN(yNum) && !isNaN(mNum)) {
+                setVisibleMonth((prev) => {
+                  if (prev.getFullYear() === yNum && prev.getMonth() === mNum) {
+                    return prev;
+                  }
+                  return new Date(yNum, mNum, 1);
+                });
+              }
+            }
+          }
+        }
+      });
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [viewMode]);
+
+  // Continuous Infinite Stream Calendar Days across multiple years (starts with 12 prior months, 24 future months, dynamically expands)
+  const streamDays = useMemo(() => {
+    const baseYear = streamBaseDate.getFullYear();
+    const baseMonth = streamBaseDate.getMonth();
+
+    // Start streamPastMonths prior, aligned to Sunday
+    const firstDay = new Date(baseYear, baseMonth - streamPastMonths, 1);
+    const startDay = new Date(firstDay);
+    startDay.setDate(startDay.getDate() - startDay.getDay());
+
+    // End streamFutureMonths ahead, aligned to Saturday
+    const lastDay = new Date(baseYear, baseMonth + streamFutureMonths + 1, 0);
+    const endDay = new Date(lastDay);
+    endDay.setDate(endDay.getDate() + (6 - endDay.getDay()));
+
+    const days: Date[] = [];
+    const curr = new Date(startDay);
+    while (curr <= endDay) {
+      days.push(new Date(curr));
+      curr.setDate(curr.getDate() + 1);
+    }
+    return days;
+  }, [streamBaseDate, streamPastMonths, streamFutureMonths]);
+
+  // Seamlessly adjust scroll position when prepending past months to prevent UI jumping
+  useEffect(() => {
+    if (isExpandingTopRef.current && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const heightDiff = container.scrollHeight - prevScrollHeightRef.current;
+      if (heightDiff > 0) {
+        container.scrollTop = prevScrollTopRef.current + heightDiff;
+      }
+      isExpandingTopRef.current = false;
+    }
+  }, [streamDays]);
 
   const sequences = useMemo(() => {
     const simulatedTrips = openSequences
@@ -236,6 +422,17 @@ export default function CalendarView() {
       return dateStr >= seq.startDate && dateStr <= seq.endDate;
     });
     return match || null;
+  };
+
+  // Helper: get all sequences matching a date (e.g. multiple turns or overlapping trades)
+  const getSequencesForDate = (date: Date): SequenceTrip[] => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    const dateStr = `${y}-${m}-${d}`;
+    return sequences.filter((seq) => {
+      return dateStr >= seq.startDate && dateStr <= seq.endDate;
+    });
   };
 
   // Helper: get duty period for a specific date
@@ -273,7 +470,7 @@ export default function CalendarView() {
     return seq.totalCreditMinutes >= highCreditThresholdHours * 60;
   };
 
-  // Helper: get duty period & layover info for a specific date
+  // Helper: get specific day's duty period and RON info
   const getDayDutyInfo = (seq: SequenceTrip | null, date: Date) => {
     if (!seq) return null;
     const dp = getDutyPeriodForDate(seq, date);
@@ -292,30 +489,6 @@ export default function CalendarView() {
     
     return { dp, ronCity, legsSummary };
   };
-
-  // Continuous Infinite Stream Calendar Days across 7 months (2 prior, current, 5 future)
-  const streamDays = useMemo(() => {
-    const baseYear = currentDate.getFullYear();
-    const baseMonth = currentDate.getMonth();
-
-    // Start 2 months prior, aligned to Sunday
-    const firstDay = new Date(baseYear, baseMonth - 2, 1);
-    const startDay = new Date(firstDay);
-    startDay.setDate(startDay.getDate() - startDay.getDay());
-
-    // End 5 months ahead, aligned to Saturday
-    const lastDay = new Date(baseYear, baseMonth + 6, 0);
-    const endDay = new Date(lastDay);
-    endDay.setDate(endDay.getDate() + (6 - endDay.getDay()));
-
-    const days: Date[] = [];
-    const curr = new Date(startDay);
-    while (curr <= endDay) {
-      days.push(new Date(curr));
-      curr.setDate(curr.getDate() + 1);
-    }
-    return days;
-  }, [currentDate]);
 
   // Weekly View Day List (centered around the currentDate week, memoized)
   const weekDays = useMemo(() => {
@@ -512,10 +685,24 @@ export default function CalendarView() {
       const row = Number(rowStr);
       const rowSegs = rowSegments[row];
 
-      // Sort: OT add-on turns first (since they report earlier in day), then longer span, then earlier startCol
+      // Sort:
+      // 1. Vacation blocks ALWAYS take top priority (slot 0) across all vacation days
+      // 2. Regular active flights / OT add-ons
+      // 3. Dropped trips (e.g. dropped due to vacation) ALWAYS go below vacation and active trips
       rowSegs.sort((a, b) => {
+        const aIsVac = !!(a.seq.isVacation || a.seq.statusTag === "VA");
+        const bIsVac = !!(b.seq.isVacation || b.seq.statusTag === "VA");
+        if (aIsVac && !bIsVac) return -1;
+        if (!aIsVac && bIsVac) return 1;
+
+        const aIsDrop = !!(a.seq.isDropped || a.seq.statusTag === "DROP" || a.seq.statusTag === "DTS DROP");
+        const bIsDrop = !!(b.seq.isDropped || b.seq.statusTag === "DROP" || b.seq.statusTag === "DTS DROP");
+        if (aIsDrop && !bIsDrop) return 1;
+        if (!aIsDrop && bIsDrop) return -1;
+
         if (a.isOtAddon && !b.isOtAddon) return -1;
         if (!a.isOtAddon && b.isOtAddon) return 1;
+
         const spanA = a.endCol - a.startCol;
         const spanB = b.endCol - b.startCol;
         if (spanA !== spanB) return spanB - spanA;
@@ -581,6 +768,9 @@ export default function CalendarView() {
     }[] = [];
 
     const multiDayEvents = personalEvents.filter((e) => {
+      if ((e.isPilotOnly || e.targetRole === "pilot" || e.category === "pilot_bidding") && !isUserPilot) {
+        return false;
+      }
       const enabledCal = subscribedCalendars.find((c) => c.id === e.calendarId);
       if (enabledCal && !enabledCal.enabled) return false;
       return e.startDate && e.endDate && e.startDate !== e.endDate;
@@ -736,10 +926,10 @@ export default function CalendarView() {
       const next = new Date(currentDate);
       next.setDate(next.getDate() - 7);
       setCurrentDate(next);
+      setVisibleMonth(next);
     } else {
-      const next = new Date(currentDate);
-      next.setMonth(next.getMonth() - 1);
-      setCurrentDate(next);
+      const target = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
+      scrollToMonth(target, true);
     }
   };
 
@@ -748,10 +938,10 @@ export default function CalendarView() {
       const next = new Date(currentDate);
       next.setDate(next.getDate() + 7);
       setCurrentDate(next);
+      setVisibleMonth(next);
     } else {
-      const next = new Date(currentDate);
-      next.setMonth(next.getMonth() + 1);
-      setCurrentDate(next);
+      const target = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1);
+      scrollToMonth(target, true);
     }
   };
 
@@ -861,8 +1051,9 @@ export default function CalendarView() {
     setHoveredPosition(null);
   };
 
-  const monthName = currentDate.toLocaleString("default", { month: "long" });
-  const activeYear = currentDate.getFullYear();
+  const displayMonthDate = viewMode === "month" ? visibleMonth : currentDate;
+  const monthName = displayMonthDate.toLocaleString("default", { month: "long" });
+  const activeYear = displayMonthDate.getFullYear();
 
   const renderGridContent = () => (
     <>
@@ -890,7 +1081,9 @@ export default function CalendarView() {
             return (
               <div className="grid grid-cols-7 bg-slate-50 min-h-full rounded-2xl overflow-hidden" style={{ gridTemplateRows }}>
                 {streamDays.map((date, idx) => {
-                  const seq = getSequenceForDate(date);
+                  const daySeqs = getSequencesForDate(date);
+                  const seq = daySeqs[0] || null;
+                  const extraTripsCount = Math.max(0, daySeqs.length - 1);
                   const isCurrentMonth = date.getMonth() === currentDate.getMonth();
                   const isToday = new Date().toDateString() === date.toDateString();
                   const dutyInfo = getDayDutyInfo(seq, date);
@@ -900,7 +1093,7 @@ export default function CalendarView() {
                   let hide = false;
                   if (filterMode === "trips" && !seq) hide = true;
                   if (filterMode === "off" && seq) hide = true;
-                  if (filterMode === "high-credit" && (!seq || !isHighCredit(seq))) hide = true;
+                  if (filterMode === "high-credit" && (!seq || !daySeqs.some(isHighCredit))) hide = true;
 
                   const isDfp = !seq;
                   const row = Math.floor(idx / 7) + 1;
@@ -915,12 +1108,16 @@ export default function CalendarView() {
                   });
 
                   const isFirstOfMonth = date.getDate() === 1;
+                  const isMonthStartInStream = idx === 0 || streamDays[idx - 1].getMonth() !== date.getMonth();
+                  const monthAnchorKey = `${date.getFullYear()}-${date.getMonth()}`;
                   const monthAbbrev = date.toLocaleString("default", { month: "short" }).toUpperCase();
 
                   return (
                     <div
                       key={idx}
                       ref={isToday ? todayElementRef : undefined}
+                      data-cell-date={`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`}
+                      {...(isFirstOfMonth || isMonthStartInStream ? { "data-month-anchor": monthAnchorKey } : {})}
                       style={{
                         gridRow: row,
                         gridColumn: col,
@@ -956,11 +1153,16 @@ export default function CalendarView() {
                             <span
                               className={`text-[10px] sm:text-xs font-bold font-mono px-1.5 py-0.5 rounded-full shrink-0 ${
                                 isToday
-                                  ? "bg-sky-600 text-white font-black shadow-xs ring-2 ring-sky-300"
-                                  : "text-slate-800 font-extrabold"
+                                    ? "bg-sky-600 text-white font-black shadow-xs ring-2 ring-sky-300"
+                                    : "text-slate-800 font-extrabold"
                               }`}
                             >
                               {date.getDate()}
+                            </span>
+                          )}
+                          {extraTripsCount > 0 && (
+                            <span className="text-[8px] font-black text-indigo-800 bg-indigo-100 border border-indigo-300 px-1 py-0.2 rounded font-mono shadow-2xs">
+                              +{extraTripsCount}
                             </span>
                           )}
                         </div>
@@ -995,18 +1197,34 @@ export default function CalendarView() {
                         const cellSeqSegs = sequenceSegments.filter(
                           (s) => s.row === row && s.startCol <= col && s.endCol >= col
                         );
-                        const maxSeqSlot = cellSeqSegs.length > 0 ? Math.max(...cellSeqSegs.map((s) => s.slot)) : -1;
+                        const maxSeqSlotInCell = cellSeqSegs.length > 0 ? Math.max(...cellSeqSegs.map((s) => s.slot)) : -1;
+
+                        const rowSeqSegs = sequenceSegments.filter((s) => s.row === row);
+                        const maxSeqSlotInRow = rowSeqSegs.length > 0 ? Math.max(...rowSeqSegs.map((s) => s.slot)) : -1;
 
                         const cellMultiSegs = multiDayPersonalEventSegments.filter(
                           (s) => s.row === row && s.startCol <= col && s.endCol >= col
                         );
-                        const maxMultiSlot = cellMultiSegs.length > 0 ? Math.max(...cellMultiSegs.map((s) => s.slot)) : -1;
+                        const maxMultiSlotInCell = cellMultiSegs.length > 0 ? Math.max(...cellMultiSegs.map((s) => s.slot)) : -1;
 
-                        const seqHeight = maxSeqSlot >= 0 ? (maxSeqSlot + 1) * (isMobile ? 26 : 32) : 0;
-                        const multiHeight = maxMultiSlot >= 0 ? (maxMultiSlot + 1) * (isMobile ? 22 : 26) : 0;
-                        const topPx = (isMobile ? 28 : 34) + seqHeight + multiHeight + (seqHeight > 0 || multiHeight > 0 ? 6 : 4);
+                        const seqSlotHeight = isMobile ? 26 : 32;
+                        const multiSlotHeight = isMobile ? 22 : 26;
+                        const baseHeaderHeight = isMobile ? 28 : 34;
+
+                        let topPx = baseHeaderHeight + 4;
+                        if (maxMultiSlotInCell >= 0) {
+                          // Multi-day ribbons in this row sit below the row's sequences
+                          const rowSeqHeight = maxSeqSlotInRow >= 0 ? (maxSeqSlotInRow + 1) * seqSlotHeight : 0;
+                          topPx = baseHeaderHeight + rowSeqHeight + (maxMultiSlotInCell + 1) * multiSlotHeight + 4;
+                        } else if (maxSeqSlotInCell >= 0) {
+                          // If no multi-day event in this cell, sit cleanly below the cell's sequence
+                          topPx = baseHeaderHeight + (maxSeqSlotInCell + 1) * seqSlotHeight + 4;
+                        }
 
                         const dateEvents = personalEvents.filter((e) => {
+                          if ((e.isPilotOnly || e.targetRole === "pilot" || e.category === "pilot_bidding") && !isUserPilot) {
+                            return false;
+                          }
                           const enabledCal = subscribedCalendars.find((c) => c.id === e.calendarId);
                           if (enabledCal && !enabledCal.enabled) return false;
                           // If it's a multi-day event, it's already rendered as a continuous spanning ribbon across the grid
@@ -1017,7 +1235,7 @@ export default function CalendarView() {
 
                         if (dateEvents.length === 0) return null;
 
-                        const maxVisible = maxSeqSlot >= 0 || maxMultiSlot >= 0 ? 3 : 5;
+                        const maxVisible = maxSeqSlotInCell >= 0 || maxMultiSlotInCell >= 0 ? 3 : 5;
                         const visibleEvents = dateEvents.slice(0, maxVisible);
                         const overflowCount = dateEvents.length - maxVisible;
 
@@ -1051,7 +1269,8 @@ export default function CalendarView() {
                           >
                             {visibleEvents.map((evt) => {
                               let pillStyle = "bg-purple-100/95 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs";
-                              if (evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 shadow-2xs";
+                              if (evt.color === "indigo") pillStyle = "bg-indigo-100/95 border-indigo-300 text-indigo-950 shadow-2xs";
+                              else if (evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 shadow-2xs";
                               else if (evt.color === "rose") pillStyle = "bg-rose-100/95 border-rose-300 text-rose-950 shadow-2xs";
                               else if (evt.color === "amber") pillStyle = "bg-amber-100/95 border-amber-300 text-amber-950 shadow-2xs";
                               else if (evt.color === "emerald") pillStyle = "bg-emerald-100/95 border-emerald-300 text-emerald-950 shadow-2xs";
@@ -1161,7 +1380,9 @@ export default function CalendarView() {
                         <div className="flex items-center gap-1 truncate min-w-0">
                           <span className="flex items-center gap-0.5 font-black text-[9px] sm:text-xs truncate">
                             {isVacation ? <Palmtree className="w-3 h-3 shrink-0 text-emerald-200" /> : <Plane className="w-3 h-3 shrink-0" />}
-                            <span className="truncate">{isVacation ? "VACATION" : `#${seg.seq.sequenceNumber}`}</span>
+                            <span className="truncate">
+                              {isVacation ? "VACATION" : isDropped ? `DROP #${seg.seq.sequenceNumber}` : `#${seg.seq.sequenceNumber}`}
+                            </span>
                           </span>
 
                           <span className={`text-[8px] sm:text-[10px] font-bold font-mono ${subtextColor} hidden sm:inline truncate`}>
@@ -1186,7 +1407,8 @@ export default function CalendarView() {
                 {/* Multi-Day Personal Calendar Event Spanning Ribbons */}
                 {multiDayPersonalEventSegments.map((seg, idx) => {
                   let pillStyle = "bg-purple-100/95 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs";
-                  if (seg.evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 hover:bg-teal-200 shadow-2xs";
+                  if (seg.evt.color === "indigo") pillStyle = "bg-indigo-100/95 border-indigo-300 text-indigo-950 hover:bg-indigo-200 shadow-2xs";
+                  else if (seg.evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 hover:bg-teal-200 shadow-2xs";
                   else if (seg.evt.color === "rose") pillStyle = "bg-rose-100/95 border-rose-300 text-rose-950 hover:bg-rose-200 shadow-2xs";
                   else if (seg.evt.color === "amber") pillStyle = "bg-amber-100/95 border-amber-300 text-amber-950 hover:bg-amber-200 shadow-2xs";
                   else if (seg.evt.color === "emerald") pillStyle = "bg-emerald-100/95 border-emerald-300 text-emerald-950 hover:bg-emerald-200 shadow-2xs";
@@ -1197,37 +1419,45 @@ export default function CalendarView() {
                   const seqHeight = maxSeqSlotInRow >= 0 ? (maxSeqSlotInRow + 1) * (isMobile ? 26 : 32) : 0;
                   const topPx = (isMobile ? 28 : 34) + seqHeight + seg.slot * (isMobile ? 22 : 26);
 
-                  return (
-                    <div
-                      key={`multi-evt-${idx}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPersonalEvent(seg.evt);
-                      }}
-                      style={{
-                        gridRow: seg.row,
-                        gridColumnStart: seg.startCol,
-                        gridColumnEnd: seg.endCol + 1,
-                        alignSelf: "start",
-                        marginTop: `${topPx}px`,
-                        height: isMobile ? "20px" : "24px",
-                        zIndex: 22,
-                        position: "relative",
-                      }}
-                      className={`mx-0.5 py-0.5 px-2 rounded-lg border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden font-bold active-press ${pillStyle}`}
-                      title={`${seg.evt.title} (${seg.evt.startDate} to ${seg.evt.endDate})`}
-                    >
-                      <div className="flex items-center gap-1 truncate min-w-0">
-                        <CalendarIcon className="w-2.5 h-2.5 shrink-0 opacity-85" />
-                        <span className="truncate text-[8.5px] sm:text-[10px] font-black">{seg.evt.title}</span>
-                      </div>
-                      {seg.evt.location && (
-                        <span className="text-[7.5px] sm:text-[9px] opacity-85 truncate hidden sm:inline font-mono">
-                          📍 {seg.evt.location}
-                        </span>
-                      )}
-                    </div>
-                  );
+                      const roundedClass = `${seg.isRealStart ? "rounded-l-md ml-0.5" : "rounded-l-none border-l-0 ml-0"} ${seg.isRealEnd ? "rounded-r-md mr-0.5" : "rounded-r-none border-r-0 mr-0"}`;
+
+                      return (
+                        <div
+                          key={`multi-evt-${idx}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPersonalEvent(seg.evt);
+                          }}
+                          style={{
+                            gridRow: seg.row,
+                            gridColumnStart: seg.startCol,
+                            gridColumnEnd: seg.endCol + 1,
+                            alignSelf: "start",
+                            marginTop: `${topPx}px`,
+                            height: isMobile ? "20px" : "24px",
+                            zIndex: 22,
+                            position: "relative",
+                          }}
+                          className={`py-0.5 px-1.5 border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden font-bold active-press ${roundedClass} ${pillStyle}`}
+                          title={`${seg.evt.title} (${seg.evt.startDate} to ${seg.evt.endDate})`}
+                        >
+                          <div className="flex items-center gap-1 truncate min-w-0">
+                            {seg.evt.category === "pilot_bidding" || seg.evt.isPilotOnly ? (
+                              <span className="text-[9px] shrink-0">✈️</span>
+                            ) : (
+                              <CalendarIcon className="w-2.5 h-2.5 shrink-0 opacity-85" />
+                            )}
+                            <span className="truncate text-[8.5px] sm:text-[10px] font-black">{seg.evt.title}</span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {seg.evt.location && (
+                              <span className="text-[7.5px] sm:text-[9px] opacity-85 truncate hidden sm:inline font-mono">
+                                📍 {seg.evt.location}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
                 })}
               </div>
             );
@@ -1600,6 +1830,91 @@ export default function CalendarView() {
         onClose={() => setSelectedPersonalEvent(null)}
         existingEvent={selectedPersonalEvent}
       />
+
+      {/* Month Quick-Jump Picker Modal */}
+      {isMonthPickerOpen && (
+        <div
+          className="fixed inset-0 z-[100000] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setIsMonthPickerOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-sm w-full p-5 space-y-4 animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-5 h-5 text-sky-600" />
+                <h3 className="text-sm font-black text-slate-900">Jump to Month</h3>
+              </div>
+              <button
+                onClick={() => setIsMonthPickerOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Year Switcher Header */}
+              <div className="flex items-center justify-between bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                <button
+                  onClick={() => setSelectedPickerYear((prev) => prev - 1)}
+                  className="p-1.5 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl transition cursor-pointer active-press"
+                  title="Previous Year"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs font-black font-mono text-slate-900 tracking-wide">
+                  {selectedPickerYear} Schedule
+                </span>
+                <button
+                  onClick={() => setSelectedPickerYear((prev) => prev + 1)}
+                  className="p-1.5 hover:bg-white text-slate-700 hover:text-slate-900 rounded-xl transition cursor-pointer active-press"
+                  title="Next Year"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 12-Month Selector Grid */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { name: "Jan", m: 0 },
+                  { name: "Feb", m: 1 },
+                  { name: "Mar", m: 2 },
+                  { name: "Apr", m: 3 },
+                  { name: "May", m: 4 },
+                  { name: "Jun", m: 5 },
+                  { name: "Jul", m: 6 },
+                  { name: "Aug", m: 7 },
+                  { name: "Sep", m: 8 },
+                  { name: "Oct", m: 9 },
+                  { name: "Nov", m: 10 },
+                  { name: "Dec", m: 11 },
+                ].map((item) => {
+                  const isSelected = displayMonthDate.getFullYear() === selectedPickerYear && displayMonthDate.getMonth() === item.m;
+                  return (
+                    <button
+                      key={`${selectedPickerYear}-${item.m}`}
+                      onClick={() => {
+                        scrollToMonth(new Date(selectedPickerYear, item.m, 1), true);
+                        setIsMonthPickerOpen(false);
+                      }}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer active-press border ${
+                        isSelected
+                          ? "bg-sky-600 text-white border-sky-600 shadow-sm"
+                          : "bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200"
+                      }`}
+                    >
+                      {item.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 
@@ -1631,9 +1946,14 @@ export default function CalendarView() {
               <button onClick={handlePrevMonth} className="p-1.5 hover:bg-white text-slate-700 hover:text-slate-900 rounded-lg transition cursor-pointer" title="Previous">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-xs font-bold font-mono px-2 text-slate-800">
-                {viewMode === "month" ? `${monthName} ${activeYear}` : `Week of ${weekDays[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
-              </span>
+              <button
+                onClick={() => setIsMonthPickerOpen(true)}
+                className="flex items-center gap-1 text-xs font-bold font-mono px-2 py-1 text-slate-800 hover:bg-white rounded-lg transition cursor-pointer"
+                title="Jump to Month"
+              >
+                <span>{viewMode === "month" ? `${monthName} ${activeYear}` : `Week of ${weekDays[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
               <button onClick={handleNextMonth} className="p-1.5 hover:bg-white text-slate-700 hover:text-slate-900 rounded-lg transition cursor-pointer" title="Next">
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -1682,11 +2002,18 @@ export default function CalendarView() {
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <span className="text-xs sm:text-sm font-black font-mono px-1.5 text-slate-900 tracking-tight">
-            {viewMode === "month"
-              ? `${monthName} ${activeYear}`
-              : `Week of ${weekDays[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
-          </span>
+          <button
+            onClick={() => setIsMonthPickerOpen(true)}
+            className="flex items-center gap-1 text-xs sm:text-sm font-black font-mono px-2 py-1 rounded-xl text-slate-900 hover:bg-slate-100 transition cursor-pointer active-press"
+            title="Jump to Month"
+          >
+            <span>
+              {viewMode === "month"
+                ? `${monthName} ${activeYear}`
+                : `Week of ${weekDays[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </button>
 
           <button
             onClick={handleNextMonth}
@@ -1701,10 +2028,7 @@ export default function CalendarView() {
         <div className="flex items-center gap-1.5">
           {/* Today Button */}
           <button
-            onClick={() => {
-              setCurrentDate(new Date());
-              setTimeout(scrollToToday, 50);
-            }}
+            onClick={() => scrollToToday(true)}
             className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-black transition cursor-pointer active-press shadow-2xs"
           >
             Today
@@ -1762,10 +2086,7 @@ export default function CalendarView() {
 
       {/* Floating Jump to Today Button */}
       <button
-        onClick={() => {
-          setCurrentDate(new Date());
-          setTimeout(scrollToToday, 50);
-        }}
+        onClick={() => scrollToToday(true)}
         className="fixed bottom-20 right-4 z-40 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-xl border border-slate-700/50 backdrop-blur-md text-xs font-extrabold flex items-center gap-1.5 cursor-pointer active-press transition duration-150"
         title="Jump to Today"
       >

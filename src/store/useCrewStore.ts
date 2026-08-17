@@ -1,11 +1,14 @@
 import { create } from "zustand";
-import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, ScheduleDiffItem, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry, UserProfile } from "../types";
-import { DEFAULT_PAY_RATES, DEFAULT_LOGBOOK_ENTRIES, MOCK_VACATIONS } from "../lib/demoData";
-import { USER_LIVE_SEQUENCES, USER_LOGBOOK_ENTRIES } from "../lib/userScheduleData";
+import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry, UserProfile, N6DReservesData } from "../types";
+import { DEFAULT_PAY_RATES, DEFAULT_LOGBOOK_ENTRIES, MOCK_VACATIONS, DEFAULT_SUBSCRIBED_CALENDARS, DEFAULT_PERSONAL_EVENTS } from "../lib/demoData";
+import { USER_LIVE_SEQUENCES, USER_LIVE_VACATIONS } from "../lib/userScheduleData";
+import { PILOT_BIDDING_CALENDAR, DEFAULT_PILOT_BIDDING_EVENTS, isPilotRole } from "../lib/pilotBiddingDates";
+import { DEFAULT_N6D_DATA } from "../lib/n6dParser";
 
-import { calculatePay, calculateSequenceTAFB, parseRawSchedule, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole } from "../lib/parser";
+import { calculatePay, calculateSequenceTAFB, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole } from "../lib/parser";
 import { getCbaRatesForProfile } from "../lib/cbaPayScale";
-export { convertOpenToTrip };
+import { StorageAdapter, safeLocalStorageSet } from "../lib/storage";
+export { convertOpenToTrip, isPilotRole };
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
   name: "Austin Pryor",
@@ -80,6 +83,10 @@ interface CrewState {
   // Calendar Tools Modal State
   isCalendarToolsOpen: boolean;
   setIsCalendarToolsOpen: (val: boolean) => void;
+
+  // HSS Sequences Monthly Modal State
+  isHssModalOpen: boolean;
+  setIsHssModalOpen: (val: boolean) => void;
 
   // Live DECS Screen Terminal State
   decsScreenOutput: string;
@@ -157,6 +164,11 @@ interface CrewState {
   resetStationTurnLimits: () => void;
   setHighCreditThresholdHours: (hours: number) => void;
 
+  // N6D Reserves Display State & Actions
+  n6dReserves: N6DReservesData;
+  setN6DReserves: (data: N6DReservesData) => void;
+  resetN6DReservesToDefault: () => void;
+
   // Derivations
   getEffectiveSequences: () => SequenceTrip[];
   getPayCalculations: () => PayCalculations;
@@ -190,6 +202,7 @@ const DEFAULT_STATION_TURN_LIMITS: Record<string, number> = {
   PHX: 40,
   DCA: 40,
 };
+
 const DEFAULT_TURN_LIMIT = 40;
 
 const deduplicateSequences = (seqs: SequenceTrip[]): SequenceTrip[] => {
@@ -199,6 +212,8 @@ const deduplicateSequences = (seqs: SequenceTrip[]): SequenceTrip[] => {
     if (s && s.sequenceNumber && s.startDate) {
       const key = `${s.sequenceNumber}-${s.startDate}`;
       map.set(key, s);
+    } else if (s && s.id) {
+      map.set(s.id, s);
     } else if (s && s.sequenceNumber) {
       map.set(s.sequenceNumber, s);
     }
@@ -263,7 +278,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   },
 
   sequences: USER_LIVE_SEQUENCES,
-  vacations: MOCK_VACATIONS,
+  vacations: USER_LIVE_VACATIONS,
   monthlyHIMetadata: null,
   payRates: DEFAULT_PAY_RATES,
   selectedSequenceId: null,
@@ -280,13 +295,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   showOpenTimeOverlay: false,
   openTimeFilter: "all",
   openTimePresets: DEFAULT_OPEN_TIME_PRESETS,
-  subscribedCalendars: [],
-  personalEvents: [],
+  subscribedCalendars: DEFAULT_SUBSCRIBED_CALENDARS,
+  personalEvents: DEFAULT_PERSONAL_EVENTS,
   showDtsDropped: true, // Default to true so all roster trips and trades remain visible on calendar
   setShowDtsDropped: (val: boolean) => set({ showDtsDropped: val }),
   toggleShowDtsDropped: () => set((state) => ({ showDtsDropped: !state.showDtsDropped })),
   isCalendarToolsOpen: false,
   setIsCalendarToolsOpen: (val: boolean) => set({ isCalendarToolsOpen: val }),
+  isHssModalOpen: false,
+  setIsHssModalOpen: (val: boolean) => set({ isHssModalOpen: val }),
 
   decsScreenOutput: "",
   decsCurrentInput: "",
@@ -307,6 +324,16 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   stationTurnLimits: DEFAULT_STATION_TURN_LIMITS,
   defaultTurnLimit: DEFAULT_TURN_LIMIT,
   highCreditThresholdHours: 15.0,
+
+  n6dReserves: DEFAULT_N6D_DATA,
+  setN6DReserves: (data: N6DReservesData) => {
+    set({ n6dReserves: data });
+    safeLocalStorageSet("crewschedule_n6d_reserves", data);
+  },
+  resetN6DReservesToDefault: () => {
+    set({ n6dReserves: DEFAULT_N6D_DATA });
+    safeLocalStorageSet("crewschedule_n6d_reserves", DEFAULT_N6D_DATA);
+  },
 
   autoGenerateLogbookFromRoster: () => {
     const sequences = get().sequences;
@@ -395,17 +422,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
     const updated = [...generated, ...existing];
     set({ logbookEntries: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_logbook", JSON.stringify(updated));
-    }
+    StorageAdapter.saveLogbookEntries(updated);
+    safeLocalStorageSet("crewschedule_logbook", updated);
   },
 
   addLogbookEntry: (entry) => {
     const updated = [entry, ...get().logbookEntries];
     set({ logbookEntries: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_logbook", JSON.stringify(updated));
-    }
+    StorageAdapter.saveLogbookEntries(updated);
+    safeLocalStorageSet("crewschedule_logbook", updated);
   },
 
   updateLogbookEntry: (updatedEntry) => {
@@ -447,22 +472,22 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     if (targetSeqId) {
       set({ selectedSequenceId: targetSeqId });
     }
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_logbook", JSON.stringify(logbookEntries));
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(sequences));
-    }
+    StorageAdapter.saveLogbookEntries(logbookEntries);
+    StorageAdapter.saveSequences(sequences);
+    safeLocalStorageSet("crewschedule_logbook", logbookEntries);
+    safeLocalStorageSet("crewschedule_sequences", sequences);
   },
 
   deleteLogbookEntry: (id) => {
     const updated = get().logbookEntries.filter((e) => e.id !== id);
     set({ logbookEntries: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_logbook", JSON.stringify(updated));
-    }
+    StorageAdapter.saveLogbookEntries(updated);
+    safeLocalStorageSet("crewschedule_logbook", updated);
   },
 
   clearLogbook: () => {
     set({ logbookEntries: [] });
+    StorageAdapter.saveLogbookEntries([]);
     if (typeof window !== "undefined") {
       localStorage.removeItem("crewschedule_logbook");
     }
@@ -573,12 +598,11 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   setMonthlyHIMetadata: (meta) => {
     set({ monthlyHIMetadata: meta });
-    if (typeof window !== "undefined") {
-      if (meta) {
-        localStorage.setItem("crewschedule_hi_metadata", JSON.stringify(meta));
-      } else {
-        localStorage.removeItem("crewschedule_hi_metadata");
-      }
+    StorageAdapter.saveSetting("crewschedule_hi_metadata", meta);
+    if (meta) {
+      safeLocalStorageSet("crewschedule_hi_metadata", meta);
+    } else if (typeof window !== "undefined") {
+      localStorage.removeItem("crewschedule_hi_metadata");
     }
   },
 
@@ -600,18 +624,24 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     });
 
     const mergedSeqs = deduplicateSequences([...preservedSeqs, ...newSeqs]);
+    const finalVacs = newVacs.length > 0 ? newVacs : state.vacations;
     
-    set({ monthlyHIMetadata: metadata });
-    if (typeof window !== "undefined" && metadata) {
-      localStorage.setItem("crewschedule_hi_metadata", JSON.stringify(metadata));
-    }
+    set({ 
+      monthlyHIMetadata: metadata,
+      sequences: mergedSeqs,
+      vacations: finalVacs
+    });
 
-    set({ sequences: mergedSeqs, vacations: newVacs.length > 0 ? newVacs : state.vacations });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(mergedSeqs));
-      if (newVacs.length > 0) {
-        localStorage.setItem("crewschedule_vacations", JSON.stringify(newVacs));
-      }
+    StorageAdapter.saveSequences(mergedSeqs);
+    StorageAdapter.saveVacations(finalVacs);
+    if (metadata) StorageAdapter.saveSetting("crewschedule_hi_metadata", metadata);
+
+    safeLocalStorageSet("crewschedule_sequences", mergedSeqs);
+    if (newVacs.length > 0) {
+      safeLocalStorageSet("crewschedule_vacations", newVacs);
+    }
+    if (metadata) {
+      safeLocalStorageSet("crewschedule_hi_metadata", metadata);
     }
 
     const currentActiveSnap = state.snapshots.find((s) => s.id === state.activeSnapshotId) || state.snapshots[0];
@@ -636,9 +666,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
     const updatedSnapshots = [newSnapshot, ...state.snapshots.filter((s) => s.id !== snapId)];
     set({ snapshots: updatedSnapshots, activeSnapshotId: snapId });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_snapshots", JSON.stringify(updatedSnapshots));
-    }
+    StorageAdapter.saveSnapshots(updatedSnapshots);
+    safeLocalStorageSet("crewschedule_snapshots", updatedSnapshots);
 
     get().addConsoleLog(`Imported ${sourceFileName}: ${mergedSeqs.length} sequence(s), ${newVacs.length} vacation block(s), ${diffs.length} diff(s).`);
   },
@@ -647,9 +676,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     const existing = get().snapshots;
     const updated = [snapshot, ...existing.filter((s) => s.id !== snapshot.id)];
     set({ snapshots: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_snapshots", JSON.stringify(updated));
-    }
+    StorageAdapter.saveSnapshots(updated);
+    safeLocalStorageSet("crewschedule_snapshots", updated);
   },
 
   setActiveSnapshotId: (id) => {
@@ -664,15 +692,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   setVacations: (vacations) => {
     set({ vacations });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_vacations", JSON.stringify(vacations));
-    }
+    StorageAdapter.saveVacations(vacations);
+    safeLocalStorageSet("crewschedule_vacations", vacations);
   },
 
 
   hydrate: () => {
     if (typeof window === "undefined") return;
     try {
+      // 1. Instant initial sync read from localStorage for zero-flicker UI render
       const storedSeqs = localStorage.getItem("crewschedule_sequences");
       const storedVacations = localStorage.getItem("crewschedule_vacations");
       const storedRates = localStorage.getItem("crewschedule_payrates");
@@ -688,25 +716,35 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedMeta = localStorage.getItem("crewschedule_hi_metadata");
       const storedLogbook = localStorage.getItem("crewschedule_logbook");
       const storedProfile = localStorage.getItem("crewschedule_userprofile");
+      const storedN6D = localStorage.getItem("crewschedule_n6d_reserves");
 
-      let sanitizedSeqs = storedSeqs ? deduplicateSequences(JSON.parse(storedSeqs)) : [];
-      if (!sanitizedSeqs || sanitizedSeqs.length === 0) {
-        sanitizedSeqs = USER_LIVE_SEQUENCES;
-      }
+      let sanitizedSeqs = deduplicateSequences([
+        ...USER_LIVE_SEQUENCES,
+        ...(storedSeqs ? JSON.parse(storedSeqs) : []),
+      ]);
 
       const parsedSnaps: ScheduleSnapshot[] = storedSnaps ? JSON.parse(storedSnaps) : [];
       let parsedLogbook: LogbookEntry[] = storedLogbook ? JSON.parse(storedLogbook) : [];
       if (!parsedLogbook || parsedLogbook.length === 0) {
         parsedLogbook = DEFAULT_LOGBOOK_ENTRIES;
       }
-      const activeOpenSeqs: OpenSequence[] = [];
+      const activeOpenSeqs: OpenSequence[] = storedOpen ? JSON.parse(storedOpen) : [];
 
       const storedPresets = localStorage.getItem("crewschedule_openpresets");
       const storedCals = localStorage.getItem("crewschedule_subscribedcals");
       const storedEvents = localStorage.getItem("crewschedule_personalevents");
 
-      let activeEvents: PersonalCalendarEvent[] = storedEvents ? JSON.parse(storedEvents) : [];
       const activeCals: SubscribedCalendar[] = storedCals ? JSON.parse(storedCals) : [];
+      const mergedCals = [
+        PILOT_BIDDING_CALENDAR,
+        ...activeCals.filter((c) => c.id !== PILOT_BIDDING_CALENDAR.id),
+      ];
+
+      const activeEvents: PersonalCalendarEvent[] = storedEvents ? JSON.parse(storedEvents) : [];
+      const eventMap = new Map<string, PersonalCalendarEvent>();
+      DEFAULT_PILOT_BIDDING_EVENTS.forEach((e) => eventMap.set(e.id, e));
+      activeEvents.forEach((e) => eventMap.set(e.id, e));
+      const mergedEvents = Array.from(eventMap.values());
 
       let hydratedProfile = DEFAULT_USER_PROFILE;
       if (storedProfile) {
@@ -715,10 +753,22 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         } catch {}
       }
 
+      let parsedVacations: VacationPeriod[] = storedVacations ? JSON.parse(storedVacations) : [];
+      if (!parsedVacations || parsedVacations.length === 0) {
+        parsedVacations = USER_LIVE_VACATIONS;
+      } else {
+        parsedVacations = parsedVacations.map((v) => {
+          if (v.startDate === "2026-08-01" && (v.endDate === "2026-08-05" || v.endDate === "2026-08-06")) {
+            return { ...v, endDate: "2026-08-07", description: "Scheduled Vacation Block (01AUG26 to 07AUG26)", creditHours: 35.0 };
+          }
+          return v;
+        });
+      }
+
       set({
         userProfile: hydratedProfile,
         sequences: sanitizedSeqs,
-        vacations: storedVacations ? (JSON.parse(storedVacations).length > 0 ? JSON.parse(storedVacations) : MOCK_VACATIONS) : MOCK_VACATIONS,
+        vacations: parsedVacations,
         monthlyHIMetadata: storedMeta ? JSON.parse(storedMeta) : null,
         snapshots: parsedSnaps,
         logbookEntries: parsedLogbook,
@@ -729,21 +779,74 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         showOpenTimeOverlay: storedOverlay ? JSON.parse(storedOverlay) : false,
         openTimeFilter: storedFilter ? JSON.parse(storedFilter) : "all",
         openTimePresets: storedPresets ? JSON.parse(storedPresets) : DEFAULT_OPEN_TIME_PRESETS,
-        subscribedCalendars: activeCals,
-        personalEvents: activeEvents,
+        subscribedCalendars: mergedCals,
+        personalEvents: mergedEvents,
         stationTurnLimits: storedTurnLimits ? JSON.parse(storedTurnLimits) : DEFAULT_STATION_TURN_LIMITS,
         defaultTurnLimit: storedDefaultTurn ? JSON.parse(storedDefaultTurn) : DEFAULT_TURN_LIMIT,
         highCreditThresholdHours: storedHighCredit ? JSON.parse(storedHighCredit) : 15.0,
+        n6dReserves: storedN6D ? JSON.parse(storedN6D) : DEFAULT_N6D_DATA,
         isHydrated: true,
       });
 
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(sanitizedSeqs));
-      localStorage.setItem("crewschedule_opensequences", JSON.stringify(activeOpenSeqs));
-      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(activeCals));
-      localStorage.setItem("crewschedule_personalevents", JSON.stringify(activeEvents));
+      // 2. Asynchronous IndexedDB Migration & Rehydration
+      (async () => {
+        try {
+          await StorageAdapter.migrateFromLocalStorage();
+          const idbState = await StorageAdapter.loadState();
+          if (idbState) {
+            const updates: Partial<CrewState> = {};
+            if (idbState.sequences && idbState.sequences.length > 0) {
+              updates.sequences = deduplicateSequences([
+                ...USER_LIVE_SEQUENCES,
+                ...idbState.sequences,
+              ]);
+            } else {
+              updates.sequences = sanitizedSeqs;
+            }
+            if (idbState.snapshots && idbState.snapshots.length > 0) {
+              updates.snapshots = idbState.snapshots;
+            }
+            if (idbState.logbookEntries && idbState.logbookEntries.length > 0) {
+              updates.logbookEntries = idbState.logbookEntries;
+            }
+            if (idbState.vacations && idbState.vacations.length > 0) {
+              updates.vacations = idbState.vacations.map((v) => {
+                if (v.startDate === "2026-08-01" && (v.endDate === "2026-08-05" || v.endDate === "2026-08-06")) {
+                  return { ...v, endDate: "2026-08-07", description: "Scheduled Vacation Block (01AUG26 to 07AUG26)", creditHours: 35.0 };
+                }
+                return v;
+              });
+            } else {
+              updates.vacations = parsedVacations;
+            }
+            if (idbState.openSequences && idbState.openSequences.length > 0) {
+              updates.openSequences = idbState.openSequences;
+            }
+            if (idbState.subscribedCalendars && idbState.subscribedCalendars.length > 0) {
+              updates.subscribedCalendars = [
+                PILOT_BIDDING_CALENDAR,
+                ...idbState.subscribedCalendars.filter((c) => c.id !== PILOT_BIDDING_CALENDAR.id),
+              ];
+            } else {
+              updates.subscribedCalendars = mergedCals;
+            }
+            if (idbState.personalEvents && idbState.personalEvents.length > 0) {
+              const idbEventMap = new Map<string, PersonalCalendarEvent>();
+              DEFAULT_PILOT_BIDDING_EVENTS.forEach((e) => idbEventMap.set(e.id, e));
+              idbState.personalEvents.forEach((e) => idbEventMap.set(e.id, e));
+              updates.personalEvents = Array.from(idbEventMap.values());
+            } else {
+              updates.personalEvents = mergedEvents;
+            }
+            if (Object.keys(updates).length > 0) {
+              set(updates);
+            }
+          }
+        } catch (e) {
+          console.warn("[CrewStore] IndexedDB rehydration error:", e);
+        }
+      })();
 
-
-      // Auto-generate logbook entries on initial hydration if logbook is empty
       if (!storedLogbook || parsedLogbook.length === 0) {
         get().autoGenerateLogbookFromRoster();
       }
@@ -759,9 +862,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     if (!uppercaseStation) return;
     const updated = { ...get().stationTurnLimits, [uppercaseStation]: limitMinutes };
     set({ stationTurnLimits: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_turnlimits", JSON.stringify(updated));
-    }
+    StorageAdapter.saveSetting("crewschedule_turnlimits", updated);
+    safeLocalStorageSet("crewschedule_turnlimits", updated);
   },
 
   removeStationTurnLimit: (station) => {
@@ -769,16 +871,14 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     const updated = { ...get().stationTurnLimits };
     delete updated[uppercaseStation];
     set({ stationTurnLimits: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_turnlimits", JSON.stringify(updated));
-    }
+    StorageAdapter.saveSetting("crewschedule_turnlimits", updated);
+    safeLocalStorageSet("crewschedule_turnlimits", updated);
   },
 
   setDefaultTurnLimit: (limitMinutes) => {
     set({ defaultTurnLimit: limitMinutes });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_defaultturnlimit", JSON.stringify(limitMinutes));
-    }
+    StorageAdapter.saveSetting("crewschedule_defaultturnlimit", limitMinutes);
+    safeLocalStorageSet("crewschedule_defaultturnlimit", limitMinutes);
   },
 
   resetStationTurnLimits: () => {
@@ -787,45 +887,42 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       defaultTurnLimit: DEFAULT_TURN_LIMIT,
       highCreditThresholdHours: 15.0,
     });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_turnlimits", JSON.stringify(DEFAULT_STATION_TURN_LIMITS));
-      localStorage.setItem("crewschedule_defaultturnlimit", JSON.stringify(DEFAULT_TURN_LIMIT));
-      localStorage.setItem("crewschedule_highcreditthreshold", JSON.stringify(15.0));
-    }
+    StorageAdapter.saveSetting("crewschedule_turnlimits", DEFAULT_STATION_TURN_LIMITS);
+    StorageAdapter.saveSetting("crewschedule_defaultturnlimit", DEFAULT_TURN_LIMIT);
+    StorageAdapter.saveSetting("crewschedule_highcreditthreshold", 15.0);
+    safeLocalStorageSet("crewschedule_turnlimits", DEFAULT_STATION_TURN_LIMITS);
+    safeLocalStorageSet("crewschedule_defaultturnlimit", DEFAULT_TURN_LIMIT);
+    safeLocalStorageSet("crewschedule_highcreditthreshold", 15.0);
   },
 
   setHighCreditThresholdHours: (hours) => {
     const val = Math.max(1, Math.min(100, hours));
     set({ highCreditThresholdHours: val });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_highcreditthreshold", JSON.stringify(val));
-    }
+    StorageAdapter.saveSetting("crewschedule_highcreditthreshold", val);
+    safeLocalStorageSet("crewschedule_highcreditthreshold", val);
   },
 
   setSequences: (sequences) => {
     const clean = deduplicateSequences(sequences);
     set({ sequences: clean });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(clean));
-    }
+    StorageAdapter.saveSequences(clean);
+    safeLocalStorageSet("crewschedule_sequences", clean);
     get().autoGenerateLogbookFromRoster();
   },
 
   addSequences: (newSeqs) => {
     const clean = deduplicateSequences([...get().sequences, ...newSeqs]);
     set({ sequences: clean });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(clean));
-    }
+    StorageAdapter.saveSequences(clean);
+    safeLocalStorageSet("crewschedule_sequences", clean);
     get().autoGenerateLogbookFromRoster();
   },
 
   updateSequence: (updated) => {
     const seqs = get().sequences.map((s) => (s.id === updated.id ? updated : s));
     set({ sequences: seqs });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(seqs));
-    }
+    StorageAdapter.saveSequences(seqs);
+    safeLocalStorageSet("crewschedule_sequences", seqs);
     get().autoGenerateLogbookFromRoster();
   },
 
@@ -838,38 +935,35 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       if (isSameSeqNum && isSameMonth) {
         return {
           ...s,
-          dutyPeriods: hssData.dutyPeriods, // Use rich duty periods parsed from HSS
-          totalBlockMinutes: hssData.totalBlockMinutes, // Update exact block time
-          ...(hssData.rank && { rank: hssData.rank }), // Store rank if HSS provided it
-          ...(hssData.startDate && { startDate: hssData.startDate }), // Update start date if HSS provides it
-          ...(hssData.endDate && { endDate: hssData.endDate }), // Update end date if HSS provides it (fixes missing extended days)
+          dutyPeriods: hssData.dutyPeriods,
+          totalBlockMinutes: hssData.totalBlockMinutes,
+          ...(hssData.rank && { rank: hssData.rank }),
+          ...(hssData.startDate && { startDate: hssData.startDate }),
+          ...(hssData.endDate && { endDate: hssData.endDate }),
         };
       }
       return s;
     });
 
     set({ sequences: seqs });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(seqs));
-    }
+    StorageAdapter.saveSequences(seqs);
+    safeLocalStorageSet("crewschedule_sequences", seqs);
     get().autoGenerateLogbookFromRoster();
   },
 
   deleteSequence: (id) => {
     const seqs = get().sequences.filter((s) => s.id !== id);
     set({ sequences: seqs });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_sequences", JSON.stringify(seqs));
-    }
+    StorageAdapter.saveSequences(seqs);
+    safeLocalStorageSet("crewschedule_sequences", seqs);
     get().autoGenerateLogbookFromRoster();
   },
 
   setPayRates: (rates) => {
     const updated = { ...get().payRates, ...rates };
     set({ payRates: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_payrates", JSON.stringify(updated));
-    }
+    StorageAdapter.saveSetting("crewschedule_payrates", updated);
+    safeLocalStorageSet("crewschedule_payrates", updated);
     if (rates.crewRole !== undefined) {
       get().autoGenerateLogbookFromRoster();
     }
@@ -882,9 +976,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   updateAutomationConfig: (cfg) => {
     const updated = { ...get().automationConfig, ...cfg };
     set({ automationConfig: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_autoconfig", JSON.stringify(updated));
-    }
+    StorageAdapter.saveSetting("crewschedule_autoconfig", updated);
+    safeLocalStorageSet("crewschedule_autoconfig", updated);
   },
 
   addConsoleLog: (log) =>
@@ -906,8 +999,6 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-
-
   clearAll: () => {
     set({
       sequences: [],
@@ -921,6 +1012,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       snapshots: [],
       monthlyHIMetadata: null,
     });
+    StorageAdapter.clearAll();
     if (typeof window !== "undefined") {
       localStorage.removeItem("crewschedule_sequences");
       localStorage.removeItem("crewschedule_logbook");
@@ -936,12 +1028,13 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   },
 
   setOpenSequences: (openSequences) => {
-    const activeCutoffDate = "2026-07-27";
-    const filtered = openSequences.filter((s) => s.startDate >= activeCutoffDate);
+    const now = new Date();
+    now.setDate(now.getDate() - 7);
+    const activeCutoffDate = now.toISOString().split("T")[0];
+    const filtered = openSequences.filter((s) => !s.startDate || s.startDate >= activeCutoffDate);
     set({ openSequences: filtered });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_opensequences", JSON.stringify(filtered));
-    }
+    StorageAdapter.saveOpenSequences(filtered);
+    safeLocalStorageSet("crewschedule_opensequences", filtered);
   },
 
   importN4OpenTime: (rawN4Text) => {
@@ -951,9 +1044,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     const merged = [...existingOtherBases, ...parsedNew];
 
     set({ openSequences: merged });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_opensequences", JSON.stringify(merged));
-    }
+    StorageAdapter.saveOpenSequences(merged);
+    safeLocalStorageSet("crewschedule_opensequences", merged);
     get().addConsoleLog(`Imported N4 Open Time: Loaded ${parsedNew.length} active sequence(s). Past dates automatically purged.`);
   },
 
@@ -964,69 +1056,65 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       : [...current, id];
     
     set({ simulatedSequenceIds: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_simulatedids", JSON.stringify(updated));
-    }
+    StorageAdapter.saveSetting("crewschedule_simulatedids", updated);
+    safeLocalStorageSet("crewschedule_simulatedids", updated);
   },
 
   clearSimulatedSequences: () => {
     set({ simulatedSequenceIds: [] });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_simulatedids", JSON.stringify([]));
-    }
+    StorageAdapter.saveSetting("crewschedule_simulatedids", []);
+    safeLocalStorageSet("crewschedule_simulatedids", []);
   },
 
   setShowOpenTimeOverlay: (showOpenTimeOverlay) => {
     set({ showOpenTimeOverlay });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_showoverlay", JSON.stringify(showOpenTimeOverlay));
-    }
+    StorageAdapter.saveSetting("crewschedule_showoverlay", showOpenTimeOverlay);
+    safeLocalStorageSet("crewschedule_showoverlay", showOpenTimeOverlay);
   },
 
   setOpenTimeFilter: (openTimeFilter) => {
     set({ openTimeFilter });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_openfilter", JSON.stringify(openTimeFilter));
-    }
+    StorageAdapter.saveSetting("crewschedule_openfilter", openTimeFilter);
+    safeLocalStorageSet("crewschedule_openfilter", openTimeFilter);
   },
 
   addOpenTimePreset: (preset) => {
     const updated = [...get().openTimePresets.filter((p) => p.id !== preset.id), preset];
     set({ openTimePresets: updated, openTimeFilter: preset.id });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_openpresets", JSON.stringify(updated));
-      localStorage.setItem("crewschedule_openfilter", JSON.stringify(preset.id));
-    }
+    StorageAdapter.saveSetting("crewschedule_openpresets", updated);
+    StorageAdapter.saveSetting("crewschedule_openfilter", preset.id);
+    safeLocalStorageSet("crewschedule_openpresets", updated);
+    safeLocalStorageSet("crewschedule_openfilter", preset.id);
   },
 
   removeOpenTimePreset: (id) => {
     const updated = get().openTimePresets.filter((p) => p.id !== id);
     const nextFilter = get().openTimeFilter === id ? "all" : get().openTimeFilter;
     set({ openTimePresets: updated, openTimeFilter: nextFilter });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_openpresets", JSON.stringify(updated));
-      localStorage.setItem("crewschedule_openfilter", JSON.stringify(nextFilter));
-    }
+    StorageAdapter.saveSetting("crewschedule_openpresets", updated);
+    StorageAdapter.saveSetting("crewschedule_openfilter", nextFilter);
+    safeLocalStorageSet("crewschedule_openpresets", updated);
+    safeLocalStorageSet("crewschedule_openfilter", nextFilter);
   },
 
   addSubscribedCalendar: (cal, newEvents = []) => {
     const updatedCals = [...get().subscribedCalendars.filter((c) => c.id !== cal.id), cal];
     const updatedEvents = [...get().personalEvents.filter((e) => e.calendarId !== cal.id), ...newEvents];
     set({ subscribedCalendars: updatedCals, personalEvents: updatedEvents });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
-      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updatedEvents));
-    }
+    StorageAdapter.saveSubscribedCalendars(updatedCals);
+    StorageAdapter.savePersonalEvents(updatedEvents);
+    safeLocalStorageSet("crewschedule_subscribedcals", updatedCals);
+    safeLocalStorageSet("crewschedule_personalevents", updatedEvents);
   },
 
   removeSubscribedCalendar: (id) => {
     const updatedCals = get().subscribedCalendars.filter((c) => c.id !== id);
     const updatedEvents = get().personalEvents.filter((e) => e.calendarId !== id);
     set({ subscribedCalendars: updatedCals, personalEvents: updatedEvents });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
-      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updatedEvents));
-    }
+    StorageAdapter.saveSubscribedCalendars(updatedCals);
+    StorageAdapter.savePersonalEvents(updatedEvents);
+    safeLocalStorageSet("crewschedule_subscribedcals", updatedCals);
+    safeLocalStorageSet("crewschedule_personalevents", updatedEvents);
   },
 
   toggleSubscribedCalendar: (id) => {
@@ -1034,33 +1122,29 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       c.id === id ? { ...c, enabled: !c.enabled } : c
     );
     set({ subscribedCalendars: updatedCals });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
-    }
+    StorageAdapter.saveSubscribedCalendars(updatedCals);
+    safeLocalStorageSet("crewschedule_subscribedcals", updatedCals);
   },
 
   addPersonalEvent: (event) => {
     const updated = [event, ...get().personalEvents];
     set({ personalEvents: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updated));
-    }
+    StorageAdapter.savePersonalEvents(updated);
+    safeLocalStorageSet("crewschedule_personalevents", updated);
   },
 
   updatePersonalEvent: (updatedEvent) => {
     const updated = get().personalEvents.map((e) => (e.id === updatedEvent.id ? updatedEvent : e));
     set({ personalEvents: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updated));
-    }
+    StorageAdapter.savePersonalEvents(updated);
+    safeLocalStorageSet("crewschedule_personalevents", updated);
   },
 
   deletePersonalEvent: (id) => {
     const updated = get().personalEvents.filter((e) => e.id !== id);
     set({ personalEvents: updated });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updated));
-    }
+    StorageAdapter.savePersonalEvents(updated);
+    safeLocalStorageSet("crewschedule_personalevents", updated);
   },
 
   publishScheduleToFamilyFeed: async () => {
@@ -1096,10 +1180,10 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       e.calendarId === id ? { ...e, color } : e
     );
     set({ subscribedCalendars: updatedCals, personalEvents: updatedEvents });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("crewschedule_subscribedcals", JSON.stringify(updatedCals));
-      localStorage.setItem("crewschedule_personalevents", JSON.stringify(updatedEvents));
-    }
+    StorageAdapter.saveSubscribedCalendars(updatedCals);
+    StorageAdapter.savePersonalEvents(updatedEvents);
+    safeLocalStorageSet("crewschedule_subscribedcals", updatedCals);
+    safeLocalStorageSet("crewschedule_personalevents", updatedEvents);
   },
 
   getEffectiveSequences: () => {
@@ -1113,29 +1197,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     const combined = [...seqs, ...simulatedTrips];
     const uniqueMap = new Map<string, SequenceTrip>();
     combined.forEach((s) => {
-      uniqueMap.set(s.sequenceNumber, s);
+      // Key by sequenceNumber + startDate (or unique id) so repeat trips in different weeks are preserved
+      const key = s.startDate ? `${s.sequenceNumber}-${s.startDate}` : (s.id || s.sequenceNumber);
+      uniqueMap.set(key, s);
     });
     return Array.from(uniqueMap.values());
   },
 
   getTotalTafbHours: () => {
     const seqs = get().getEffectiveSequences();
-    const isHi1Active = get().sequences.some((s) => s.sequenceNumber === "21649");
-    
-    if (isHi1Active) {
-      const basePaycheckTafb = 310.10;
-      const simIds = get().simulatedSequenceIds;
-      const simOts = get().openSequences.filter((ot) => simIds.includes(ot.id));
-      const simTafb = simOts.reduce((acc, ot) => {
-        const partsStart = ot.startDate.split("-").map(Number);
-        const partsEnd = ot.endDate.split("-").map(Number);
-        const d1 = new Date(partsStart[0], partsStart[1] - 1, partsStart[2], parseInt(ot.reportTime.substring(0, 2)), parseInt(ot.reportTime.substring(2, 4)));
-        const d2 = new Date(partsEnd[0], partsEnd[1] - 1, partsEnd[2], parseInt(ot.releaseTime.substring(0, 2)), parseInt(ot.releaseTime.substring(2, 4)));
-        return acc + Math.max(0, (d2.getTime() - d1.getTime()) / (1000 * 60 * 60));
-      }, 0);
-      return basePaycheckTafb + simTafb;
-    }
-    
     return seqs.reduce((acc, s) => acc + calculateSequenceTAFB(s), 0);
   },
 

@@ -541,23 +541,6 @@ export function calculatePay(sequences: SequenceTrip[], rates: PayRates): PayCal
     };
   }
 
-  const isDemo = sequences.some((s) => s.sequenceNumber === "21649");
-  if (isDemo) {
-    const blockHours = 78.2;
-    const creditHours = 109.5;
-    const basePay = creditHours * rates.hourlyRate;
-    const perDiemPay = 310.1 * rates.perDiemRate;
-    const grossTotalPay = basePay + perDiemPay;
-    return {
-      blockHours,
-      creditHours,
-      basePay,
-      perDiemPay,
-      grossTotalPay,
-      softPayAdjustment: Math.max(0, creditHours - blockHours) * rates.hourlyRate,
-    };
-  }
-
   let totalBlockMins = 0;
   let totalCreditMins = 0;
 
@@ -599,8 +582,9 @@ export function calculatePay(sequences: SequenceTrip[], rates: PayRates): PayCal
 export function computeRosterMetrics(
   sequences: SequenceTrip[],
   _headerText: string = "",
-  asOfDateStr: string = "17JUL26"
+  asOfDateStr?: string
 ): RosterMetrics {
+  const effectiveAsOfStr = asOfDateStr || new Date().toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "2-digit" }).toUpperCase().replace(/\s+/g, '');
   if (!sequences || sequences.length === 0) {
     return {
       totalSequencesCount: 0,
@@ -612,7 +596,7 @@ export function computeRosterMetrics(
       totalPayCreditHours: 0,
       overtimeTripsCount: 0,
       overtimeCreditHours: 0,
-      asOfDateStr,
+      asOfDateStr: effectiveAsOfStr,
       baseFlightHours: 0,
       overtimeFlightHours: 0,
       overtimePremiumHours: 0,
@@ -623,7 +607,8 @@ export function computeRosterMetrics(
     };
   }
 
-  const asOfDate = new Date(2026, 6, 17, 23, 59, 59);
+  const asOfDate = new Date();
+  asOfDate.setHours(23, 59, 59, 999);
 
   let flownBlockMins = 0;
   let toBeFlownBlockMins = 0;
@@ -705,7 +690,7 @@ export function computeRosterMetrics(
     totalPayCreditHours,
     overtimeTripsCount,
     overtimeCreditHours: overtimeFlightHours,
-    asOfDateStr,
+    asOfDateStr: effectiveAsOfStr,
     baseFlightHours,
     overtimeFlightHours,
     overtimePremiumHours,

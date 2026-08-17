@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { LiveSigmetAirmet, LiveLightningStrike, LiveTurbulenceReport, LiveAirportCondition, getAirportCoords } from "../../lib/weatherService";
 import { getOrFetchTile, precacheFlightRoute } from "../../lib/mapTileCache";
-import { MEGA_HUBS, MAJOR_HUBS, ALL_MAJOR_AIRPORTS, destinationDistanceNm, isPointInPolygon } from "../../lib/airportData";
+import { MEGA_HUBS, MAJOR_HUBS, METRO_SECONDARY_TO_PRIMARY, ALL_MAJOR_AIRPORTS, destinationDistanceNm, isPointInPolygon } from "../../lib/airportData";
 
 // Self-contained SVG pin icons to guarantee 100% offline rendering with zero network requests
 const SVG_MARKER_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
@@ -237,6 +237,7 @@ export interface BriefingMapProps {
   liveAirportConditions?: Record<string, LiveAirportCondition>;
   showTurbulence?: boolean;
   turbulenceAltBand?: "ALL" | "LOW" | "MID" | "HIGH";
+  turbulenceMaxAge?: number;
   liveTurbulence?: LiveTurbulenceReport[];
   userLocation?: {
     lat: number;
@@ -361,6 +362,7 @@ export default function BriefingMap({
   liveAirportConditions = {},
   showTurbulence = true,
   turbulenceAltBand = "ALL",
+  turbulenceMaxAge = 90,
   liveTurbulence = [],
   userLocation = null,
   onLocateMe,
@@ -657,7 +659,7 @@ export default function BriefingMap({
     };
   }, [userLocation]);
 
-  // Render Interactive ForeFlight Airport Nodes (Major Hubs & Active Route with Dynamic Zoom LOD)
+  // Render Interactive ForeFlight Airport Nodes (Single Major Hub Per Metro Region & Active Route Protection)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -673,6 +675,14 @@ export default function BriefingMap({
       ...waypoints.map((w) => w.toUpperCase()),
     ]);
 
+    // Step 1: Collect candidate airports based on zoom LOD and explicit metro hierarchy
+    const candidates: Array<{
+      code: string;
+      data: { name: string; lat: number; lng: number; cat: "VFR" | "MVFR" | "IFR" | "LIFR" };
+      isRoute: boolean;
+      priority: number;
+    }> = [];
+
     Object.entries(ALL_MAJOR_AIRPORTS).forEach(([code, data]) => {
       const isRoute = routeAirports.has(code);
       const isMegaHub = MEGA_HUBS.has(code);
@@ -680,16 +690,45 @@ export default function BriefingMap({
 
       // Dynamic Zoom Consolidation:
       // - Active Route (DEP, ARR, Waypoints): ALWAYS visible at all zoom levels
-      // - Zoom <= 4 (Continental US view): Show only Mega Hubs (ORD, DFW, ATL, CLT, MIA, LAX, DEN, JFK, SFO, SEA, PHX) + Route
+      // - Zoom <= 4 (Continental US view): Show only Mega Hubs (ORD, DFW, ATL, CLT, MIA, LAX, DEN, JFK, DCA, SFO, SEA, PHX) + Route
       // - Zoom 5..6 (Multi-State Regional): Show Major Airline Hubs + Route
-      // - Zoom >= 7 (Terminal / Local Area): Show all regional and local airports
+      // - Zoom >= 7 (Terminal / Local Area): Show regional hubs (subject to proximity decluttering)
       if (!isRoute) {
         if (mapZoom <= 4) {
           if (!isMegaHub) return;
         } else if (mapZoom <= 6) {
           if (!isMajorHub && !showAllAirports) return;
         }
+
+        // Metro Deduplication: Suppress secondary adjacent hub if primary flagship hub exists
+        // (e.g., ORD over MDW in Chicago; JFK over LGA/EWR in NYC; DCA over IAD/BWI in DC; DFW over DAL in Dallas)
+        const primaryHub = METRO_SECONDARY_TO_PRIMARY[code];
+        if (primaryHub && ALL_MAJOR_AIRPORTS[primaryHub]) {
+          return;
+        }
       }
+
+      const priority = isRoute ? 1000 : isMegaHub ? 500 : isMajorHub ? 200 : 50;
+      candidates.push({ code, data, isRoute, priority });
+    });
+
+    // Step 2: Sort candidates by priority descending (Route > Mega Hub > Major Hub > Regional)
+    candidates.sort((a, b) => b.priority - a.priority);
+
+    // Step 3: Spatial proximity decluttering — prevent any two airport pills from overlapping
+    const placedAirports: Array<{ lat: number; lng: number; code: string; isRoute: boolean }> = [];
+    const minDeclutterDistNm = mapZoom <= 6 ? 40 : mapZoom <= 7 ? 30 : 18;
+
+    candidates.forEach(({ code, data, isRoute }) => {
+      if (!isRoute) {
+        const tooClose = placedAirports.some((placed) => {
+          const dist = destinationDistanceNm(data.lat, data.lng, placed.lat, placed.lng);
+          return dist < minDeclutterDistNm;
+        });
+        if (tooClose) return;
+      }
+
+      placedAirports.push({ lat: data.lat, lng: data.lng, code, isRoute });
 
       const live = liveAirportConditions[code] || liveAirportConditions[`K${code}`] || liveAirportConditions[`C${code}`];
       const currentCat = live?.cat || data.cat || "VFR";
@@ -1596,9 +1635,11 @@ export default function BriefingMap({
     if (showTurbulence && liveTurbulence && liveTurbulence.length > 0) {
       const group = L.layerGroup();
 
-      // 1. Filter by altitude band and remove NEG/smooth reports
+      // 1. Filter by altitude band, max age, and remove NEG/smooth reports
       const rawFiltered = liveTurbulence.filter((rep) => {
         if (rep.severity === "NEG") return false;
+        if (rep.ageMinutes !== undefined && rep.ageMinutes > turbulenceMaxAge) return false;
+
         const fl = rep.fltLvl || 330;
         if (turbulenceAltBand === "LOW") return fl >= 180 && fl <= 280;
         if (turbulenceAltBand === "MID") return fl >= 290 && fl <= 350;
@@ -1613,9 +1654,13 @@ export default function BriefingMap({
       const minDistanceNm = mapZoom <= 4 ? 150 : mapZoom <= 6 ? 70 : 25;
 
       const decluttered: LiveTurbulenceReport[] = [];
-      // Sort by severity (SVR > MOD > LGT) so the most critical report always wins in a cluster
+      // Sort by severity (SVR > MOD > LGT) and then newest age
       const severityRank: Record<string, number> = { EXTRM: 4, SVR: 3, MOD: 2, LGT: 1, NEG: 0 };
-      const sorted = [...rawFiltered].sort((a, b) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0));
+      const sorted = [...rawFiltered].sort((a, b) => {
+        const diff = (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0);
+        if (diff !== 0) return diff;
+        return (a.ageMinutes || 0) - (b.ageMinutes || 0);
+      });
 
       for (const rep of sorted) {
         const isDuplicate = decluttered.some((existing) => {
@@ -1631,13 +1676,22 @@ export default function BriefingMap({
         const isSvr = rep.severity === "SVR" || rep.severity === "EXTRM";
         const isMod = rep.severity === "MOD";
         const edrVal = rep.edr.toFixed(2);
+        const age = rep.ageMinutes || 0;
         
         let flNum = rep.fltLvl || 330;
         if (flNum > 999) flNum = Math.round(flNum / 100);
 
-        // Minimalist ForeFlight-style pill styling:
+        // Time-decay opacity and styling:
+        // < 30m: 100% opacity with vivid borders
+        // 30-60m: 88% opacity
+        // > 60m: 72% opacity
+        const opacity = age <= 30 ? 1.0 : age <= 60 ? 0.88 : 0.72;
         const dotBg = isSvr ? "#ef4444" : isMod ? "#f59e0b" : "#94a3b8";
-        const badgeBorder = isSvr ? "rgba(239,68,68,0.7)" : isMod ? "rgba(245,158,11,0.6)" : "rgba(100,116,139,0.5)";
+        const badgeBorder = isSvr
+          ? `rgba(239,68,68,${opacity})`
+          : isMod
+          ? `rgba(245,158,11,${opacity * 0.9})`
+          : `rgba(148,163,184,${opacity * 0.8})`;
         const textColor = isSvr ? "#fca5a5" : isMod ? "#fde68a" : "#e2e8f0";
         const sevLabel = isSvr ? "SVR" : isMod ? "MOD" : "LGT";
 
@@ -1650,13 +1704,13 @@ export default function BriefingMap({
               align-items: center;
               justify-content: center;
               gap: 4px;
-              width: 64px;
+              width: 66px;
               height: 22px;
-              padding: 0 6px;
-              background: rgba(15, 23, 42, 0.94);
+              padding: 0 5px;
+              background: rgba(15, 23, 42, ${opacity * 0.94});
               border: 1px solid ${badgeBorder};
               border-radius: 9999px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+              box-shadow: 0 2px 4px rgba(0,0,0,${0.35 * opacity});
               cursor: pointer;
               font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
               font-size: 9.5px;
@@ -1664,31 +1718,42 @@ export default function BriefingMap({
               color: ${textColor};
               white-space: nowrap;
               overflow: hidden;
+              opacity: ${opacity};
             ">
               <span style="width: 5px; height: 5px; border-radius: 9999px; background: ${dotBg}; flex-shrink: 0;"></span>
               <span>${sevLabel}</span>
               <span style="font-weight: 500; opacity: 0.85; font-size: 9px;">${flNum}</span>
             </div>
           `,
-          iconSize: [64, 22],
-          iconAnchor: [32, 11],
+          iconSize: [66, 22],
+          iconAnchor: [33, 11],
         });
 
         const marker = L.marker([rep.lat, rep.lng], { icon: turbIcon });
 
+        // Format observation time string
+        let timeStr = "";
+        if (rep.obsTime) {
+          const d = new Date(rep.obsTime);
+          if (!isNaN(d.getTime())) {
+            timeStr = d.toISOString().substring(11, 16) + "Z";
+          }
+        }
+
         marker.bindPopup(`
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 4px; min-width: 240px; max-width: 280px;">
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Helvetica Neue', Helvetica, 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; padding: 4px; min-width: 250px; max-width: 290px;">
             <div style="font-weight: 900; font-size: 12px; color: ${isSvr ? "#e11d48" : isMod ? "#d97706" : "#475569"}; display: flex; align-items: center; justify-content: space-between;">
               <span>TURBULENCE PIREP</span>
               <span style="font-size: 9.5px; background: ${isSvr ? "#ffe4e6" : isMod ? "#fef3c7" : "#f1f5f9"}; border: 1px solid ${isSvr ? "#fca5a5" : isMod ? "#fde68a" : "#cbd5e1"}; color: ${isSvr ? "#9f1239" : isMod ? "#92400e" : "#334155"}; padding: 1px 5px; border-radius: 4px; font-weight: 800;">FL${rep.fltLvl} • ${rep.severity}</span>
             </div>
 
             <div style="margin-top: 5px; padding: 5px 6px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 10.5px; color: #334155;">
-              <div style="display: flex; justify-content: space-between; font-weight: 700;">
+              <div style="display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 2px;">
                 <span>Type: <strong>${rep.aircraftType}</strong></span>
                 <span>EDR: <strong>${edrVal}</strong></span>
-                <span>Age: <strong>${rep.ageMinutes}m</strong></span>
+                <span>Age: <strong>${age}m ago</strong></span>
               </div>
+              ${timeStr ? `<div style="font-size: 9.5px; color: #64748b;">Time: <strong>${timeStr}</strong> ${rep.stationId ? `(${rep.stationId})` : ''}</div>` : ''}
             </div>
 
             <div style="margin-top: 5px; font-size: 9.5px; font-family: 'SF Mono', 'SFProMono-Regular', ui-monospace, Menlo, Monaco, Consolas, monospace; background: #0f172a; color: #7dd3fc; padding: 5px; border-radius: 5px; border: 1px solid #1e293b; overflow-x: auto; word-break: break-all;">
@@ -1703,7 +1768,7 @@ export default function BriefingMap({
       group.addTo(map);
       turbulenceLayerRef.current = group;
     }
-  }, [showTurbulence, liveTurbulence, turbulenceAltBand, mapZoom]);
+  }, [showTurbulence, liveTurbulence, turbulenceAltBand, turbulenceMaxAge, mapZoom]);
 
   return (
     <div className="relative w-full h-full bg-[#e2e8f0] overflow-hidden">

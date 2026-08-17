@@ -1,5 +1,6 @@
 import { USER_LIVE_SEQUENCES, USER_LOGBOOK_ENTRIES } from "./userScheduleData";
-import { SequenceTrip, PayRates, VacationPeriod, LogbookEntry } from "../types";
+import { SequenceTrip, PayRates, VacationPeriod, LogbookEntry, SubscribedCalendar, PersonalCalendarEvent } from "../types";
+import { PILOT_BIDDING_CALENDAR, DEFAULT_PILOT_BIDDING_EVENTS } from "./pilotBiddingDates";
 
 export const DEFAULT_PAY_RATES: PayRates = {
   hourlyRate: 198.75, // $/hr (Year 11 Captain from CBA Sec. 3.D.1 2026 Table w/ 50% PSP)
@@ -26,7 +27,8 @@ export const DEFAULT_PAY_RATES: PayRates = {
   releaseBufferMins: 15,
 };
 
-export const DEFAULT_SUBSCRIBED_CALENDARS = [
+export const DEFAULT_SUBSCRIBED_CALENDARS: SubscribedCalendar[] = [
+  PILOT_BIDDING_CALENDAR,
   {
     id: "cal-opentime-48h",
     name: "48-Hour Open Time Priority Feed",
@@ -56,7 +58,8 @@ export const DEFAULT_SUBSCRIBED_CALENDARS = [
   },
 ];
 
-export const DEFAULT_PERSONAL_EVENTS = [
+export const DEFAULT_PERSONAL_EVENTS: PersonalCalendarEvent[] = [
+  ...DEFAULT_PILOT_BIDDING_EVENTS,
   {
     id: "evt-opentime-48h",
     calendarId: "cal-opentime-48h",
@@ -634,7 +637,7 @@ export const MOCK_VACATIONS: VacationPeriod[] = [
   {
     id: "vac-aug-01-05",
     startDate: "2026-08-01",
-    endDate: "2026-08-05",
+    endDate: "2026-08-07",
     code: "VC",
     description: "Scheduled Vacation Block (01AUG26 to 05AUG26)",
   },

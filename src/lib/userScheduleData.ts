@@ -3,15 +3,547 @@ import { SequenceTrip, LogbookEntry, VacationPeriod } from "../types";
 
 export const USER_LIVE_VACATIONS: VacationPeriod[] = [
   {
-    id: "vac-2026-08-01-2026-08-05",
+    id: "vac-2026-08-01-2026-08-07",
     startDate: "2026-08-01",
-    endDate: "2026-08-05",
+    endDate: "2026-08-07",
     code: "VC",
-    description: "Scheduled Vacation Block (01AUG26 to 05AUG26)",
+    description: "Scheduled Vacation Block (01AUG26 to 07AUG26)",
+    creditHours: 35.0,
   }
 ];
 
 export const USER_LIVE_SEQUENCES: SequenceTrip[] = [
+  // ==========================================
+  // JULY 2026 SEQUENCES (Full HSS Trip Detail)
+  // ==========================================
+
+  // JUL 2026 - SEQ 21649 (Trade Pickup - 3-Day Trip)
+  {
+    id: "seq-21649-20260706",
+    rank: "CA",
+    sequenceNumber: "21649",
+    startDate: "2026-07-06",
+    endDate: "2026-07-08",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 751, // 12.51h
+    totalCreditMinutes: 1040, // 17.34h (17h 20m)
+    expTafbHours: 52.55,
+    statusTag: "TT",
+    colorTag: "amber",
+    isDropped: false,
+    layoverCities: ["EVV", "BIL"],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0845",
+        releaseTime: "1845",
+        dutyMinutes: 600,
+        payCreditMinutes: 388,
+        layoverCity: "EVV",
+        layoverHotelInfo: "DoubleTree by Hilton Evansville (812-423-5002)",
+        legs: [
+          { flightNumber: "AA3453", depAirport: "ORD", arrAirport: "PVD", depTime: "0926", arrTime: "1232", blockMinutes: 126, equipment: "E75E", tailNumber: "N345AA", isDeadhead: false },
+          { flightNumber: "AA3453", depAirport: "PVD", arrAirport: "ORD", depTime: "1337", arrTime: "1517", blockMinutes: 160, equipment: "E75E", tailNumber: "N345AA", isDeadhead: false },
+          { flightNumber: "AA3511", depAirport: "ORD", arrAirport: "EVV", depTime: "1731", arrTime: "1845", blockMinutes: 74, equipment: "E75E", tailNumber: "N351AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0612",
+        releaseTime: "1228",
+        dutyMinutes: 376,
+        payCreditMinutes: 307,
+        layoverCity: "BIL",
+        layoverHotelInfo: "Northern Hotel Billings (406-867-6767)",
+        legs: [
+          { flightNumber: "AA3707", depAirport: "EVV", arrAirport: "ORD", depTime: "0657", arrTime: "0827", blockMinutes: 90, equipment: "E75E", tailNumber: "N370AA", isDeadhead: false },
+          { flightNumber: "AA3428", depAirport: "ORD", arrAirport: "BIL", depTime: "0958", arrTime: "1143", blockMinutes: 165, equipment: "E75E", tailNumber: "N342AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0500",
+        releaseTime: "1400",
+        dutyMinutes: 540,
+        payCreditMinutes: 335,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA3746", depAirport: "BIL", arrAirport: "ORD", depTime: "0545", arrTime: "0945", blockMinutes: 180, equipment: "E75E", tailNumber: "N374AA", isDeadhead: false },
+          { flightNumber: "AA3330", depAirport: "ORD", arrAirport: "ORD", depTime: "1115", arrTime: "1351", blockMinutes: 156, equipment: "E75E", tailNumber: "N333AA", isDeadhead: true },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 17352 (Dropped / Traded for 21649)
+  {
+    id: "seq-17352-20260706-drp",
+    rank: "CA",
+    sequenceNumber: "17352",
+    startDate: "2026-07-06",
+    endDate: "2026-07-08",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 841,
+    totalCreditMinutes: 841,
+    statusTag: "DROP",
+    colorTag: "rose",
+    isDropped: true,
+    dropReason: "Traded for High-Credit Sequence #21649",
+    layoverCities: ["CAE", "CMH"],
+    dutyPeriods: [],
+  },
+
+  // JUL 2026 - SEQ 18080 (RA - Regular Assignment 4-Day Trip)
+  {
+    id: "seq-18080-20260711",
+    rank: "CA",
+    sequenceNumber: "18080",
+    startDate: "2026-07-11",
+    endDate: "2026-07-14",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 786, // 13.06h
+    totalCreditMinutes: 937, // 15.37h
+    expTafbHours: 77.19,
+    statusTag: "RA",
+    colorTag: "sky",
+    isDropped: false,
+    layoverCities: ["MEM", "BMI", "DFW"],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "1620",
+        releaseTime: "0011",
+        dutyMinutes: 471,
+        payCreditMinutes: 317,
+        layoverCity: "MEM",
+        layoverHotelInfo: "The Westin Memphis Beale Street (901-334-5900)",
+        legs: [
+          { flightNumber: "AA3383", depAirport: "ORD", arrAirport: "BNA", depTime: "1702", arrTime: "1837", blockMinutes: 95, equipment: "E75E", tailNumber: "N338AA", isDeadhead: false },
+          { flightNumber: "AA3383", depAirport: "BNA", arrAirport: "ORD", depTime: "1925", arrTime: "2115", blockMinutes: 110, equipment: "E75E", tailNumber: "N338AA", isDeadhead: false },
+          { flightNumber: "AA3945", depAirport: "ORD", arrAirport: "MEM", depTime: "2226", arrTime: "0011", blockMinutes: 105, equipment: "E75E", tailNumber: "N394AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 1,
+        reportTime: "1745",
+        releaseTime: "0240",
+        dutyMinutes: 535,
+        payCreditMinutes: 264,
+        layoverCity: "BMI",
+        layoverHotelInfo: "Bloomington-Normal Marriott (309-862-9000)",
+        legs: [
+          { flightNumber: "AA3677", depAirport: "MEM", arrAirport: "DFW", depTime: "2137", arrTime: "2325", blockMinutes: 108, equipment: "E75E", tailNumber: "N367AA", isDeadhead: false },
+          { flightNumber: "AA4254", depAirport: "DFW", arrAirport: "BMI", depTime: "0004", arrTime: "0240", blockMinutes: 156, equipment: "E75E", tailNumber: "N425AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 2,
+        reportTime: "1545",
+        releaseTime: "2011",
+        dutyMinutes: 266,
+        payCreditMinutes: 138,
+        layoverCity: "DFW",
+        layoverHotelInfo: "Hyatt Regency DFW Airport (972-453-1234)",
+        legs: [
+          { flightNumber: "AA3434", depAirport: "BMI", arrAirport: "DFW", depTime: "1809", arrTime: "2011", blockMinutes: 122, equipment: "E75E", tailNumber: "N343AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 3,
+        reportTime: "1603",
+        releaseTime: "2124",
+        dutyMinutes: 321,
+        payCreditMinutes: 203,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA3803", depAirport: "DFW", arrAirport: "SGF", depTime: "1703", arrTime: "1823", blockMinutes: 80, equipment: "E75E", tailNumber: "N380AA", isDeadhead: true },
+          { flightNumber: "AA3626", depAirport: "SGF", arrAirport: "ORD", depTime: "1954", arrTime: "2124", blockMinutes: 90, equipment: "E75E", tailNumber: "N362AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 17475 (Dropped / Replaced by 18080)
+  {
+    id: "seq-17475-20260711-drp",
+    rank: "CA",
+    sequenceNumber: "17475",
+    startDate: "2026-07-11",
+    endDate: "2026-07-14",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 1093,
+    totalCreditMinutes: 1093,
+    statusTag: "DROP",
+    colorTag: "rose",
+    isDropped: true,
+    dropReason: "Off Option (OO) — Replaced by Regular Assignment #18080",
+    layoverCities: ["BHM", "MHT", "AVP"],
+    dutyPeriods: [],
+  },
+
+  // JUL 2026 - SEQ 21514 (OT - Open Time Turn)
+  {
+    id: "seq-21514-20260715",
+    rank: "CA",
+    sequenceNumber: "21514",
+    startDate: "2026-07-15",
+    endDate: "2026-07-15",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 262, // 4.22h
+    totalCreditMinutes: 309, // 5.09h
+    expTafbHours: 6.15,
+    statusTag: "OT",
+    colorTag: "amber",
+    isOvertime: true,
+    isDropped: false,
+    layoverCities: [],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0915",
+        releaseTime: "1515",
+        dutyMinutes: 360,
+        payCreditMinutes: 309,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA3862", depAirport: "ORD", arrAirport: "HHH", depTime: "1001", arrTime: "1302", blockMinutes: 121, equipment: "E75E", tailNumber: "N386AA", isDeadhead: false },
+          { flightNumber: "AA3862", depAirport: "HHH", arrAirport: "ORD", depTime: "1354", arrTime: "1515", blockMinutes: 141, equipment: "E75E", tailNumber: "N386AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 21614 (RA / OT - Regular Assignment Turn)
+  {
+    id: "seq-21614-20260717",
+    rank: "CA",
+    sequenceNumber: "21614",
+    startDate: "2026-07-17",
+    endDate: "2026-07-17",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 304, // 5.04h
+    totalCreditMinutes: 447, // 7.27h
+    expTafbHours: 10.29,
+    statusTag: "RA",
+    colorTag: "amber",
+    isOvertime: true,
+    isDropped: false,
+    layoverCities: [],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "1247",
+        releaseTime: "2335",
+        dutyMinutes: 648,
+        payCreditMinutes: 447,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA3712", depAirport: "ORD", arrAirport: "MQT", depTime: "1322", arrTime: "1556", blockMinutes: 94, equipment: "E75E", tailNumber: "N371AA", isDeadhead: true },
+          { flightNumber: "AA3712", depAirport: "MQT", arrAirport: "ORD", depTime: "1750", arrTime: "1820", blockMinutes: 90, equipment: "E75E", tailNumber: "N371AA", isDeadhead: false },
+          { flightNumber: "AA3827", depAirport: "ORD", arrAirport: "TUL", depTime: "1903", arrTime: "2047", blockMinutes: 104, equipment: "E75E", tailNumber: "N382AA", isDeadhead: false },
+          { flightNumber: "AA3827", depAirport: "TUL", arrAirport: "ORD", depTime: "2111", arrTime: "2335", blockMinutes: 144, equipment: "E75E", tailNumber: "N382AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 21596 (LB 25 Lock-In)
+  {
+    id: "seq-21596-20260718",
+    rank: "CA",
+    sequenceNumber: "21596",
+    startDate: "2026-07-18",
+    endDate: "2026-07-18",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 158,
+    totalCreditMinutes: 158,
+    statusTag: "LB",
+    colorTag: "sky",
+    isDropped: false,
+    layoverCities: [],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0800",
+        releaseTime: "1130",
+        dutyMinutes: 210,
+        payCreditMinutes: 158,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA4174", depAirport: "ORD", arrAirport: "ORD", depTime: "0845", arrTime: "1123", blockMinutes: 158, equipment: "E75E", tailNumber: "N417AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 17495 (4-Day Scheduled Trip)
+  {
+    id: "seq-17495-20260718",
+    rank: "CA",
+    sequenceNumber: "17495",
+    startDate: "2026-07-18",
+    endDate: "2026-07-21",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 1046, // 17.26h
+    totalCreditMinutes: 1043, // 17.23h
+    expTafbHours: 74.07,
+    statusTag: "SKD",
+    colorTag: "sky",
+    isDropped: false,
+    layoverCities: ["SPI", "HPN", "YYZ"],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "1215",
+        releaseTime: "1424",
+        dutyMinutes: 129,
+        payCreditMinutes: 72,
+        layoverCity: "SPI",
+        layoverHotelInfo: "President Abraham Lincoln Springfield - A DoubleTree by Hilton (217-544-8800)",
+        legs: [
+          { flightNumber: "AA4330", depAirport: "ORD", arrAirport: "SPI", depTime: "1312", arrTime: "1424", blockMinutes: 72, equipment: "E75E", tailNumber: "N433AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0515",
+        releaseTime: "1531",
+        dutyMinutes: 616,
+        payCreditMinutes: 374,
+        layoverCity: "HPN",
+        layoverHotelInfo: "Sonesta White Plains Downtown (914-682-0050)",
+        legs: [
+          { flightNumber: "AA4328", depAirport: "SPI", arrAirport: "ORD", depTime: "0551", arrTime: "0705", blockMinutes: 74, equipment: "E75E", tailNumber: "N432AA", isDeadhead: false },
+          { flightNumber: "AA3491", depAirport: "ORD", arrAirport: "CWA", depTime: "0804", arrTime: "0902", blockMinutes: 58, equipment: "E75E", tailNumber: "N349AA", isDeadhead: false },
+          { flightNumber: "AA3491", depAirport: "CWA", arrAirport: "ORD", depTime: "0948", arrTime: "1106", blockMinutes: 78, equipment: "E75E", tailNumber: "N349AA", isDeadhead: false },
+          { flightNumber: "AA4200", depAirport: "ORD", arrAirport: "HPN", depTime: "1236", arrTime: "1531", blockMinutes: 115, equipment: "E75E", tailNumber: "N420AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0525",
+        releaseTime: "1218",
+        dutyMinutes: 413,
+        payCreditMinutes: 237,
+        layoverCity: "YYZ",
+        layoverHotelInfo: "Toronto Airport Marriott Hotel (416-674-9400)",
+        legs: [
+          { flightNumber: "AA3496", depAirport: "HPN", arrAirport: "ORD", depTime: "0706", arrTime: "0826", blockMinutes: 140, equipment: "E75E", tailNumber: "N349AA", isDeadhead: false },
+          { flightNumber: "AA3606", depAirport: "ORD", arrAirport: "YYZ", depTime: "0941", arrTime: "1218", blockMinutes: 97, equipment: "E75E", tailNumber: "N360AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 3,
+        reportTime: "0532",
+        releaseTime: "1407",
+        dutyMinutes: 515,
+        payCreditMinutes: 317,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA3524", depAirport: "YYZ", arrAirport: "ORD", depTime: "0717", arrTime: "0827", blockMinutes: 130, equipment: "E75E", tailNumber: "N352AA", isDeadhead: false },
+          { flightNumber: "AA3498", depAirport: "ORD", arrAirport: "DTW", depTime: "1030", arrTime: "1304", blockMinutes: 94, equipment: "E75E", tailNumber: "N349AA", isDeadhead: false },
+          { flightNumber: "AA3498", depAirport: "DTW", arrAirport: "ORD", depTime: "1334", arrTime: "1407", blockMinutes: 93, equipment: "E75E", tailNumber: "N349AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 21566 (OT - Open Time Turn)
+  {
+    id: "seq-21566-20260723",
+    rank: "CA",
+    sequenceNumber: "21566",
+    startDate: "2026-07-23",
+    endDate: "2026-07-23",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 204, // 3.24h
+    totalCreditMinutes: 218, // 3.58h
+    expTafbHours: 5.28,
+    statusTag: "OT",
+    colorTag: "amber",
+    isOvertime: true,
+    isDropped: false,
+    layoverCities: [],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "1351",
+        releaseTime: "1836",
+        dutyMinutes: 285,
+        payCreditMinutes: 218,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA4151", depAirport: "ORD", arrAirport: "MHK", depTime: "1428", arrTime: "1606", blockMinutes: 98, equipment: "E75E", tailNumber: "N415AA", isDeadhead: false },
+          { flightNumber: "AA4151", depAirport: "MHK", arrAirport: "ORD", depTime: "1650", arrTime: "1836", blockMinutes: 106, equipment: "E75E", tailNumber: "N415AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 17333 (3-Day Scheduled / RA Trip)
+  {
+    id: "seq-17333-20260724",
+    rank: "CA",
+    sequenceNumber: "17333",
+    startDate: "2026-07-24",
+    endDate: "2026-07-26",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 813, // 13.33h
+    totalCreditMinutes: 872, // 14.52h
+    expTafbHours: 53.39,
+    statusTag: "SKD",
+    colorTag: "sky",
+    isDropped: false,
+    layoverCities: ["AVP", "MLI"],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0715",
+        releaseTime: "1738",
+        dutyMinutes: 623,
+        payCreditMinutes: 367,
+        layoverCity: "AVP",
+        layoverHotelInfo: "Mohegan Sun Pocono (570-831-2100)",
+        legs: [
+          { flightNumber: "AA3625", depAirport: "ORD", arrAirport: "LIT", depTime: "0757", arrTime: "0941", blockMinutes: 104, equipment: "E75E", tailNumber: "N362AA", isDeadhead: false },
+          { flightNumber: "AA3625", depAirport: "LIT", arrAirport: "ORD", depTime: "1020", arrTime: "1220", blockMinutes: 120, equipment: "E75E", tailNumber: "N362AA", isDeadhead: false },
+          { flightNumber: "AA3407", depAirport: "ORD", arrAirport: "AVP", depTime: "1454", arrTime: "1738", blockMinutes: 104, equipment: "E75E", tailNumber: "N340AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0415",
+        releaseTime: "1047",
+        dutyMinutes: 392,
+        payCreditMinutes: 224,
+        layoverCity: "MLI",
+        layoverHotelInfo: "Radisson On John Deere Commons-Moline (309-764-1000)",
+        legs: [
+          { flightNumber: "AA3587", depAirport: "AVP", arrAirport: "ORD", depTime: "0559", arrTime: "0710", blockMinutes: 131, equipment: "E75E", tailNumber: "N358AA", isDeadhead: false },
+          { flightNumber: "AA3698", depAirport: "ORD", arrAirport: "MLI", depTime: "0942", arrTime: "1047", blockMinutes: 65, equipment: "E75E", tailNumber: "N369AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0523",
+        releaseTime: "1222",
+        dutyMinutes: 419,
+        payCreditMinutes: 301,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA3445", depAirport: "MLI", arrAirport: "ORD", depTime: "0558", arrTime: "0656", blockMinutes: 58, equipment: "E75E", tailNumber: "N344AA", isDeadhead: false },
+          { flightNumber: "AA3439", depAirport: "ORD", arrAirport: "BNA", depTime: "0825", arrTime: "0949", blockMinutes: 84, equipment: "E75E", tailNumber: "N343AA", isDeadhead: false },
+          { flightNumber: "AA3439", depAirport: "BNA", arrAirport: "ORD", depTime: "1043", arrTime: "1222", blockMinutes: 99, equipment: "E75E", tailNumber: "N343AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 17894 (TT - 2-Day Trade Trip)
+  {
+    id: "seq-17894-20260727",
+    rank: "CA",
+    sequenceNumber: "17894",
+    startDate: "2026-07-27",
+    endDate: "2026-07-28",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 645, // 10.45h
+    totalCreditMinutes: 645, // 10.45h
+    expTafbHours: 24.15,
+    statusTag: "TT",
+    colorTag: "sky",
+    isDropped: false,
+    layoverCities: ["CAE"],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "1421",
+        releaseTime: "2319",
+        dutyMinutes: 538,
+        payCreditMinutes: 327,
+        layoverCity: "CAE",
+        layoverHotelInfo: "Courtyard Columbia Downtown at USC (803-799-7800)",
+        legs: [
+          { flightNumber: "AA3980", depAirport: "ORD", arrAirport: "DTW", depTime: "1506", arrTime: "1741", blockMinutes: 95, equipment: "E75E", tailNumber: "N398AA", isDeadhead: false },
+          { flightNumber: "AA3980", depAirport: "DTW", arrAirport: "ORD", depTime: "1811", arrTime: "1858", blockMinutes: 107, equipment: "E75E", tailNumber: "N398AA", isDeadhead: false },
+          { flightNumber: "AA4275", depAirport: "ORD", arrAirport: "CAE", depTime: "2014", arrTime: "2319", blockMinutes: 125, equipment: "E75E", tailNumber: "N427AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 1,
+        reportTime: "1528",
+        releaseTime: "1844",
+        dutyMinutes: 196,
+        payCreditMinutes: 151,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA4183", depAirport: "CAE", arrAirport: "ORD", depTime: "1713", arrTime: "1844", blockMinutes: 151, equipment: "E75E", tailNumber: "N418AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // JUL 2026 - SEQ 17270 (2-Day Scheduled Trip)
+  {
+    id: "seq-17270-20260730",
+    rank: "CA",
+    sequenceNumber: "17270",
+    startDate: "2026-07-30",
+    endDate: "2026-07-31",
+    base: "ORD",
+    equipment: "E75E",
+    totalBlockMinutes: 565, // 9.25h
+    totalCreditMinutes: 565, // 9.25h
+    expTafbHours: 29.20,
+    statusTag: "SKD",
+    colorTag: "sky",
+    isDropped: false,
+    layoverCities: ["SPI"],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0606",
+        releaseTime: "1424",
+        dutyMinutes: 498,
+        payCreditMinutes: 331,
+        layoverCity: "SPI",
+        layoverHotelInfo: "President Abraham Lincoln Springfield (217-544-8800)",
+        legs: [
+          { flightNumber: "AA3446", depAirport: "ORD", arrAirport: "BWI", depTime: "0651", arrTime: "0958", blockMinutes: 127, equipment: "E75E", tailNumber: "N344AA", isDeadhead: false },
+          { flightNumber: "AA3446", depAirport: "BWI", arrAirport: "ORD", depTime: "1028", arrTime: "1143", blockMinutes: 135, equipment: "E75E", tailNumber: "N344AA", isDeadhead: false },
+          { flightNumber: "AA4330", depAirport: "ORD", arrAirport: "SPI", depTime: "1315", arrTime: "1424", blockMinutes: 69, equipment: "E75E", tailNumber: "N433AA", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0515",
+        releaseTime: "1130",
+        dutyMinutes: 375,
+        payCreditMinutes: 230,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA4328", depAirport: "SPI", arrAirport: "ORD", depTime: "0600", arrTime: "0718", blockMinutes: 78, equipment: "E75E", tailNumber: "N432AA", isDeadhead: false },
+          { flightNumber: "AA3546", depAirport: "ORD", arrAirport: "GRB", depTime: "0805", arrTime: "0921", blockMinutes: 76, equipment: "E75E", tailNumber: "N354AA", isDeadhead: false },
+          { flightNumber: "AA3546", depAirport: "GRB", arrAirport: "ORD", depTime: "0950", arrTime: "1105", blockMinutes: 75, equipment: "E75E", tailNumber: "N354AA", isDeadhead: false },
+        ],
+      },
+    ],
+  },
+
+  // ==========================================
+  // AUGUST 2026 SEQUENCES
+  // ==========================================
   // AUG 2026 - SEQ 14731 (RA - Regular Assignment Revision)
   {
     id: "seq-14731-20260813",
@@ -502,12 +1034,62 @@ export const USER_LIVE_SEQUENCES: SequenceTrip[] = [
     endDate: "2026-08-09",
     base: "ORD",
     equipment: "E75E",
-    totalBlockMinutes: 934, // 15.57h
-    totalCreditMinutes: 934, // 15.57h
+    totalBlockMinutes: 840,
+    totalCreditMinutes: 1200,
+    colorTag: "rose",
     statusTag: "DROP",
     isDropped: true,
-    layoverCities: [],
-    dutyPeriods: [],
+    dropReason: "DTS Overlap — Touches Vacation Window (Aug 01 - Aug 07)",
+    layoverCities: ["MSP", "DSM", "MSN"],
+    dutyPeriods: [
+      {
+        dayIndex: 0,
+        reportTime: "0800",
+        releaseTime: "1530",
+        dutyMinutes: 450,
+        payCreditMinutes: 300,
+        layoverCity: "MSP",
+        legs: [
+          { flightNumber: "AA4210", depAirport: "ORD", arrAirport: "MSP", depTime: "0845", arrTime: "1015", blockMinutes: 90, equipment: "E75E", isDeadhead: false },
+          { flightNumber: "AA4211", depAirport: "MSP", arrAirport: "ORD", depTime: "1115", arrTime: "1245", blockMinutes: 90, equipment: "E75E", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 1,
+        reportTime: "0830",
+        releaseTime: "1600",
+        dutyMinutes: 450,
+        payCreditMinutes: 300,
+        layoverCity: "DSM",
+        legs: [
+          { flightNumber: "AA3314", depAirport: "MSP", arrAirport: "DSM", depTime: "0915", arrTime: "1030", blockMinutes: 75, equipment: "E75E", isDeadhead: false },
+          { flightNumber: "AA3315", depAirport: "DSM", arrAirport: "ORD", depTime: "1145", arrTime: "1300", blockMinutes: 75, equipment: "E75E", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 2,
+        reportTime: "0900",
+        releaseTime: "1630",
+        dutyMinutes: 450,
+        payCreditMinutes: 300,
+        layoverCity: "MSN",
+        legs: [
+          { flightNumber: "AA4480", depAirport: "DSM", arrAirport: "MSN", depTime: "0945", arrTime: "1100", blockMinutes: 75, equipment: "E75E", isDeadhead: false },
+          { flightNumber: "AA4481", depAirport: "MSN", arrAirport: "ORD", depTime: "1215", arrTime: "1330", blockMinutes: 75, equipment: "E75E", isDeadhead: false },
+        ],
+      },
+      {
+        dayIndex: 3,
+        reportTime: "0830",
+        releaseTime: "1400",
+        dutyMinutes: 330,
+        payCreditMinutes: 300,
+        layoverCity: "",
+        legs: [
+          { flightNumber: "AA3890", depAirport: "MSN", arrAirport: "ORD", depTime: "0915", arrTime: "1030", blockMinutes: 75, equipment: "E75E", isDeadhead: false },
+        ],
+      },
+    ],
   },
 ];
 
