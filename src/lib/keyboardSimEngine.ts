@@ -57,6 +57,14 @@ export function generateDecsResponse(command: string): string {
     return `[${timestamp}] COMMUTER HOTEL RESERVATION PROCESSED FOR ${stn}\n  ROOM CONFIRMED - VOUCHER ISSUED.`;
   }
 
+  if (cmdUpper === "CTRL_HOME" || cmdUpper === "HOME") {
+    return `[${timestamp}] DECS TERMINAL CURSOR MOVED TO HOME (0,0) (CTRL+HOME EXECUTED)\n  READY FOR INPUT.`;
+  }
+
+  if (cmdUpper === "SHIFT_DELETE" || cmdUpper === "CLEAR_PAGE" || cmdUpper === "CLEAR") {
+    return `[${timestamp}] DECS TERMINAL SCREEN CLEARED (SHIFT+DELETE EXECUTED)\n  READY FOR NEXT INPUT.`;
+  }
+
   if (cmdUpper.startsWith("BSO")) {
     return `[${timestamp}] DECS TERMINAL SIGN-OUT EXECUTED\n  SESSION CLOSED SAFELY.`;
   }
@@ -301,7 +309,8 @@ export async function waitForScreenChange(
  * Iteratively collects pages by sending "MD" (Move Down) until end of display is reached.
  */
 export async function captureMultiPageDecsText(
-  maxPages: number = 8
+  maxPages: number = 8,
+  command: string = ""
 ): Promise<{ fullText: string; pageCount: number }> {
   let fullTextAccumulator = "";
   let pageCount = 0;
@@ -319,21 +328,37 @@ export async function captureMultiPageDecsText(
     }
 
     const upperText = currentScreenText.toUpperCase();
+    const isHssFinished = upperText.includes("TAFB") || upperText.includes("TAXABLE EXP") || upperText.includes("TAXABLE");
+    
     if (
+      isHssFinished ||
       upperText.includes("BOTTOM OF") ||
       upperText.includes("NO MORE DATA") ||
       upperText.includes("END OF DISP") ||
       upperText.includes("END F DISP") ||
       upperText.includes("ENDOF SCROL") ||
       upperText.includes("END OF SCROL") ||
+      upperText.includes("NO MORE SCROLL") ||
       upperText.includes("LAST PAGE") ||
+      upperText.includes("COMMAND COMPLETE") ||
       upperText.includes("NO MORE")
     ) {
       useCrewStore.getState().addConsoleLog(
-        `[MULTI-PAGE COLLECTOR] End of DECS display reached after ${pageCount} page(s).`
+        `[MULTI-PAGE COLLECTOR] End of DECS display reached after ${pageCount} page(s) (Complete: ${isHssFinished ? 'TAFB/Summary found' : 'End of scroll'}).`
       );
       break;
     }
+
+    useCrewStore.getState().addConsoleLog(
+      `[MULTI-PAGE COLLECTOR] Sending "Line Down" (Shift+Enter) before MD...`
+    );
+    await typeMacroOnDecsScreen("SHIFT_ENTER", {
+      charDelayMs: 35,
+      preEnterDelayMs: 150,
+      pressEnter: false,
+      smartScreenInspection: false
+    });
+    await new Promise((r) => setTimeout(r, 350));
 
     let nextCmd = "MD^";
     if (upperText.includes("MORE? (ENTER Y)") || upperText.includes("MORE (Y/N)") || upperText.includes("MORE? (Y/N)")) {

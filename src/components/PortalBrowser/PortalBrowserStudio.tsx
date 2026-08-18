@@ -39,7 +39,10 @@ import HSSSequencesModal from "./HSSSequencesModal";
 
 export default function PortalBrowserStudio() {
   const isNative = typeof window !== "undefined" && Capacitor.isNativePlatform();
+
   const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
+  const mergeHssIntoSequence = useCrewStore((state) => state.mergeHssIntoSequence);
+  const addSequences = useCrewStore((state) => state.addSequences);
   const setOpenSequences = useCrewStore((state) => state.setOpenSequences);
   const existingOpenSeqs = useCrewStore((state) => state.openSequences);
   const sequences = useCrewStore((state) => state.sequences);
@@ -53,6 +56,7 @@ export default function PortalBrowserStudio() {
     { name: "Jetnet Travel", url: "https://jetnet.aa.com", icon: "🛫", desc: "Pass bureau & listing" },
   ];
 
+  const isHssModalOpen = useCrewStore((state) => state.isHssModalOpen);
   const setIsHssModalOpen = useCrewStore((state) => state.setIsHssModalOpen);
   const TARGET_URL = "https://webfos.aa.com/WebSabre/websabre";
   const [activeUrl, setActiveUrl] = useState(TARGET_URL);
@@ -62,7 +66,7 @@ export default function PortalBrowserStudio() {
   // File Upload Ref
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Listen for Native Android Schedule Import Events from MainActivity
+  // Listen for Native Android Schedule Import Events & HSS Modal Trigger
   useEffect(() => {
     const handleNativeImport = (e: any) => {
       const text = e.detail;
@@ -72,11 +76,19 @@ export default function PortalBrowserStudio() {
       }
     };
 
+    const handleHssTrigger = () => {
+      console.log("[PortalBrowser] Received openHssSequencesModal event!");
+      setIsHssModalOpen(true);
+    };
+
     window.addEventListener("nativeScheduleImport", handleNativeImport);
+    window.addEventListener("openHssSequencesModal", handleHssTrigger);
     return () => {
       window.removeEventListener("nativeScheduleImport", handleNativeImport);
+      window.removeEventListener("openHssSequencesModal", handleHssTrigger);
     };
   }, []);
+
 
   // Launch Native In-App Browser (Desktop User-Agent + Full Top-Level Window)
   const handleLaunchNativeBrowser = (urlToLaunch?: string) => {
@@ -144,7 +156,29 @@ export default function PortalBrowserStudio() {
         }
       }
 
-      // 2. Parse Regular HI1 Schedule
+      // 2. Check for HSS Sequence text (Single or Multi-trip pairing details)
+      if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "))) {
+        const parsedHssTrips = parseHssSchedule(text);
+        if (parsedHssTrips && parsedHssTrips.length > 0) {
+          parsedHssTrips.forEach((hssTrip) => {
+            const existing = sequences.find((s) => s.sequenceNumber === hssTrip.sequenceNumber);
+            if (existing) {
+              mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
+            } else {
+              addSequences([hssTrip]);
+            }
+          });
+          setStatusMessage({
+            text: `✓ Parsed & enriched SEQ #${parsedHssTrips[0].sequenceNumber} with flight legs & layovers!`,
+            type: "success",
+          });
+          setManualText("");
+          setTimeout(() => setStatusMessage(null), 5000);
+          return;
+        }
+      }
+
+      // 3. Parse Regular HI1 Schedule
       const parsedSeqs = parseRawSchedule(text);
       if (parsedSeqs && parsedSeqs.length > 0) {
         const meta = parseMonthlyHIMetadata(text);
@@ -210,7 +244,7 @@ export default function PortalBrowserStudio() {
   };
 
   return (
-    <div className="flex flex-col w-full font-sans select-none space-y-4 pb-12">
+    <div className="flex flex-col w-full font-sans select-none space-y-3 pb-12">
       {/* Hidden File Input for PDF/Text Uploads */}
       <input
         type="file"
@@ -280,11 +314,11 @@ export default function PortalBrowserStudio() {
           <button
             type="button"
             onClick={() => setIsHssModalOpen(true)}
-            className="px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-md shadow-amber-500/20 flex items-center justify-center gap-2"
-            title="View HSS Sequences Breakdown by Month"
+            className="px-4 py-3 bg-[#1E293B] hover:bg-slate-800 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-md border border-slate-700/60 flex items-center justify-center gap-2"
+            title="Open HSS Pairing Schedule Pop-Up"
           >
-            <Layers className="w-4 h-4" />
-            <span>⚡ HSS Sequences</span>
+            <Layers className="w-4 h-4 text-sky-400" />
+            <span>HSS (Pairing)</span>
           </button>
 
           <button
@@ -303,31 +337,6 @@ export default function PortalBrowserStudio() {
       <div className="space-y-2">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 px-1">Quick AA Portals & Resources</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-          {/* HSS Sequence Roster Card */}
-          <button
-            type="button"
-            onClick={() => setIsHssModalOpen(true)}
-            className="p-3.5 bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white border border-indigo-500/30 rounded-2xl transition cursor-pointer active-press shadow-2xs flex items-center justify-between text-left group"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-2xl p-2 bg-indigo-500/20 rounded-xl border border-indigo-400/30 shrink-0">📋</span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black text-white block truncate group-hover:text-amber-400 transition">
-                    HSS Sequences
-                  </span>
-                  <span className="px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 text-[9px] font-black font-mono">
-                    MONTHS
-                  </span>
-                </div>
-                <span className="text-[11px] text-indigo-200/80 font-medium block truncate">
-                  Monthly sequence legs & DECS roster
-                </span>
-              </div>
-            </div>
-            <Layers className="w-4 h-4 text-indigo-300 group-hover:text-amber-400 shrink-0 ml-2" />
-          </button>
-
           {QUICK_BOOKMARKS.map((bm) => (
             <button
               key={bm.name}
@@ -400,6 +409,14 @@ export default function PortalBrowserStudio() {
           </button>
         </div>
       </div>
+
+      {/* Full HSS Sequences Breakdown Modal Pop-Up */}
+      <HSSSequencesModal
+        isOpen={isHssModalOpen}
+        onClose={() => setIsHssModalOpen(false)}
+      />
     </div>
   );
 }
+
+

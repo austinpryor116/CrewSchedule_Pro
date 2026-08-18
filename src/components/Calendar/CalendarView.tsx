@@ -1991,7 +1991,9 @@ export default function CalendarView() {
   return (
     <div className="w-full h-full flex flex-col bg-[#f8fafc] overflow-hidden font-sans text-slate-900 relative">
       {/* 1. Mobile & Desktop Top Calendar Header Bar */}
-      <div className="flex items-center justify-between px-3 pt-[max(2.5rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-2 bg-white/95 border-b border-slate-200 shadow-xs backdrop-blur-md shrink-0 z-40">
+      <div className="flex items-center justify-between px-3.5 pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-2.5 bg-white/95 border-b border-slate-200 shadow-xs backdrop-blur-md shrink-0 z-40">
+
+
         {/* Month Navigation */}
         <div className="flex items-center gap-1">
           <button

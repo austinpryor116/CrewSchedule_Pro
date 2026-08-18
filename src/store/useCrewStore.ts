@@ -5,10 +5,10 @@ import { USER_LIVE_SEQUENCES, USER_LIVE_VACATIONS } from "../lib/userScheduleDat
 import { PILOT_BIDDING_CALENDAR, DEFAULT_PILOT_BIDDING_EVENTS, isPilotRole } from "../lib/pilotBiddingDates";
 import { DEFAULT_N6D_DATA } from "../lib/n6dParser";
 
-import { calculatePay, calculateSequenceTAFB, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole } from "../lib/parser";
+import { calculatePay, calculateSequenceTAFB, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole, sanitizeSequenceTrip, sanitizeFlightLeg } from "../lib/parser";
 import { getCbaRatesForProfile } from "../lib/cbaPayScale";
 import { StorageAdapter, safeLocalStorageSet } from "../lib/storage";
-export { convertOpenToTrip, isPilotRole };
+export { convertOpenToTrip, isPilotRole, sanitizeSequenceTrip, sanitizeFlightLeg };
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
   name: "Austin Pryor",
@@ -209,16 +209,18 @@ const deduplicateSequences = (seqs: SequenceTrip[]): SequenceTrip[] => {
   if (!Array.isArray(seqs)) return [];
   const map = new Map<string, SequenceTrip>();
   seqs.forEach((s) => {
-    if (s && s.sequenceNumber && s.startDate) {
-      const key = `${s.sequenceNumber}-${s.startDate}`;
-      map.set(key, s);
-    } else if (s && s.id) {
-      map.set(s.id, s);
-    } else if (s && s.sequenceNumber) {
-      map.set(s.sequenceNumber, s);
+    if (!s) return;
+    const clean = sanitizeSequenceTrip(s);
+    if (clean.sequenceNumber && clean.startDate) {
+      const key = `${clean.sequenceNumber}-${clean.startDate}`;
+      map.set(key, clean);
+    } else if (clean.id) {
+      map.set(clean.id, clean);
+    } else if (clean.sequenceNumber) {
+      map.set(clean.sequenceNumber, clean);
     }
   });
-  return Array.from(map.values());
+  return Array.from(map.values()).map(sanitizeSequenceTrip);
 };
 
 export const useCrewStore = create<CrewState>((set, get) => ({
@@ -609,25 +611,48 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   importMonthlyHISchedule: (newSeqs, newVacs, metadata, sourceFileName, rawText) => {
     const state = get();
     
-    // Find the months covered by the new pull (YYYY-MM)
-    const importedMonths = new Set<string>();
-    newSeqs.forEach(s => {
-      if (s.startDate) {
-        importedMonths.add(s.startDate.substring(0, 7));
+    // Merge new sequences with existing sequences by updating matching trips and adding new ones,
+    // PRESERVING detailed dutyPeriods and all other existing calendar sequences!
+    const existingSeqs = [...state.sequences];
+    const updatedMap = new Map<string, SequenceTrip>();
+    
+    // First, index all existing sequences
+    existingSeqs.forEach(s => {
+      const key = `${s.sequenceNumber}_${s.startDate || ""}`;
+      updatedMap.set(key, s);
+    });
+
+    // Merge in new sequences
+    newSeqs.forEach(newSeq => {
+      const key = `${newSeq.sequenceNumber}_${newSeq.startDate || ""}`;
+      const existing = updatedMap.get(key) || existingSeqs.find(s => 
+        s.sequenceNumber.toLowerCase() === newSeq.sequenceNumber.toLowerCase() && 
+        (!newSeq.startDate || !s.startDate || s.startDate.substring(0, 7) === newSeq.startDate.substring(0, 7))
+      );
+      
+      if (existing) {
+        // Update existing sequence, preserving any rich dutyPeriods if newSeq doesn't have them
+        const merged: SequenceTrip = {
+          ...existing,
+          ...newSeq,
+          dutyPeriods: (newSeq.dutyPeriods && newSeq.dutyPeriods.length > 0) 
+            ? newSeq.dutyPeriods 
+            : (existing.dutyPeriods && existing.dutyPeriods.length > 0 ? existing.dutyPeriods : (newSeq.dutyPeriods || [])),
+          totalBlockMinutes: newSeq.totalBlockMinutes || existing.totalBlockMinutes,
+          totalCreditMinutes: newSeq.totalCreditMinutes || existing.totalCreditMinutes,
+          layoverCities: (newSeq.layoverCities && newSeq.layoverCities.length > 0) ? newSeq.layoverCities : existing.layoverCities,
+        };
+        updatedMap.set(`${existing.sequenceNumber}_${existing.startDate || ""}`, merged);
+      } else {
+        updatedMap.set(key, newSeq);
       }
     });
 
-    // Keep existing sequences that are NOT in the imported months
-    const preservedSeqs = state.sequences.filter(s => {
-      if (!s.startDate) return false;
-      return !importedMonths.has(s.startDate.substring(0, 7));
-    });
-
-    const mergedSeqs = deduplicateSequences([...preservedSeqs, ...newSeqs]);
+    const mergedSeqs = deduplicateSequences(Array.from(updatedMap.values()));
     const finalVacs = newVacs.length > 0 ? newVacs : state.vacations;
     
     set({ 
-      monthlyHIMetadata: metadata,
+      monthlyHIMetadata: metadata || state.monthlyHIMetadata,
       sequences: mergedSeqs,
       vacations: finalVacs
     });
@@ -638,7 +663,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
 
     safeLocalStorageSet("crewschedule_sequences", mergedSeqs);
     if (newVacs.length > 0) {
-      safeLocalStorageSet("crewschedule_vacations", newVacs);
+      safeLocalStorageSet("crewschedule_vacations", finalVacs);
     }
     if (metadata) {
       safeLocalStorageSet("crewschedule_hi_metadata", metadata);
@@ -919,35 +944,52 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   },
 
   updateSequence: (updated) => {
-    const seqs = get().sequences.map((s) => (s.id === updated.id ? updated : s));
-    set({ sequences: seqs });
-    StorageAdapter.saveSequences(seqs);
-    safeLocalStorageSet("crewschedule_sequences", seqs);
+    const cleanUpdated = sanitizeSequenceTrip(updated);
+    const seqs = get().sequences.map((s) => (s.id === cleanUpdated.id ? cleanUpdated : s));
+    const cleanSeqs = deduplicateSequences(seqs);
+    set({ sequences: cleanSeqs });
+    StorageAdapter.saveSequences(cleanSeqs);
+    safeLocalStorageSet("crewschedule_sequences", cleanSeqs);
     get().autoGenerateLogbookFromRoster();
   },
 
   mergeHssIntoSequence: (sequenceNumber: string, hssData: any) => {
-    const seqs = get().sequences.map((s) => {
+    let matchFound = false;
+    const existingSeqs = get().sequences;
+    const cleanSeqNum = (sequenceNumber || "").replace(/^[A-Za-z]+/, "");
+
+    const seqs = existingSeqs.map((s) => {
       // Find the matching sequence by sequenceNumber AND matching month/year if available
-      const isSameSeqNum = s.sequenceNumber.toLowerCase() === sequenceNumber.toLowerCase();
+      const sClean = (s.sequenceNumber || "").replace(/^[A-Za-z]+/, "");
+      const isSameSeqNum = s.sequenceNumber.toLowerCase() === sequenceNumber.toLowerCase() ||
+                           (cleanSeqNum.length > 0 && cleanSeqNum === sClean);
       const isSameMonth = !hssData.startDate || !s.startDate || s.startDate.substring(0, 7) === hssData.startDate.substring(0, 7);
       
       if (isSameSeqNum && isSameMonth) {
-        return {
+        matchFound = true;
+        const merged = {
           ...s,
-          dutyPeriods: hssData.dutyPeriods,
-          totalBlockMinutes: hssData.totalBlockMinutes,
+          dutyPeriods: (hssData.dutyPeriods && hssData.dutyPeriods.length > 0) ? hssData.dutyPeriods : s.dutyPeriods,
+          totalBlockMinutes: hssData.totalBlockMinutes || s.totalBlockMinutes,
+          totalCreditMinutes: hssData.totalCreditMinutes || s.totalCreditMinutes,
+          ...(hssData.expTafbHours && { expTafbHours: hssData.expTafbHours }),
           ...(hssData.rank && { rank: hssData.rank }),
           ...(hssData.startDate && { startDate: hssData.startDate }),
           ...(hssData.endDate && { endDate: hssData.endDate }),
+          ...(hssData.base && { base: hssData.base }),
+          ...(hssData.equipment && { equipment: hssData.equipment }),
+          ...(hssData.layoverCities && hssData.layoverCities.length > 0 && { layoverCities: hssData.layoverCities }),
         };
+        return sanitizeSequenceTrip(merged);
       }
-      return s;
+      return sanitizeSequenceTrip(s);
     });
 
-    set({ sequences: seqs });
-    StorageAdapter.saveSequences(seqs);
-    safeLocalStorageSet("crewschedule_sequences", seqs);
+    const finalSeqs = deduplicateSequences(matchFound ? seqs : [...existingSeqs, sanitizeSequenceTrip(hssData)]);
+
+    set({ sequences: finalSeqs });
+    StorageAdapter.saveSequences(finalSeqs);
+    safeLocalStorageSet("crewschedule_sequences", finalSeqs);
     get().autoGenerateLogbookFromRoster();
   },
 
@@ -1234,3 +1276,8 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     };
   },
 }));
+
+if (typeof window !== "undefined") {
+  (window as any).__CREW_STORE__ = useCrewStore;
+}
+

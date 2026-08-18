@@ -35,7 +35,9 @@ export interface DutyPeriod {
   legs: FlightLeg[];
   layoverCity: string;
   layoverHotelInfo?: string;
+  layoverRestMinutes?: number;
   actualBlockMinutes?: number;
+
   actualDutyMinutes?: number;
   actualReportTime?: string;
   actualReleaseTime?: string;
@@ -406,3 +408,6 @@ export interface N6DReservesData {
   rawText: string;
   importedAt: string;
 }
+
+export * from './messaging';
+

@@ -823,7 +823,9 @@ export default function BriefingView() {
       </div>
 
       {/* 2. Top Edge-to-Edge ForeFlight Controls Bar (Clean High-Contrast Bright Style) */}
-      <div className="absolute top-0 inset-x-0 z-20 pointer-events-auto flex flex-col pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-2.5 pb-2.5 sm:px-4 sm:pb-3 bg-white/95 backdrop-blur-2xl border-b border-slate-200 shadow-md">
+      <div className="absolute top-0 inset-x-0 z-20 pointer-events-auto flex flex-col pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-2.5 pb-2.5 sm:px-4 sm:pb-3 bg-white/95 backdrop-blur-2xl border-b border-slate-200 shadow-md">
+
+
         {/* Primary Actions (Map Layers | Full-Width Flight Leg & FPL Select | Briefing | Refresh) */}
         <div className="flex items-center justify-between gap-1.5 sm:gap-2 w-full">
           {/* Left: Map Layers Button */}
@@ -1677,7 +1679,7 @@ export default function BriefingView() {
       </div>
 
       {/* Floating Map Controls (GPS Location Button directly on map) */}
-      <div className="absolute top-[max(4.75rem,calc(env(safe-area-inset-top,0px)+4rem))] right-3 z-10 flex flex-col gap-2 pointer-events-auto">
+      <div className="absolute top-14 sm:top-16 right-3 z-10 flex flex-col gap-2 pointer-events-auto">
         <button
           onClick={handleLocateMe}
           disabled={isLocating}

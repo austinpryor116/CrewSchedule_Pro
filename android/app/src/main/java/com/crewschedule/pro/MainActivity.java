@@ -34,6 +34,15 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.view.Window;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.JSONTokener;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -476,9 +485,9 @@ public class MainActivity extends BridgeActivity {
 
         // ROW 2: Schedule & Pairing Buttons (HI1, HI2, HSS)
         keyGrid.addView(createButtonRow(
-            new KeyDef("HI1 (Month 1)", "HI1", "#0284C7", false, false, true),
-            new KeyDef("HI2 (Month 2)", "HI2", "#0284C7", false, false, true),
-            new KeyDef("HSS (Pairing)", "HSS/", "#1E293B", false, false, false)
+            new KeyDef("HI1 (Month 1)", "HI1", "#0284C7", false, false, true, false),
+            new KeyDef("HI2 (Month 2)", "HI2", "#0284C7", false, false, true, false),
+            new KeyDef("HSS (Pairing)", "HSS/", "#1E293B", false, false, false, true)
         ));
 
         // ROW 3: Navigation & Paging (MD, MU, Y, Line Down)
@@ -487,6 +496,12 @@ public class MainActivity extends BridgeActivity {
             new KeyDef("MU ⬆ (Prev)", "MU", "#0369A1", true, false, false),
             new KeyDef("Y (More)", "Y", "#047857", true, false, false),
             new KeyDef("↵ (Line Down)", "SHIFT_ENTER", "#059669", true, false, false)
+        ));
+
+        // ROW 4: Home (Ctrl+Home) & Clear Page (Shift+Del) for testing & terminal control
+        keyGrid.addView(createButtonRow(
+            new KeyDef("⌂ Home (Ctrl+Home)", "CTRL_HOME", "#0D9488", true, false, false),
+            new KeyDef("⌧ Clear Page (Shift+Del)", "SHIFT_DELETE", "#DC2626", true, false, false)
         ));
 
         keyScroll.addView(keyGrid);
@@ -524,18 +539,24 @@ public class MainActivity extends BridgeActivity {
         boolean sendImmediately;
         boolean isMultiStepMacro;
         boolean isHiMacro;
+        boolean isHssMacro;
 
-        KeyDef(String label, String command, String color, boolean sendImmediately, boolean isMultiStepMacro, boolean isHiMacro) {
+        KeyDef(String label, String command, String color, boolean sendImmediately, boolean isMultiStepMacro, boolean isHiMacro, boolean isHssMacro) {
             this.label = label;
             this.command = command;
             this.color = color;
             this.sendImmediately = sendImmediately;
             this.isMultiStepMacro = isMultiStepMacro;
             this.isHiMacro = isHiMacro;
+            this.isHssMacro = isHssMacro;
+        }
+
+        KeyDef(String label, String command, String color, boolean sendImmediately, boolean isMultiStepMacro, boolean isHiMacro) {
+            this(label, command, color, sendImmediately, isMultiStepMacro, isHiMacro, false);
         }
 
         KeyDef(String label, String command, String color, boolean sendImmediately, boolean isMultiStepMacro) {
-            this(label, command, color, sendImmediately, isMultiStepMacro, false);
+            this(label, command, color, sendImmediately, isMultiStepMacro, false, false);
         }
     }
 
@@ -547,7 +568,9 @@ public class MainActivity extends BridgeActivity {
 
         for (KeyDef k : keys) {
             TextView btn = createKeypadButton(k.label, k.color, "#FFFFFF", v -> {
-                if (k.isHiMacro) {
+                if (k.isHssMacro) {
+                    executeHssPairingPopUpMacro();
+                } else if (k.isHiMacro) {
                     executeAutonomousHiCapture(k.command);
                 } else if (k.isMultiStepMacro) {
                     executeMultiStepLoginMacro();
@@ -569,6 +592,563 @@ public class MainActivity extends BridgeActivity {
         }
         return row;
     }
+
+    private static class HssSequenceItem {
+        String seqNum;
+        String startDate;
+        String endDate;
+        String dateRangeText;
+        String monthKey; // "PRIOR", "CURRENT", "FUTURE"
+        String cmdDate;  // e.g. "20AUG"
+        String duration;
+        String base;
+        String credit;
+        String layovers;
+        String seat;     // "CA" or "FO"
+
+        HssSequenceItem(String seqNum, String startDate, String endDate, String dateRangeText, String monthKey, String cmdDate, String duration, String base, String credit, String layovers, String seat) {
+            this.seqNum = seqNum;
+            this.startDate = startDate;
+            this.endDate = endDate;
+            this.dateRangeText = dateRangeText;
+            this.monthKey = monthKey;
+            this.cmdDate = cmdDate;
+            this.duration = duration;
+            this.base = base;
+            this.credit = credit;
+            this.layovers = layovers;
+            this.seat = (seat != null && !seat.isEmpty()) ? seat : "CA";
+        }
+    }
+
+    private void executeHssPairingPopUpMacro() {
+        String triggerJs = "if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('openHssSequencesModal')); }";
+        if (portalWebView != null) {
+            portalWebView.evaluateJavascript(triggerJs, null);
+        }
+
+        WebView mainWebView = getBridge() != null ? getBridge().getWebView() : null;
+        if (mainWebView == null) {
+            Toast.makeText(this, "Opening HSS Modal...", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String fetchJs = "(function() { " +
+            "  try { " +
+            "    if (window.__CREW_STORE__) { " +
+            "      return JSON.stringify(window.__CREW_STORE__.getState().sequences || []); " +
+            "    } " +
+            "    var raw = localStorage.getItem('crewschedule-store'); " +
+            "    if (raw) { " +
+            "      var p = JSON.parse(raw); " +
+            "      if (p && p.state && p.state.sequences) return JSON.stringify(p.state.sequences); " +
+            "    } " +
+            "  } catch(e) {} " +
+            "  return '[]'; " +
+            "})()";
+
+        mainWebView.evaluateJavascript(fetchJs, new ValueCallback<String>() {
+            @Override
+            public void onReceiveValue(String rawJson) {
+                runOnUiThread(() -> renderCalendarHssModal(rawJson));
+            }
+        });
+    }
+
+    private void renderCalendarHssModal(String rawJson) {
+        String jsonStr = rawJson;
+        if (jsonStr == null || jsonStr.equals("null") || jsonStr.trim().isEmpty()) {
+            jsonStr = "[]";
+        }
+        if (jsonStr.startsWith("\"") && jsonStr.endsWith("\"") && jsonStr.length() > 1) {
+            try {
+                jsonStr = new JSONTokener(jsonStr).nextValue().toString();
+            } catch (Exception ignored) {}
+        }
+
+        final List<HssSequenceItem> allSequences = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(jsonStr);
+            final String[] months = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject obj = arr.getJSONObject(i);
+                String seq = obj.optString("sequenceNumber", "").trim();
+                if (seq.isEmpty()) continue;
+
+                // Skip dropped sequences - only show live sequences
+                boolean isDropped = obj.optBoolean("isDropped", false) || obj.optBoolean("isDtsDropped", false) || obj.optBoolean("dropped", false);
+                String status = obj.optString("status", "");
+                String statusTag = obj.optString("statusTag", "");
+                if (isDropped || status.equalsIgnoreCase("DROPPED") || statusTag.equalsIgnoreCase("DROP") || statusTag.equalsIgnoreCase("DROPPED")) {
+                    continue;
+                }
+
+                String sDate = obj.optString("startDate", "");
+                String eDate = obj.optString("endDate", sDate);
+                String base = obj.optString("base", "ORD");
+                if (base.isEmpty()) base = "ORD";
+
+                // Format Command Date (e.g. 20AUG)
+                String cmdDate = "";
+                String monthKey = "CURRENT";
+                if (!sDate.isEmpty() && sDate.contains("-")) {
+                    String[] parts = sDate.split("-");
+                    if (parts.length == 3) {
+                        int m = Integer.parseInt(parts[1]);
+                        String day = parts[2];
+                        if (day.length() == 1) day = "0" + day;
+                        String mStr = (m >= 1 && m <= 12) ? months[m - 1] : "AUG";
+                        cmdDate = day + mStr;
+
+                        // Categorize into Prior, Current, Future based on month 7, 8, 9
+                        if (m < 8) {
+                            monthKey = "PRIOR";
+                        } else if (m > 8) {
+                            monthKey = "FUTURE";
+                        } else {
+                            monthKey = "CURRENT";
+                        }
+                    }
+                }
+
+                // Credit
+                String creditStr = "";
+                if (obj.has("totalCreditMinutes")) {
+                    int mins = obj.optInt("totalCreditMinutes", 0);
+                    if (mins > 0) {
+                        creditStr = String.format(java.util.Locale.US, "%.1fh Credit", mins / 60.0);
+                    }
+                } else if (obj.has("creditHours")) {
+                    creditStr = obj.optString("creditHours") + "h Credit";
+                }
+
+                // Layovers
+                String layovers = "";
+                if (obj.has("layoverCities")) {
+                    JSONArray lc = obj.optJSONArray("layoverCities");
+                    if (lc != null) {
+                        StringBuilder sb = new StringBuilder();
+                        for (int k = 0; k < lc.length(); k++) {
+                            if (k > 0) sb.append(" • ");
+                            sb.append(lc.optString(k));
+                        }
+                        layovers = sb.toString();
+                    }
+                }
+
+                // Date Range Text
+                String dateRangeText = sDate;
+                if (!eDate.isEmpty() && !eDate.equals(sDate)) {
+                    dateRangeText = sDate + " ➔ " + eDate;
+                }
+
+                // Duration
+                int days = obj.optInt("dutyPeriodsCount", obj.optInt("daysCount", 0));
+                String durText = days > 0 ? (days + "-Day Trip") : "Pairing";
+
+                // Seat / Rank (CA, FO, FA)
+                String rank = obj.optString("rank", "");
+                String role = obj.optString("role", "");
+                String seatVal = obj.optString("seat", "");
+                String position = obj.optString("position", "");
+                String combined = (rank + " " + role + " " + seatVal + " " + position).toUpperCase();
+                
+                String seat = "CA";
+                if (combined.contains("FA") || combined.contains("FLIGHT ATTENDANT") || combined.contains("ATTENDANT") || combined.contains("FLT ATT")) {
+                    seat = "FA";
+                } else if (combined.contains("FO") || combined.contains("F/O") || combined.contains("FIRST OFFICER") || combined.contains("SIC")) {
+                    seat = "FO";
+                } else {
+                    seat = "CA";
+                }
+
+                allSequences.add(new HssSequenceItem(seq, sDate, eDate, dateRangeText, monthKey, cmdDate, durText, base, creditStr, layovers, seat));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        final android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        final LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#FFFFFF"));
+
+        // Header
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setBackgroundColor(Color.parseColor("#0F172A"));
+        header.setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14));
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = new TextView(this);
+        title.setText("✈️ HSS Pairings (From Calendar)");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        title.setLayoutParams(tLp);
+        header.addView(title);
+
+        TextView closeBtn = new TextView(this);
+        closeBtn.setText("✕");
+        closeBtn.setTextColor(Color.parseColor("#94A3B8"));
+        closeBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        closeBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        closeBtn.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4));
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        header.addView(closeBtn);
+        root.addView(header);
+
+        // Multi-Selection State (Stores sequence numbers)
+        final Set<String> selectedSeqs = new LinkedHashSet<>();
+
+        // 3-Month Segmented Tabs (Prior, Current, Future)
+        final LinearLayout tabRow = new LinearLayout(this);
+        tabRow.setOrientation(LinearLayout.HORIZONTAL);
+        tabRow.setBackgroundColor(Color.parseColor("#F1F5F9"));
+        tabRow.setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
+
+        final String[] monthKeys = {"PRIOR", "CURRENT", "FUTURE"};
+        final String[] monthLabels = {"🗓️ Jul (Prior)", "⭐ Aug (Current)", "🚀 Sep (Future)"};
+        final TextView[] tabBtns = new TextView[3];
+        final String[] activeTabKey = {"CURRENT"};
+
+        // Selection Control Bar (Select All / None / Count)
+        final LinearLayout selectBar = new LinearLayout(this);
+        selectBar.setOrientation(LinearLayout.HORIZONTAL);
+        selectBar.setBackgroundColor(Color.parseColor("#F8FAFC"));
+        selectBar.setPadding(dpToPx(14), dpToPx(8), dpToPx(14), dpToPx(8));
+        selectBar.setGravity(Gravity.CENTER_VERTICAL);
+
+        final TextView selectAllBtn = new TextView(this);
+        selectAllBtn.setText("☑ Select All");
+        selectAllBtn.setTextColor(Color.parseColor("#4338CA"));
+        selectAllBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        selectAllBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        selectAllBtn.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4));
+        selectAllBtn.setBackground(createRoundedDrawable("#EEF2FF", "#C7D2FE", dpToPx(6)));
+        selectBar.addView(selectAllBtn);
+
+        final TextView deselectBtn = new TextView(this);
+        deselectBtn.setText("☐ Clear");
+        deselectBtn.setTextColor(Color.parseColor("#64748B"));
+        deselectBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        deselectBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        deselectBtn.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4));
+        LinearLayout.LayoutParams dsLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dsLp.setMargins(dpToPx(6), 0, 0, 0);
+        deselectBtn.setLayoutParams(dsLp);
+        selectBar.addView(deselectBtn);
+
+        final TextView selCountText = new TextView(this);
+        selCountText.setText("0 Selected");
+        selCountText.setTextColor(Color.parseColor("#334155"));
+        selCountText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        selCountText.setTypeface(Typeface.DEFAULT_BOLD);
+        selCountText.setGravity(Gravity.END);
+        LinearLayout.LayoutParams scLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        selCountText.setLayoutParams(scLp);
+        selectBar.addView(selCountText);
+
+        final LinearLayout cardsContainer = new LinearLayout(this);
+        cardsContainer.setOrientation(LinearLayout.VERTICAL);
+        cardsContainer.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(12));
+
+        // Sticky Bottom Batch Pull Action Bar
+        final LinearLayout bottomBatchBar = new LinearLayout(this);
+        bottomBatchBar.setOrientation(LinearLayout.VERTICAL);
+        bottomBatchBar.setBackgroundColor(Color.parseColor("#0F172A"));
+        bottomBatchBar.setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(14));
+
+        final TextView batchPullBtn = new TextView(this);
+        batchPullBtn.setTextColor(Color.WHITE);
+        batchPullBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        batchPullBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        batchPullBtn.setGravity(Gravity.CENTER);
+        batchPullBtn.setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(12));
+        batchPullBtn.setBackground(createRoundedDrawable("#0D9488", "#0F766E", dpToPx(10)));
+        bottomBatchBar.addView(batchPullBtn);
+
+        final Runnable updateBatchBar = () -> {
+            int selectedCount = 0;
+            int totalInMonth = 0;
+            for (HssSequenceItem it : allSequences) {
+                if (it.monthKey.equals(activeTabKey[0])) {
+                    totalInMonth++;
+                    if (selectedSeqs.contains(it.seqNum)) {
+                        selectedCount++;
+                    }
+                }
+            }
+
+            selCountText.setText(selectedCount + " / " + totalInMonth + " Selected");
+            if (selectedCount > 0) {
+                batchPullBtn.setText("⚡ Batch Pull (" + selectedCount + ") Selected Pairings on WebSabre");
+                batchPullBtn.setBackground(createRoundedDrawable("#0D9488", "#0F766E", dpToPx(10)));
+                batchPullBtn.setEnabled(true);
+            } else if (totalInMonth > 0) {
+                batchPullBtn.setText("⚡ Pull All (" + totalInMonth + ") in Month from WebSabre");
+                batchPullBtn.setBackground(createRoundedDrawable("#4338CA", "#3730A3", dpToPx(10)));
+                batchPullBtn.setEnabled(true);
+            } else {
+                batchPullBtn.setText("No sequences in this month");
+                batchPullBtn.setBackground(createRoundedDrawable("#64748B", "#475569", dpToPx(10)));
+                batchPullBtn.setEnabled(false);
+            }
+        };
+
+        final Runnable renderCards = () -> {
+            cardsContainer.removeAllViews();
+            int count = 0;
+            for (final HssSequenceItem item : allSequences) {
+                if (!item.monthKey.equals(activeTabKey[0])) continue;
+                count++;
+
+                final boolean isSelected = selectedSeqs.contains(item.seqNum);
+
+                // Card Box
+                LinearLayout card = new LinearLayout(MainActivity.this);
+                card.setOrientation(LinearLayout.VERTICAL);
+                if (isSelected) {
+                    card.setBackground(createRoundedDrawable("#EEF2FF", "#4338CA", dpToPx(12)));
+                } else {
+                    card.setBackground(createRoundedDrawable("#FFFFFF", "#E2E8F0", dpToPx(12)));
+                }
+                card.setPadding(dpToPx(14), dpToPx(12), dpToPx(14), dpToPx(12));
+                LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                cLp.setMargins(0, dpToPx(4), 0, dpToPx(10));
+                card.setLayoutParams(cLp);
+
+                // Top Row: Checkbox Badge + SEQ # + Duration + Credit
+                LinearLayout topRow = new LinearLayout(MainActivity.this);
+                topRow.setOrientation(LinearLayout.HORIZONTAL);
+                topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+                // Checkbox pill
+                TextView chkBadge = new TextView(MainActivity.this);
+                chkBadge.setText(isSelected ? "✓ SELECTED" : "○ SELECT");
+                chkBadge.setTextColor(isSelected ? Color.WHITE : Color.parseColor("#475569"));
+                chkBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+                chkBadge.setTypeface(Typeface.DEFAULT_BOLD);
+                if (isSelected) {
+                    chkBadge.setBackground(createRoundedDrawable("#4338CA", "#3730A3", dpToPx(6)));
+                } else {
+                    chkBadge.setBackground(createRoundedDrawable("#F1F5F9", "#CBD5E1", dpToPx(6)));
+                }
+                chkBadge.setPadding(dpToPx(6), dpToPx(3), dpToPx(6), dpToPx(3));
+                topRow.addView(chkBadge);
+
+                TextView seqBadge = new TextView(MainActivity.this);
+                seqBadge.setText(" SEQ #" + item.seqNum);
+                seqBadge.setTextColor(Color.parseColor("#4338CA"));
+                seqBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                seqBadge.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                sbLp.setMargins(dpToPx(6), 0, 0, 0);
+                seqBadge.setLayoutParams(sbLp);
+                topRow.addView(seqBadge);
+
+                TextView durBadge = new TextView(MainActivity.this);
+                durBadge.setText(" " + item.duration + " • " + item.base);
+                durBadge.setTextColor(Color.parseColor("#64748B"));
+                durBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+                durBadge.setTypeface(Typeface.DEFAULT_BOLD);
+                LinearLayout.LayoutParams dLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+                dLp.setMargins(dpToPx(4), 0, 0, 0);
+                durBadge.setLayoutParams(dLp);
+                topRow.addView(durBadge);
+
+                if (!item.credit.isEmpty()) {
+                    TextView crdBadge = new TextView(MainActivity.this);
+                    crdBadge.setText(item.credit);
+                    crdBadge.setTextColor(Color.parseColor("#0F172A"));
+                    crdBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                    crdBadge.setTypeface(Typeface.DEFAULT_BOLD);
+                    topRow.addView(crdBadge);
+                }
+                card.addView(topRow);
+
+                // Dates & Layovers
+                TextView dateText = new TextView(MainActivity.this);
+                dateText.setText("📅 " + item.dateRangeText + (item.layovers.isEmpty() ? "" : ("  |  📍 " + item.layovers)));
+                dateText.setTextColor(Color.parseColor("#334155"));
+                dateText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                dateText.setTypeface(Typeface.DEFAULT_BOLD);
+                LinearLayout.LayoutParams dtLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                dtLp.setMargins(0, dpToPx(6), 0, dpToPx(6));
+                dateText.setLayoutParams(dtLp);
+                card.addView(dateText);
+
+                // Toggle Selection on Card Click
+                card.setClickable(true);
+                card.setFocusable(true);
+                card.setOnClickListener(v -> {
+                    if (selectedSeqs.contains(item.seqNum)) {
+                        selectedSeqs.remove(item.seqNum);
+                    } else {
+                        selectedSeqs.add(item.seqNum);
+                    }
+                    updateBatchBar.run();
+                    for (int cIdx = 0; cIdx < cardsContainer.getChildCount(); cIdx++) {
+                        View ch = cardsContainer.getChildAt(cIdx);
+                        if (ch.getTag() != null && ch.getTag().equals(item.seqNum)) {
+                            boolean nowSel = selectedSeqs.contains(item.seqNum);
+                            ch.setBackground(createRoundedDrawable(nowSel ? "#EEF2FF" : "#FFFFFF", nowSel ? "#4338CA" : "#E2E8F0", dpToPx(12)));
+                            LinearLayout tr = (LinearLayout) ((ViewGroup) ch).getChildAt(0);
+                            TextView cb = (TextView) tr.getChildAt(0);
+                            cb.setText(nowSel ? "✓ SELECTED" : "○ SELECT");
+                            cb.setTextColor(nowSel ? Color.WHITE : Color.parseColor("#475569"));
+                            cb.setBackground(createRoundedDrawable(nowSel ? "#4338CA" : "#F1F5F9", nowSel ? "#3730A3" : "#CBD5E1", dpToPx(6)));
+                        }
+                    }
+                });
+                card.setTag(item.seqNum);
+
+                // Individual 1-Tap Pull Action Button
+                TextView execBtn = new TextView(MainActivity.this);
+                String cmd = "HSS/" + item.seat + "/" + item.seqNum + (item.cmdDate.isEmpty() ? "" : ("/" + item.cmdDate));
+                execBtn.setText("⚡ Pull " + cmd);
+                execBtn.setTextColor(Color.WHITE);
+                execBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+                execBtn.setTypeface(Typeface.DEFAULT_BOLD);
+                execBtn.setGravity(Gravity.CENTER);
+                execBtn.setBackground(createRoundedDrawable("#0D9488", "#0F766E", dpToPx(8)));
+                execBtn.setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
+                LinearLayout.LayoutParams exLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                exLp.setMargins(0, dpToPx(4), 0, 0);
+                execBtn.setLayoutParams(exLp);
+                execBtn.setOnClickListener(v -> {
+                    executeAutonomousHssCapture(cmd);
+                    dialog.dismiss();
+                });
+                card.addView(execBtn);
+
+                cardsContainer.addView(card);
+            }
+
+            if (count == 0) {
+                TextView emptyTv = new TextView(MainActivity.this);
+                emptyTv.setText("No calendar sequences found for this month.");
+                emptyTv.setTextColor(Color.parseColor("#94A3B8"));
+                emptyTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                emptyTv.setGravity(Gravity.CENTER);
+                emptyTv.setPadding(dpToPx(16), dpToPx(32), dpToPx(16), dpToPx(32));
+                cardsContainer.addView(emptyTv);
+            }
+
+            updateBatchBar.run();
+        };
+
+        // Select All Button Handler
+        selectAllBtn.setOnClickListener(v -> {
+            for (HssSequenceItem it : allSequences) {
+                if (it.monthKey.equals(activeTabKey[0])) {
+                    selectedSeqs.add(it.seqNum);
+                }
+            }
+            renderCards.run();
+        });
+
+        // Deselect All Button Handler
+        deselectBtn.setOnClickListener(v -> {
+            for (HssSequenceItem it : allSequences) {
+                if (it.monthKey.equals(activeTabKey[0])) {
+                    selectedSeqs.remove(it.seqNum);
+                }
+            }
+            renderCards.run();
+        });
+
+        // Month Tabs Construction
+        for (int i = 0; i < 3; i++) {
+            final int idx = i;
+            final String k = monthKeys[i];
+            TextView tab = new TextView(this);
+            tab.setText(monthLabels[i]);
+            tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            tab.setTypeface(Typeface.DEFAULT_BOLD);
+            tab.setGravity(Gravity.CENTER);
+            tab.setClickable(true);
+            tab.setFocusable(true);
+            tab.setPadding(dpToPx(8), dpToPx(12), dpToPx(8), dpToPx(12));
+            LinearLayout.LayoutParams tL = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+            tL.setMargins(dpToPx(3), 0, dpToPx(3), 0);
+            tab.setLayoutParams(tL);
+
+            if (k.equals(activeTabKey[0])) {
+                tab.setTextColor(Color.WHITE);
+                tab.setBackground(createRoundedDrawable("#4338CA", "#3730A3", dpToPx(8)));
+            } else {
+                tab.setTextColor(Color.parseColor("#475569"));
+                tab.setBackground(createRoundedDrawable("#FFFFFF", "#CBD5E1", dpToPx(8)));
+            }
+
+            tab.setOnClickListener(v -> {
+                activeTabKey[0] = k;
+                for (int j = 0; j < 3; j++) {
+                    if (monthKeys[j].equals(activeTabKey[0])) {
+                        tabBtns[j].setTextColor(Color.WHITE);
+                        tabBtns[j].setBackground(createRoundedDrawable("#4338CA", "#3730A3", dpToPx(8)));
+                    } else {
+                        tabBtns[j].setTextColor(Color.parseColor("#475569"));
+                        tabBtns[j].setBackground(createRoundedDrawable("#FFFFFF", "#CBD5E1", dpToPx(8)));
+                    }
+                }
+                renderCards.run();
+            });
+
+            tabBtns[i] = tab;
+            tabRow.addView(tab);
+        }
+        root.addView(tabRow);
+        root.addView(selectBar);
+
+        // ScrollView for Cards
+        ScrollView sv = new ScrollView(this);
+        sv.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+        sv.addView(cardsContainer);
+        root.addView(sv);
+
+        // Batch Pull Button Click Handler (Executes full TAFB/MD sequential capture for each HSS)
+        batchPullBtn.setOnClickListener(v -> {
+            final List<String> toPullCmds = new ArrayList<>();
+            for (HssSequenceItem it : allSequences) {
+                if (it.monthKey.equals(activeTabKey[0])) {
+                    if (selectedSeqs.contains(it.seqNum) || selectedSeqs.isEmpty()) {
+                        String cmd = "HSS/" + it.seat + "/" + it.seqNum + (it.cmdDate.isEmpty() ? "" : ("/" + it.cmdDate));
+                        toPullCmds.add(cmd);
+                    }
+                }
+            }
+
+            if (toPullCmds.isEmpty()) {
+                Toast.makeText(MainActivity.this, "No sequences to pull.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            executeBatchHssCapture(toPullCmds);
+            dialog.dismiss();
+        });
+
+        root.addView(bottomBatchBar);
+
+        // Initial Render
+        renderCards.run();
+
+        dialog.setContentView(root);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, (int) (getResources().getDisplayMetrics().heightPixels * 0.82));
+            dialog.getWindow().setGravity(Gravity.BOTTOM);
+        }
+        dialog.show();
+    }
+
+
+
+
 
     private void executeMultiStepLoginMacro() {
         Toast.makeText(this, "Logging into DECS...", Toast.LENGTH_SHORT).show();
@@ -748,6 +1328,65 @@ public class MainActivity extends BridgeActivity {
             "        scr.showLineNumber();" +
             "        return;" +
             "      }" +
+            "      if (cmd === 'CTRL_HOME' || cmd === 'HOME') {" +
+            "        var target = document.querySelector('canvas') || document.activeElement || document.body;" +
+            "        var evOpts = { key: 'Home', code: 'Home', keyCode: 36, which: 36, ctrlKey: true, bubbles: true, cancelable: true };" +
+            "        if (target) {" +
+            "          target.dispatchEvent(new KeyboardEvent('keydown', evOpts));" +
+            "          target.dispatchEvent(new KeyboardEvent('keyup', evOpts));" +
+            "        }" +
+            "        window.dispatchEvent(new KeyboardEvent('keydown', evOpts));" +
+            "        window.dispatchEvent(new KeyboardEvent('keyup', evOpts));" +
+            "        if (st.home) {" +
+            "          try { st.home(); } catch(e) {}" +
+            "        }" +
+            "        if (scr) {" +
+            "          try {" +
+            "            if (scr.home) scr.home();" +
+            "            scr.setCursor(0, 0);" +
+            "            scr.setSOM(0, 0);" +
+            "            scr.setCurrentLineCurrentColumn(0, 0);" +
+            "            scr.showLineNumber();" +
+            "          } catch(e) {}" +
+            "        }" +
+            "        return;" +
+            "      }" +
+            "      if (cmd === 'SHIFT_DELETE' || cmd === 'CLEAR' || cmd === 'CLEAR_PAGE') {" +
+            "        if (st.clearScreen) {" +
+            "          try { st.clearScreen(); } catch(e) {}" +
+            "        } else if (st.eraseScreen) {" +
+            "          try { st.eraseScreen(); } catch(e) {}" +
+            "        } else if (st.eraseAll) {" +
+            "          try { st.eraseAll(); } catch(e) {}" +
+            "        } else if (scr && scr.eraseScreen) {" +
+            "          try { scr.eraseScreen(); } catch(e) {}" +
+            "        } else if (scr && scr.clear) {" +
+            "          try { scr.clear(); } catch(e) {}" +
+            "        }" +
+            "        var target = document.querySelector('canvas') || document.activeElement || document.body;" +
+            "        var evOpts = { key: 'Delete', code: 'Delete', keyCode: 46, which: 46, shiftKey: true, bubbles: true, cancelable: true };" +
+            "        if (target) {" +
+            "          target.dispatchEvent(new KeyboardEvent('keydown', evOpts));" +
+            "          target.dispatchEvent(new KeyboardEvent('keyup', evOpts));" +
+            "        }" +
+            "        window.dispatchEvent(new KeyboardEvent('keydown', evOpts));" +
+            "        window.dispatchEvent(new KeyboardEvent('keyup', evOpts));" +
+            "        document.dispatchEvent(new KeyboardEvent('keydown', evOpts));" +
+            "        document.dispatchEvent(new KeyboardEvent('keyup', evOpts));" +
+            "        if (scr) {" +
+            "          try {" +
+            "            scr.setCursor(0, 0);" +
+            "            scr.setSOM(0, 0);" +
+            "            scr.setCurrentLineCurrentColumn(0, 0);" +
+            "            scr.showLineNumber();" +
+            "          } catch(e) {}" +
+            "        }" +
+            "        var inp = document.getElementById('sabreInput') || document.querySelector('input');" +
+            "        if (inp) {" +
+            "          inp.value = '';" +
+            "        }" +
+            "        return;" +
+            "      }" +
             "      for (var i = 0; i < cmd.length; i++) {" +
             "        var ch = cmd[i];" +
             "        if (ch === '^') {" +
@@ -779,14 +1418,23 @@ public class MainActivity extends BridgeActivity {
             "      function sleep(ms) {" +
             "        return new Promise(function(r) { setTimeout(r, ms); });" +
             "      }" +
+            "      function isFinished(text) {" +
+            "        if (!text) return false;" +
+            "        var upper = text.toUpperCase();" +
+            "        var isHss = hiCommand.toUpperCase().startsWith('HSS');" +
+            "        if (isHss && (upper.includes('TAFB') || upper.includes('TAXABLE EXP') || upper.includes('TAXABLE'))) {" +
+            "          return true;" +
+            "        }" +
+            "        return upper.includes('BOTTOM OF') || upper.includes('NO MORE DATA') || upper.includes('END OF DISP') || upper.includes('END F DISP') || upper.includes('END OF SCROL') || upper.includes('ENDOF SCROL') || upper.includes('NO MORE SCROLL') || upper.includes('COMMAND COMPLETE') || upper.includes('LAST PAGE') || upper.includes('NO MORE');" +
+            "      }" +
             "      (async function() {" +
             "        var initialScreen = st.getString ? st.getString() : '';" +
             "        window.sendDecsKey(hiCommand);" +
             "        var page1Text = '';" +
-            "        for (var w = 0; w < 18; w++) {" +
+            "        for (var w = 0; w < 20; w++) {" +
             "          await sleep(200);" +
             "          var cur = st.getString ? st.getString() : '';" +
-            "          if (cur && cur.length > 50 && (cur !== initialScreen || cur.includes('MONTH ENDING') || cur.includes('DD ST') || cur.includes('GUAR') || cur.includes('FLT TIME'))) {" +
+            "          if (cur && cur.length > 50 && (cur !== initialScreen || cur.includes('MONTH ENDING') || cur.includes('DD ST') || cur.includes('GUAR') || cur.includes('FLT TIME') || cur.includes('SEQ ') || cur.includes('BASE ') || cur.includes('SKD ') || cur.includes('ACT ') || cur.includes('DOM '))) {" +
             "            page1Text = cur;" +
             "            break;" +
             "          }" +
@@ -796,15 +1444,16 @@ public class MainActivity extends BridgeActivity {
             "        }" +
             "        var pages = [page1Text];" +
             "        var lastScreen = page1Text;" +
-            "        var upper = (page1Text || '').toUpperCase();" +
-            "        var isFinished = upper.includes('BOTTOM OF') || upper.includes('NO MORE DATA') || upper.includes('END OF DISP') || upper.includes('END F DISP') || upper.includes('END OF SCROL') || upper.includes('COMMAND COMPLETE');" +
-            "        if (!isFinished) {" +
-            "          for (var p = 1; p < 6; p++) {" +
-            "            await sleep(1000);" +
-            "            var nextKey = (upper.includes('MORE? (ENTER Y)') || upper.includes('MORE (Y/N)')) ? 'Y' : 'MD';" +
+            "        if (!isFinished(page1Text)) {" +
+            "          for (var p = 1; p < 10; p++) {" +
+            "            await sleep(600);" +
+            "            window.sendDecsKey('SHIFT_ENTER');" +
+            "            await sleep(350);" +
+            "            var upper = (lastScreen || '').toUpperCase();" +
+            "            var nextKey = (upper.includes('MORE? (ENTER Y)') || upper.includes('MORE (Y/N)') || upper.includes('MORE? (Y/N)')) ? 'Y' : 'MD';" +
             "            window.sendDecsKey(nextKey);" +
             "            var nextText = '';" +
-            "            for (var w = 0; w < 15; w++) {" +
+            "            for (var w = 0; w < 18; w++) {" +
             "              await sleep(200);" +
             "              var cur = st.getString ? st.getString() : '';" +
             "              if (cur && cur.length > 50 && cur !== lastScreen) {" +
@@ -817,8 +1466,7 @@ public class MainActivity extends BridgeActivity {
             "            }" +
             "            pages.push(nextText);" +
             "            lastScreen = nextText;" +
-            "            upper = nextText.toUpperCase();" +
-            "            if (upper.includes('BOTTOM OF') || upper.includes('NO MORE DATA') || upper.includes('END OF DISP') || upper.includes('END F DISP') || upper.includes('END OF SCROL') || upper.includes('COMMAND COMPLETE')) {" +
+            "            if (isFinished(nextText)) {" +
             "              break;" +
             "            }" +
             "          }" +
@@ -831,9 +1479,49 @@ public class MainActivity extends BridgeActivity {
             "      })();" +
             "    });" +
             "  };" +
+            "  window.captureSingleHssFully = function(hssCommand) {" +
+            "    return window.runAutonomousHiCapture(hssCommand);" +
+            "  };" +
+            "  window.runBatchHssCapture = function(cmdList) {" +
+            "    return new Promise(function(resolve) {" +
+            "      function sleep(ms) {" +
+            "        return new Promise(function(r) { setTimeout(r, ms); });" +
+            "      }" +
+            "      (async function() {" +
+            "        for (var i = 0; i < cmdList.length; i++) {" +
+            "          var cmd = cmdList[i];" +
+            "          await window.runAutonomousHiCapture(cmd);" +
+            "          await sleep(1200);" +
+            "        }" +
+            "        if (window.AndroidPortal && window.AndroidPortal.onBatchCaptureComplete) {" +
+            "          window.AndroidPortal.onBatchCaptureComplete(cmdList.length);" +
+            "        }" +
+            "        resolve({ success: true, count: cmdList.length });" +
+            "      })();" +
+            "    });" +
+            "  };" +
             "})();";
 
         portalWebView.evaluateJavascript(script, null);
+    }
+
+    private void executeAutonomousHssCapture(final String command) {
+        if (portalWebView == null) return;
+        Toast.makeText(this, "⚡ Pulling " + command + " & checking TAFB/MD...", Toast.LENGTH_SHORT).show();
+        String clean = command.replace("\\", "\\\\").replace("'", "\\'");
+        String js = "if (window.runAutonomousHiCapture) { window.runAutonomousHiCapture('" + clean + "'); }";
+        portalWebView.evaluateJavascript(js, null);
+    }
+
+    private void executeBatchHssCapture(final List<String> commands) {
+        if (portalWebView == null || commands.isEmpty()) return;
+        Toast.makeText(this, "⚡ Batch pulling " + commands.size() + " pairing(s) with full TAFB/MD capture...", Toast.LENGTH_LONG).show();
+        org.json.JSONArray arr = new org.json.JSONArray();
+        for (String c : commands) {
+            arr.put(c);
+        }
+        String js = "if (window.runBatchHssCapture) { window.runBatchHssCapture(" + arr.toString() + "); }";
+        portalWebView.evaluateJavascript(js, null);
     }
 
     private void sendDirectDecsCommand(String cmd) {
@@ -850,7 +1538,8 @@ public class MainActivity extends BridgeActivity {
             "}";
 
         portalWebView.evaluateJavascript(js, null);
-        Toast.makeText(this, "Sent: " + cmd, Toast.LENGTH_SHORT).show();
+        String label = cmd.equals("CTRL_HOME") ? "⌂ Home (Ctrl+Home)" : (cmd.equals("SHIFT_DELETE") ? "⌧ Clear Page (Shift+Delete)" : (cmd.equals("SHIFT_ENTER") ? "↵ Line Down" : cmd));
+        Toast.makeText(this, "Sent: " + label, Toast.LENGTH_SHORT).show();
     }
 
     private void extractScheduleAndImport() {
@@ -891,8 +1580,88 @@ public class MainActivity extends BridgeActivity {
             mainWv.evaluateJavascript(triggerScript, null);
         }
 
-        Toast.makeText(MainActivity.this, "✓ " + command + " (" + pageCount + " pages) Captured!", Toast.LENGTH_LONG).show();
-        hidePortalView();
+        Toast.makeText(MainActivity.this, "✓ " + command + " (" + pageCount + " pages) Merged to Calendar!", Toast.LENGTH_SHORT).show();
+        // Do NOT call hidePortalView(); user stays in DECS terminal!
+    }
+
+    private void showBatchCompletionDialog(final int totalCount) {
+        final android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(createRoundedDrawable("#0F172A", "#1E293B", dpToPx(16)));
+        root.setPadding(dpToPx(20), dpToPx(20), dpToPx(20), dpToPx(20));
+
+        // Header
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView iconTv = new TextView(this);
+        iconTv.setText("🎉");
+        iconTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        header.addView(iconTv);
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText("  All (" + totalCount + ") Pairings Captured!");
+        titleTv.setTextColor(Color.WHITE);
+        titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        titleTv.setTypeface(Typeface.DEFAULT_BOLD);
+        header.addView(titleTv);
+
+        root.addView(header);
+
+        // Body message
+        TextView msgTv = new TextView(this);
+        msgTv.setText("Successfully pulled all " + totalCount + " selected HSS pairings with full multi-page flight legs, layovers, and TAFB details. All calendar trips are fully updated.");
+        msgTv.setTextColor(Color.parseColor("#94A3B8"));
+        msgTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        msgTv.setPadding(0, dpToPx(12), 0, dpToPx(16));
+        root.addView(msgTv);
+
+        // Action Buttons Row
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView stayBtn = new TextView(this);
+        stayBtn.setText("Stay in DECS");
+        stayBtn.setTextColor(Color.parseColor("#CBD5E1"));
+        stayBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        stayBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        stayBtn.setGravity(Gravity.CENTER);
+        stayBtn.setBackground(createRoundedDrawable("#1E293B", "#334155", dpToPx(8)));
+        stayBtn.setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10));
+        LinearLayout.LayoutParams stayLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        stayLp.setMargins(0, 0, dpToPx(6), 0);
+        stayBtn.setLayoutParams(stayLp);
+        stayBtn.setOnClickListener(v -> dialog.dismiss());
+        btnRow.addView(stayBtn);
+
+        TextView viewCalBtn = new TextView(this);
+        viewCalBtn.setText("View Schedule");
+        viewCalBtn.setTextColor(Color.WHITE);
+        viewCalBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        viewCalBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        viewCalBtn.setGravity(Gravity.CENTER);
+        viewCalBtn.setBackground(createRoundedDrawable("#4338CA", "#3730A3", dpToPx(8)));
+        viewCalBtn.setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10));
+        LinearLayout.LayoutParams calLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        calLp.setMargins(dpToPx(6), 0, 0, 0);
+        viewCalBtn.setLayoutParams(calLp);
+        viewCalBtn.setOnClickListener(v -> {
+            dialog.dismiss();
+            hidePortalView();
+        });
+        btnRow.addView(viewCalBtn);
+
+        root.addView(btnRow);
+
+        dialog.setContentView(root);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        }
+        dialog.show();
     }
 
     @Override
@@ -945,6 +1714,16 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void run() {
                     handleCapturedSchedule(command, text, pages);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void onBatchCaptureComplete(final int totalCount) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    showBatchCompletionDialog(totalCount);
                 }
             });
         }

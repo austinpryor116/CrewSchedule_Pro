@@ -14,8 +14,10 @@ import PortalBrowserStudio from "../components/PortalBrowser/PortalBrowserStudio
 import ScheduleImportReviewModal from "../components/ImportModal/ScheduleImportReviewModal";
 import CockpitScannerStudio from "../components/Scanner/CockpitScannerStudio";
 import ReserveStudio from "../components/Reserve/ReserveStudio";
+import ChatContainer from "../components/chat/ChatContainer";
+import { useMessageStore } from "../store/useMessageStore";
 
-import { parseRawSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime } from "../lib/parser";
+import { parseRawSchedule, parseHssSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime } from "../lib/parser";
 import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "../types/index";
 
 import {
@@ -35,8 +37,10 @@ import {
   Camera,
   PhoneCall,
   Layers,
+  MessageSquare,
 } from "lucide-react";
 import HSSSequencesModal from "@/components/PortalBrowser/HSSSequencesModal";
+
 
 export default function Home() {
   const isHydrated = useCrewStore((state) => state.isHydrated);
@@ -54,7 +58,13 @@ export default function Home() {
   const setIsHssModalOpen = useCrewStore((state) => state.setIsHssModalOpen);
   const setSelectedSequenceId = useCrewStore((state) => state.setSelectedSequenceId);
   const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
+  const mergeHssIntoSequence = useCrewStore((state) => state.mergeHssIntoSequence);
+  const addSequences = useCrewStore((state) => state.addSequences);
   const setOpenSequences = useCrewStore((state) => state.setOpenSequences);
+
+  const unreadChatCount = useMessageStore((state) =>
+    state.channels.reduce((sum, ch) => sum + (ch.unreadCount || 0), 0)
+  );
 
   const droppedSeqsCount = sequences.filter((s) => s.isDropped || s.statusTag === "DROP" || s.statusTag === "DTS DROP").length;
 
@@ -80,6 +90,7 @@ export default function Home() {
       console.log("[Global] Received native schedule import event:", text.length, "bytes");
 
       try {
+        // 1. Check for Open Time
         if (text.includes("OPEN TIME") || text.includes("POSSIBLE TRIPS") || text.includes("SEQ/DATE") || text.includes("N4/")) {
           const parsedOpen = parseN4OpenTime(text);
           if (parsedOpen && parsedOpen.length > 0) {
@@ -88,6 +99,24 @@ export default function Home() {
           }
         }
 
+        // 2. Check for HSS Sequence text (Enrich silently without opening review modal or leaving DECS)
+        if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("TAFB") || text.includes("FDPT") || text.includes("BASE "))) {
+          const parsedHssTrips = parseHssSchedule(text);
+          if (parsedHssTrips && parsedHssTrips.length > 0) {
+            parsedHssTrips.forEach((hssTrip) => {
+              const existing = sequences.find((s) => s.sequenceNumber === hssTrip.sequenceNumber);
+              if (existing) {
+                mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
+              } else {
+                addSequences([hssTrip]);
+              }
+            });
+            console.log("[Global] Silently enriched HSS sequence with flight legs & layovers into calendar store.");
+            return;
+          }
+        }
+
+        // 3. Full Monthly HI1 Schedule (Opens Review Modal for whole-month import)
         const parsedSeqs = parseRawSchedule(text);
         if (parsedSeqs && parsedSeqs.length > 0) {
           const meta = parseMonthlyHIMetadata(text);
@@ -110,7 +139,7 @@ export default function Home() {
     return () => {
       window.removeEventListener("nativeScheduleImport", handleGlobalNativeImport);
     };
-  }, [importMonthlyHISchedule, setOpenSequences]);
+  }, [importMonthlyHISchedule, mergeHssIntoSequence, addSequences, sequences, setOpenSequences]);
 
   if (!isHydrated) {
     return (
@@ -126,15 +155,17 @@ export default function Home() {
     );
   }
 
-
   const mainNavItems = [
     { id: "calendar", name: "Schedule", icon: CalendarIcon },
     { id: "briefing", name: "Briefing", icon: Plane },
+    { id: "chat", name: "Crew Chat", icon: MessageSquare, badge: unreadChatCount },
     { id: "portal", name: "Portal", icon: Globe },
     { id: "tools", name: "Tools", icon: SlidersHorizontal },
   ];
 
+
   const toolsItems = [
+    { id: "chat", name: "Crew Comms", icon: MessageSquare, desc: "E2EE Pairings & Base Chat" },
     { id: "reserve", name: "Reserve List", icon: PhoneCall, desc: "N6D Callout Queue & Roster" },
     { id: "hss-modal", name: "HSS Sequences", icon: Layers, desc: "Monthly Legs & DECS Roster" },
     { id: "scanner", name: "Cockpit Scanner", icon: Camera, desc: "Aircraft QR & FMS OOOI OCR" },
@@ -159,18 +190,23 @@ export default function Home() {
         <div className={`h-full w-full ${activeTab === "briefing" ? "block" : "hidden"}`}>
           <BriefingView />
         </div>
+        <div className={`h-full w-full ${activeTab === "chat" ? "block" : "hidden"}`}>
+          <ChatContainer />
+        </div>
         
         {/* Mount Portal only when active so background iframes/SSO do not cause WebView glitches */}
         {activeTab === "portal" && (
-          <div className="h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
+          <div className="h-full w-full overflow-y-auto pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
             <PortalBrowserStudio />
           </div>
         )}
 
         {/* Other tabs unmount normally */}
-        {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "portal" && (
-          <div className="h-full w-full overflow-y-auto pt-[max(2.75rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
+        {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "chat" && activeTab !== "portal" && (
+          <div className="h-full w-full overflow-y-auto pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
             {activeTab === "reserve" && <ReserveStudio />}
+
+
             {activeTab === "scanner" && <CockpitScannerStudio />}
             {activeTab === "logbook" && <LogbookStudio />}
             {activeTab === "revisions" && <RevisionStudio />}
@@ -181,6 +217,7 @@ export default function Home() {
           </div>
         )}
       </div>
+
 
       {/* Tools Modal Mobile Bottom Sheet */}
       {showToolsModal && (
@@ -313,12 +350,20 @@ export default function Home() {
                   : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/50"
               }`}
             >
-              <Icon className={`w-5 h-5 ${isActive ? "text-sky-600 stroke-[2.5]" : "text-slate-500 stroke-[1.75]"}`} />
+              <div className="relative">
+                <Icon className={`w-5 h-5 ${isActive ? "text-sky-600 stroke-[2.5]" : "text-slate-500 stroke-[1.75]"}`} />
+                {item.badge && item.badge > 0 ? (
+                  <span className="absolute -top-1 -right-2 px-1 py-0.2 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] min-w-[14px] text-center leading-tight shadow">
+                    {item.badge}
+                  </span>
+                ) : null}
+              </div>
               <span className="text-[11px] tracking-tight font-extrabold leading-none">{item.name}</span>
             </button>
           );
         })}
       </nav>
+
     </main>
   );
 }

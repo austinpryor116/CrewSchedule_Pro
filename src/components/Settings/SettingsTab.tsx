@@ -56,26 +56,15 @@ import {
 const AIRLINE_BASES = [
   { code: "ORD", name: "Chicago O'Hare (ORD)" },
   { code: "DFW", name: "Dallas/Fort Worth (DFW)" },
-  { code: "CLT", name: "Charlotte Douglas (CLT)" },
   { code: "MIA", name: "Miami International (MIA)" },
   { code: "PHX", name: "Phoenix Sky Harbor (PHX)" },
-  { code: "PHL", name: "Philadelphia (PHL)" },
-  { code: "LGA", name: "New York LaGuardia (LGA)" },
-  { code: "JFK", name: "New York JFK (JFK)" },
-  { code: "DCA", name: "Washington Reagan (DCA)" },
-  { code: "LAX", name: "Los Angeles (LAX)" },
-  { code: "BOS", name: "Boston Logan (BOS)" },
-  { code: "SFO", name: "San Francisco (SFO)" },
 ];
 
+
 const FLEET_EQUIPMENT = [
-  { code: "E175", name: "Embraer 170 / 175 (E175)" },
-  { code: "B737", name: "Boeing 737-800 / MAX (B737)" },
-  { code: "A321", name: "Airbus A319 / A320 / A321 (A320)" },
-  { code: "B787", name: "Boeing 787 Dreamliner (B787)" },
-  { code: "B777", name: "Boeing 777 (B777)" },
-  { code: "CRJ9", name: "Bombardier CRJ-700 / 900 (CRJ9)" },
+  { code: "E175", name: "Embraer 170 / 175 (E170 / E175)" },
 ];
+
 
 export default function SettingsTab() {
   const userProfile = useCrewStore((state) => state.userProfile);

@@ -6,7 +6,9 @@ import {
   ScheduleSnapshot, 
   LogbookEntry,
   SubscribedCalendar,
-  PersonalCalendarEvent
+  PersonalCalendarEvent,
+  ChatMessage,
+  ChatChannel
 } from '../types';
 
 export interface AppSettings {
@@ -23,6 +25,8 @@ export class CrewScheduleDB extends Dexie {
   subscribedCalendars!: Table<SubscribedCalendar, string>;
   personalEvents!: Table<PersonalCalendarEvent, string>;
   settings!: Table<AppSettings, string>;
+  messages!: Table<ChatMessage, string>;
+  channels!: Table<ChatChannel, string>;
 
   constructor() {
     super('CrewScheduleDB');
@@ -36,7 +40,21 @@ export class CrewScheduleDB extends Dexie {
       personalEvents: 'id',
       settings: 'key'
     });
+
+    this.version(2).stores({
+      sequences: 'id',
+      openSequences: 'id, startDate',
+      vacations: 'id',
+      snapshots: 'id',
+      logbookEntries: 'id, date',
+      subscribedCalendars: 'id',
+      personalEvents: 'id',
+      settings: 'key',
+      messages: 'id, channelId, timestamp, status, [channelId+timestamp]',
+      channels: 'id, type, base, sequenceNumber, updatedAt'
+    });
   }
 }
 
 export const db = new CrewScheduleDB();
+

@@ -46,16 +46,110 @@ function toTitleCase(str: string): string {
 
 /**
  * Parses aviation time HH.MM into total minutes.
- * Examples: "15.57" -> 957, "01.35" -> 95
+ * Examples: "15.57" -> 957, "01.35" -> 95, "2.07" -> 127
+ * Rejects non-time integer tokens like "25", "54", "0F".
  */
 export function parseAviationTime(timeStr: string): number {
   if (!timeStr) return 0;
-  const parts = timeStr.split('.');
+  const clean = timeStr.trim();
+  const parts = clean.split('.');
   if (parts.length === 2) {
-    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+    const hours = parseInt(parts[0], 10) || 0;
+    const mins = parseInt(parts[1], 10) || 0;
+    if (hours > 18 || mins >= 60) return 0;
+    return hours * 60 + mins;
   }
-  // Fallback for flat numbers
-  return Math.round(parseFloat(timeStr) * 60);
+  // If it's a 4-digit aviation time string e.g. "0230"
+  if (/^\d{4}$/.test(clean)) {
+    const h = parseInt(clean.substring(0, 2), 10);
+    const m = parseInt(clean.substring(2, 4), 10);
+    if (h <= 18 && m < 60) return h * 60 + m;
+  }
+  // Single number without decimal:
+  // Only valid if <= 16 hours (e.g. "2" -> 120m). 
+  // Flat tokens like "25", "54" from DECS subfleets are discarded as non-times.
+  const val = parseFloat(clean);
+  if (!isNaN(val) && val > 0 && val <= 16) {
+    return Math.round(val * 60);
+  }
+  return 0;
+}
+
+/**
+ * Sanitizes a flight leg, recalculating duration from dep/arr times if corrupted or defaulting to 25h/1500m
+ */
+export function sanitizeFlightLeg(leg: FlightLeg): FlightLeg {
+  let block = leg.blockMinutes;
+  
+  // If block minutes is missing, 0, or absurdly large (> 600 min / 10 hours for domestic regional flight)
+  if (!block || block > 600 || block === 1500) {
+    const depTimeClean = (leg.depTime || "").replace(":", "").substring(0, 4);
+    const arrTimeClean = (leg.arrTime || "").replace(":", "").substring(0, 4);
+    if (depTimeClean.length === 4 && arrTimeClean.length === 4) {
+      const calc = calculateBlockMinutes(depTimeClean, arrTimeClean);
+      if (calc > 0 && calc <= 600) {
+        block = calc;
+      }
+    }
+  }
+
+  let actBlock = leg.actualBlockMinutes;
+  if (actBlock !== undefined && (actBlock > 600 || actBlock === 1500)) {
+    const actDep = (leg.actualDepTime || leg.depTime || "").replace(":", "").substring(0, 4);
+    const actArr = (leg.actualArrTime || leg.arrTime || "").replace(":", "").substring(0, 4);
+    if (actDep.length === 4 && actArr.length === 4) {
+      const calc = calculateBlockMinutes(actDep, actArr);
+      if (calc > 0 && calc <= 600) {
+        actBlock = calc;
+      }
+    }
+  }
+
+  return {
+    ...leg,
+    blockMinutes: block || 0,
+    ...(actBlock !== undefined && { actualBlockMinutes: actBlock }),
+  };
+}
+
+/**
+ * Sanitizes a full sequence trip, ensuring all duty periods and legs have clean non-25h block times
+ */
+export function sanitizeSequenceTrip(seq: SequenceTrip): SequenceTrip {
+  let totalBlock = 0;
+  const dutyPeriods = (seq.dutyPeriods || []).map((dp, dpIdx) => {
+    let dpBlock = 0;
+    const legs = (dp.legs || []).map((l) => {
+      const cleanLeg = sanitizeFlightLeg(l);
+      dpBlock += (cleanLeg.actualBlockMinutes !== undefined && cleanLeg.actualBlockMinutes > 0)
+        ? cleanLeg.actualBlockMinutes
+        : cleanLeg.blockMinutes;
+      return cleanLeg;
+    });
+
+    totalBlock += dpBlock;
+
+    let dutyMins = dp.dutyMinutes;
+    if (!dutyMins || dutyMins > 1440 || dutyMins === 1500) {
+      const repM = timeToMinutes(dp.reportTime);
+      let relM = timeToMinutes(dp.releaseTime);
+      if (relM < repM) relM += 1440;
+      dutyMins = relM - repM;
+    }
+
+    return {
+      ...dp,
+      dayIndex: dp.dayIndex !== undefined ? dp.dayIndex : dpIdx,
+      dutyMinutes: dutyMins,
+      legs,
+    };
+  });
+
+  return {
+    ...seq,
+    totalBlockMinutes: totalBlock > 0 ? totalBlock : seq.totalBlockMinutes,
+    dutyPeriods,
+  };
 }
 
 /**
@@ -147,6 +241,10 @@ function parseMonth(monthStr: string): number {
  * Parses unformatted monospace text blocks and converts them into structured SequenceTrip objects
  */
 export function parseRawSchedule(text: string): SequenceTrip[] {
+  // Check for HSS sequence pairing details first
+  if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "))) {
+    return parseHssSchedule(text);
+  }
   if (
     text.includes("MONTH ENDING") ||
     text.includes("MONTHENDING") ||
@@ -156,14 +254,10 @@ export function parseRawSchedule(text: string): SequenceTrip[] {
     text.includes("AC TOTAL") ||
     text.includes("HI1") ||
     text.includes("HI2") ||
-    text.includes("SKD") ||
     /^\s*\d{1,2}[A-Za-z]?\s*1\b/m.test(text) ||
     /\b[1-9]\d{4,5}\s+(?:EXP|EP|TAFB)\b/i.test(text)
   ) {
     return parseHI1Schedule(text);
-  }
-  if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT"))) {
-    return parseHssSchedule(text);
   }
   const sequences: SequenceTrip[] = [];
   const lines = text.split(/\r?\n/);
@@ -2141,9 +2235,9 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
   let equipment = "E75";
   let layoverCities: string[] = [];
   
-  // Extract rank (CAPT, CA, FO, etc)
+  // Extract rank (CAPT, CA, FO, FA, etc)
   let rank: string | undefined;
-  const rankMatch = text.match(/^\s*(CAPT|CA|FO)\b/m);
+  const rankMatch = text.match(/^\s*(CAPT|CA|FO|FA)\b/m);
   if (rankMatch) {
     rank = rankMatch[1];
   }
@@ -2248,8 +2342,8 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       }
     }
     
-    // Parse scheduled flight leg: e.g. "SKD 19 54 3491 ORD 0806 CWA 0927    1.21         0.30" or "SKD 21 0F 3862 ORD 1000 HHH 1333 RA 2.33"
-    const skdMatch = trimmed.match(/^SKD\s+(\d{2})\s+(\w{2,4})\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)(?:\s+[A-Z]{2,4})?(?:\s+([\d.]+))?/);
+    // Parse scheduled flight leg: e.g. "SKD 19 54 3491 ORD 0806 CWA 0927    1.21         0.30" or "SKD 12 0F 4254 DFW 2101 BMI 2308 25 2.07"
+    const skdMatch = trimmed.match(/^SKD\s+(\d{2})\s+(\w{2,4})\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)(?:.*?\b(\d+\.\d{2}))?/);
     if (skdMatch) {
       const dayNum = parseInt(skdMatch[1], 10);
       const eqOrAirline = skdMatch[2];
@@ -2315,8 +2409,8 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       lastDayNum = dayNum;
     }
 
-    // Parse actual flight leg: e.g. "ACT 19 54 4328 SPI 0551 ORD 0705    1.14  1.18 0.59" or "ACT 21 0F 3862 HHH 1352 ORD 1554 RA 3.02"
-    const actMatch = trimmed.match(/^ACT\s+(\d{2})\s+(\w{2,4})\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)(?:\s+[A-Z]{2,4})?(?:\s+([\d.]+))?/);
+    // Parse actual flight leg: e.g. "ACT 19 54 4328 SPI 0551 ORD 0705    1.14  1.18 0.59" or "ACT 13 0F 4254 DFW 0004 BMI 0240 25 2.36 2.36"
+    const actMatch = trimmed.match(/^ACT\s+(\d{2})\s+(\w{2,4})\s+(\d{3,4})\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)\s+([A-Z]{3})\s+(\d{4}[#\*\+]?)(?:.*?\b(\d+\.\d{2}))?/);
     if (actMatch) {
       const dayNum = parseInt(actMatch[1], 10);
       const fltNum = actMatch[3];
@@ -2332,21 +2426,40 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
       const calcActBlock = arrMins >= depMins ? arrMins - depMins : (arrMins + 1440) - depMins;
       const actualBlockMinutes = parsedActBlock > 0 ? parsedActBlock : calcActBlock;
 
-      const dayData = daysMap.get(dayNum);
-      if (dayData) {
-        // Flexible match by flight number digits (e.g. 3712 matching MQ3712 or AA3712) and airports
-        const matchingLeg = dayData.legs.find(
+      // Match leg in current active duty period first (even if actual flight took off after midnight on next calendar day)
+      let matchingLeg: FlightLeg | undefined;
+      const currentDayData = lastDayNum !== -1 ? daysMap.get(lastDayNum) : null;
+      if (currentDayData) {
+        matchingLeg = currentDayData.legs.find(
           (l) => l.flightNumber.replace(/\D/g, '') === fltNum && l.depAirport === depAirport && l.arrAirport === arrAirport
-        ) || dayData.legs.find(
+        ) || currentDayData.legs.find(
           (l) => l.flightNumber.replace(/\D/g, '') === fltNum
         );
-
-        if (matchingLeg) {
-          matchingLeg.actualDepTime = depTime;
-          matchingLeg.actualArrTime = arrTime;
-          matchingLeg.actualBlockMinutes = matchingLeg.isDeadhead ? 0 : actualBlockMinutes;
-          if (isCancelled) matchingLeg.isCancelled = true;
+      }
+      if (!matchingLeg) {
+        const dayData = daysMap.get(dayNum);
+        if (dayData) {
+          matchingLeg = dayData.legs.find(
+            (l) => l.flightNumber.replace(/\D/g, '') === fltNum && l.depAirport === depAirport && l.arrAirport === arrAirport
+          ) || dayData.legs.find(
+            (l) => l.flightNumber.replace(/\D/g, '') === fltNum
+          );
         }
+      }
+      if (!matchingLeg) {
+        for (const d of Array.from(daysMap.values())) {
+          matchingLeg = d.legs.find(
+            (l) => l.flightNumber.replace(/\D/g, '') === fltNum && l.depAirport === depAirport && l.arrAirport === arrAirport
+          );
+          if (matchingLeg) break;
+        }
+      }
+
+      if (matchingLeg) {
+        matchingLeg.actualDepTime = depTime.substring(0, 2) + ":" + depTime.substring(2, 4);
+        matchingLeg.actualArrTime = arrTime.substring(0, 2) + ":" + arrTime.substring(2, 4);
+        matchingLeg.actualBlockMinutes = matchingLeg.isDeadhead ? 0 : actualBlockMinutes;
+        if (isCancelled) matchingLeg.isCancelled = true;
       }
     }
     
@@ -2414,7 +2527,7 @@ export function parseHssSchedule(text: string): SequenceTrip[] {
   }
   
   saveCurrentHssSeq();
-  return sequences;
+  return sequences.map(sanitizeSequenceTrip);
 }
 
 /**

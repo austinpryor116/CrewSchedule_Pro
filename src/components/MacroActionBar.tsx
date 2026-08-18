@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { PFKeyMacroBuilder } from "../lib/pfKeys";
-import { executeMacroSequence } from "../lib/automationEngine";
 import { typeMacroOnDecsScreen } from "../lib/keyboardSimEngine";
-import { HssSequenceModal } from "./HssSequenceModal";
 import { useCrewStore } from "../store/useCrewStore";
+import HSSSequencesModal from "./PortalBrowser/HSSSequencesModal";
+
+
 import {
   Terminal,
   Zap,
@@ -570,10 +571,11 @@ export default function MacroActionBar() {
       )}
 
       {/* HSS Sequence Modal */}
-      <HssSequenceModal 
+      <HSSSequencesModal 
         isOpen={isHssModalOpen} 
         onClose={() => setHssModalOpen(false)} 
       />
+
     </div>
   );
 }
