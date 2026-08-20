@@ -67,7 +67,7 @@ export function provisionAllChannels(
       unread: 1,
     },
     {
-      contact: CREW_ROSTER[2], // Elena Rostova (LFA)
+      contact: CREW_ROSTER[2], // Elena Rostova (FA)
       lastText: "Catering and emergency equipment checks are complete. Ready for passenger boarding.",
       timeOffset: 1200000,
       unread: 0,

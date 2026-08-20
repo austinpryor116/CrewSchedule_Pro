@@ -36,8 +36,12 @@ import {
   HardDrive,
   DownloadCloud,
   Globe2,
+  Cloud,
+  CloudCheck,
 } from "lucide-react";
 import { PayRates, UserProfile } from "../../types";
+import InitialProfileSetup from "../Onboarding/InitialProfileSetup";
+import CloudSyncModal from "../Firebase/CloudSyncModal";
 import { clearWeatherCache } from "../../lib/weatherService";
 import { getTileCacheStats, clearTileCache, precacheFullNorthAmericaMapPack } from "../../lib/mapTileCache";
 import {
@@ -115,6 +119,8 @@ export default function SettingsTab() {
 
   // Reset confirmation modal
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showInitialSetup, setShowInitialSetup] = useState(false);
+  const [showCloudModal, setShowCloudModal] = useState(false);
 
   // Offline Map Storage State
   const [mapStats, setMapStats] = useState<{ count: number; sizeMb: number }>({ count: 0, sizeMb: 0 });
@@ -256,9 +262,9 @@ export default function SettingsTab() {
   const stations = Object.entries(stationTurnLimits);
 
   // Seat / Rank helpers
-  const isFa = userProfile.crewRole === "FA" || userProfile.crewRole === "LFA";
+  const isFa = userProfile.crewRole === "FA";
   const isCaptain = !isFa && (userProfile.crewRole === "CA" || userProfile.crewRole === "CHECK_PILOT");
-  const roleTitle = userProfile.crewRole === "CA" ? "Captain (CA)" : userProfile.crewRole === "CHECK_PILOT" ? "Check Airman" : userProfile.crewRole === "FA" ? "Flight Attendant (FA)" : userProfile.crewRole === "LFA" ? "Lead Flight Attendant (LFA)" : "First Officer (FO)";
+  const roleTitle = userProfile.crewRole === "CA" ? "Captain (CA)" : userProfile.crewRole === "CHECK_PILOT" ? "Check Airman" : userProfile.crewRole === "FA" ? "Flight Attendant (FA)" : "First Officer (FO)";
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-24 font-sans animate-fadeIn px-2 sm:px-4">
@@ -331,15 +337,31 @@ export default function SettingsTab() {
             </div>
           </div>
 
-          {/* Formal Seat Upgrade / Transition Trigger Button */}
+          {/* Formal Seat Upgrade / Transition & Profile Wizard Trigger Buttons */}
           <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-800 gap-2">
-            <button
-              onClick={() => setShowUpgradeModal(true)}
-              className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer border border-sky-400/30"
-            >
-              <Award className="w-3.5 h-3.5 text-amber-300" />
-              <span>Seat Transition / Upgrade</span>
-            </button>
+            <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+              <button
+                onClick={() => setShowCloudModal(true)}
+                className="flex-1 sm:flex-initial px-3.5 py-2 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer border border-sky-400/30 active-press"
+              >
+                <Cloud className="w-3.5 h-3.5 text-white" />
+                <span>Cloud Sync</span>
+              </button>
+              <button
+                onClick={() => setShowInitialSetup(true)}
+                className="flex-1 sm:flex-initial px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer border border-slate-700 active-press"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+                <span>Profile Wizard</span>
+              </button>
+              <button
+                onClick={() => setShowUpgradeModal(true)}
+                className="flex-1 sm:flex-initial px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer border border-amber-500/30 active-press"
+              >
+                <Award className="w-3.5 h-3.5 text-amber-300" />
+                <span>Seat</span>
+              </button>
+            </div>
             <span className="text-[10px] text-slate-400 font-medium">
               {isCaptain ? "Logged Flight Time: PIC (100%)" : "Logged Flight Time: SIC (100%)"}
             </span>
@@ -1273,6 +1295,36 @@ export default function SettingsTab() {
             </div>
           </div>
 
+          {/* Cloud Firestore Live Backup Banner */}
+          <div className="p-4 bg-gradient-to-br from-sky-50 via-indigo-50/40 to-slate-50 border border-sky-200 rounded-3xl space-y-3 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-sky-100 border border-sky-300 flex items-center justify-center text-sky-700 shadow-2xs">
+                  <Cloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>Firebase Cloud Sync & Backup</span>
+                    <span className="text-[9px] px-1.5 py-0.2 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-mono font-bold">
+                      OFFLINE-READY
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-600 font-medium">
+                    Continuous cross-device sync for iOS, Android, and Desktop
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowCloudModal(true)}
+                className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-xs cursor-pointer active-press"
+              >
+                <span>Manage Sync</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
           {/* Database Diagnostics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
@@ -1420,7 +1472,6 @@ export default function SettingsTab() {
                   <option value="CHECK_PILOT">👨‍✈️ Check Airman / Evaluator (4 Gold Stripes • PIC)</option>
                   <option value="FO">👨‍✈️ First Officer (FO - 3 Gold Stripes • SIC)</option>
                   <option value="FA">🛫 Flight Attendant (FA - Cabin Crew)</option>
-                  <option value="LFA">🛫 Lead Flight Attendant / Purser (LFA)</option>
                 </select>
               </div>
 
@@ -1503,6 +1554,25 @@ export default function SettingsTab() {
           </div>
         </div>
       )}
+
+      {/* Initial Profile Setup Wizard Modal */}
+      {showInitialSetup && (
+        <InitialProfileSetup
+          isOpen={showInitialSetup}
+          isStandaloneModal={true}
+          onClose={() => setShowInitialSetup(false)}
+          onComplete={() => {
+            setShowInitialSetup(false);
+            triggerToast("Profile & longevity successfully updated!");
+          }}
+        />
+      )}
+
+      {/* Firebase Cloud Sync & Authentication Modal */}
+      <CloudSyncModal
+        isOpen={showCloudModal}
+        onClose={() => setShowCloudModal(false)}
+      />
     </div>
   );
 }

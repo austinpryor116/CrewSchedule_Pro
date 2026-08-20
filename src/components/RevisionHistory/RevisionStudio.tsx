@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
 import { ScheduleSnapshot, ScheduleDiffItem } from "../../types";
-import { parseHI1Schedule, diffScheduleSnapshots } from "../../lib/parser";
+import { parseHI1Schedule, diffScheduleSnapshots, formatAviationHours } from "../../lib/parser";
 import { History, FileText, ArrowRight, AlertTriangle, ShieldCheck, Clock, Calendar, CheckCircle2, FileUp, Sparkles, AlertCircle, PlusCircle, MinusCircle, RefreshCw } from "lucide-react";
 
 export default function RevisionStudio() {
@@ -401,7 +401,7 @@ export default function RevisionStudio() {
 
                       <div className="text-right font-mono">
                         <span className="text-sky-700 font-bold text-xs block">
-                          {(seq.totalCreditMinutes / 60).toFixed(2)}h
+                          {formatAviationHours(seq.totalCreditMinutes, "dot")}h
                         </span>
                         <span className="text-[10px] text-slate-600 font-bold">
                           {seq.layoverCities.join("-") || "Turn"}

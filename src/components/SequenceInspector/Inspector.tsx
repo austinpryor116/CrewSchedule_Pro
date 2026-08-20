@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
 import { SequenceTrip, FlightLeg, DutyPeriod } from "../../types";
-import { X, Plane, Clock, Calendar, Home, Plus, ShieldCheck, ShieldAlert, CheckCircle, AlertCircle } from "lucide-react";
-import { checkOpenSequenceConflict } from "../../lib/parser";
+import { X, Plane, Clock, Calendar, Home, Plus, ShieldCheck, ShieldAlert, CheckCircle, AlertCircle, DollarSign, Zap } from "lucide-react";
+import { checkOpenSequenceConflict, isRealHotelInfo } from "../../lib/parser";
 import { auditDutyPeriodFdp } from "../../lib/far117Engine";
+import { OpenTimeEngine } from "../../lib/openTimeEngine";
+import { typeMacroOnDecsScreen } from "../../lib/keyboardSimEngine";
 
 interface SequenceInspectorProps {
   isEmbedded?: boolean;
@@ -19,6 +21,11 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
   const simulatedIds = useCrewStore((state) => state.simulatedSequenceIds);
   const vacations = useCrewStore((state) => state.vacations);
   const toggleSimulate = useCrewStore((state) => state.toggleSimulateSequence);
+  const userProfile = useCrewStore((state) => state.userProfile);
+  const payRates = useCrewStore((state) => state.payRates);
+
+  const [isPullingHss, setIsPullingHss] = useState(false);
+  const [hssFeedback, setHssFeedback] = useState<string | null>(null);
 
   // Find selected trip (could be active roster, vacation, simulated, or ghost open time)
   const seq: SequenceTrip | null = useMemo(() => {
@@ -55,6 +62,42 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
     return null;
   }, [selectedId, sequences, vacations, openSequences, simulatedIds]);
 
+  const handleFetchHssTimes = async () => {
+    if (!seq || seq.sequenceNumber === "VACATION") return;
+    setIsPullingHss(true);
+    setHssFeedback("Connecting to DECS terminal...");
+
+    let seat = "CA";
+    const rankStr = (seq.rank || (seq as any).seat || (seq as any).role || userProfile?.crewRole || "").toUpperCase();
+    if (rankStr.includes("FA") || rankStr.includes("FLIGHT ATTENDANT") || rankStr.includes("ATTENDANT")) {
+      seat = "FA";
+    } else if (rankStr.includes("FO") || rankStr.includes("F/O") || rankStr.includes("FIRST OFFICER") || rankStr.includes("SIC")) {
+      seat = "FO";
+    }
+
+    const datePart = seq.startDate ? seq.startDate.substring(8, 10) : "";
+    const monthLetters = seq.startDate
+      ? new Date(seq.startDate + "T12:00:00").toLocaleDateString("en-US", { month: "short" }).toUpperCase()
+      : "";
+    const command = `HSS/${seat}/${seq.sequenceNumber}/${datePart}${monthLetters}^`;
+
+    try {
+      if (typeof window !== "undefined" && (window as any).AndroidPortal?.executeHss) {
+        (window as any).AndroidPortal.executeHss(command);
+      } else {
+        await typeMacroOnDecsScreen(command);
+      }
+      setHssFeedback(`✓ Sent ${command.replace("^", "")} to DECS! Updating exact times...`);
+      setTimeout(() => {
+        setIsPullingHss(false);
+        setTimeout(() => setHssFeedback(null), 4500);
+      }, 1500);
+    } catch (e: any) {
+      setHssFeedback(`Error: ${e.message || "Failed to trigger HSS"}`);
+      setIsPullingHss(false);
+    }
+  };
+
   const stationTurnLimits = useCrewStore((state) => state.stationTurnLimits);
   const defaultTurnLimit = useCrewStore((state) => state.defaultTurnLimit);
 
@@ -67,6 +110,11 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
     if (!openSeq) return null;
     return checkOpenSequenceConflict(openSeq, sequences, stationTurnLimits, defaultTurnLimit);
   }, [openSeq, sequences, stationTurnLimits, defaultTurnLimit]);
+
+  const moneyBreakdown = useMemo(() => {
+    if (!seq || seq.sequenceNumber === "VACATION") return null;
+    return OpenTimeEngine.calculateSequenceMoney(seq, payRates, userProfile);
+  }, [seq, userProfile, payRates]);
 
   if (!seq) {
     return (
@@ -139,7 +187,18 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {seq.sequenceNumber !== "VACATION" && !isDropped && (
+            <button
+              onClick={handleFetchHssTimes}
+              disabled={isPullingHss}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-black bg-amber-400 hover:bg-amber-500 active:scale-95 text-slate-950 border border-amber-500 shadow-2xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Pull exact show/release times, leg departure/arrival times, and hotel coordinates from DECS (HSS)"
+            >
+              <Zap className={`w-3.5 h-3.5 ${isPullingHss ? "animate-spin text-slate-950" : "fill-current text-slate-950"}`} />
+              <span>{isPullingHss ? "Pulling DECS HSS..." : "⚡ Pull Exact Times (HSS)"}</span>
+            </button>
+          )}
           {seq.isGhost || seq.isSimulated ? (
             <button
               onClick={() => {
@@ -167,6 +226,14 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
         </div>
       </div>
 
+      {/* HSS Feedback Banner */}
+      {hssFeedback && (
+        <div className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center gap-2.5 text-xs text-indigo-950 shadow-2xs animate-fadeIn">
+          <Zap className="w-4 h-4 text-indigo-600 shrink-0" />
+          <span className="font-semibold">{hssFeedback}</span>
+        </div>
+      )}
+
       {/* DTS Dropped Sequence Banner Callout */}
       {isDropped && (
         <div className="mb-4 p-3.5 bg-rose-50 border border-rose-300 rounded-2xl flex items-start gap-3 text-xs text-rose-950 shadow-2xs animate-fadeIn">
@@ -178,6 +245,54 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
             </div>
             <div className="mt-1.5 text-[10px] font-mono text-rose-900 font-bold bg-rose-100 px-2 py-0.5 rounded border border-rose-300 inline-block">
               Active Status: Inactive / Dropped (0.00h active flight credit)
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sequence Earnings & Money Breakdown */}
+      {moneyBreakdown && (
+        <div className="mb-4 p-4 bg-gradient-to-br from-emerald-50 via-slate-50 to-sky-50 border border-emerald-200/80 rounded-3xl text-slate-900 shadow-sm space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-700 shadow-2xs">
+                <DollarSign className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-800 block">
+                  SEQ #{moneyBreakdown.seqNum} Financial Breakdown
+                </span>
+                <span className="text-[10px] text-slate-500 font-bold">
+                  {moneyBreakdown.role} Pay Rate (${moneyBreakdown.hourlyRate}/hr) • Envoy E175
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <span className="text-[10px] uppercase font-bold text-slate-500 block">Est. Total Trip Value</span>
+              <span className="text-lg font-black text-emerald-700 font-mono">
+                +${moneyBreakdown.totalTripValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 font-mono text-xs">
+            <div className="p-2.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+              <span className="text-[9.5px] font-bold uppercase text-slate-500 font-sans block">Gross Flight Pay</span>
+              <span className="text-sm font-black text-slate-900">+${moneyBreakdown.grossPay.toLocaleString()}</span>
+              <span className="text-[9px] text-slate-500 block">{moneyBreakdown.creditHours.toFixed(1)}h × ${moneyBreakdown.hourlyRate}</span>
+            </div>
+
+            <div className="p-2.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+              <span className="text-[9.5px] font-bold uppercase text-slate-500 font-sans block">Est. Per Diem</span>
+              <span className="text-sm font-black text-sky-700">+${moneyBreakdown.perDiemPay.toFixed(2)}</span>
+              <span className="text-[9px] text-slate-500 block">{moneyBreakdown.tafbHours.toFixed(0)}h @ ${moneyBreakdown.perDiemRate}/hr</span>
+            </div>
+
+            <div className="p-2.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+              <span className="text-[9.5px] font-bold uppercase text-slate-500 font-sans block">Trip Credit</span>
+              <span className="text-sm font-black text-indigo-700">{moneyBreakdown.creditHours.toFixed(2)}h</span>
+              <span className="text-[9px] text-slate-500 block">Total Credit</span>
             </div>
           </div>
         </div>
@@ -432,9 +547,11 @@ export default function SequenceInspector({ isEmbedded = false }: SequenceInspec
                     <Home className="w-3.5 h-3.5 text-amber-600" />
                     <span>Layover: {dp.layoverCity}</span>
                   </div>
-                  <p className="text-slate-700 text-[11px] leading-relaxed">
-                    {dp.layoverHotelInfo}
-                  </p>
+                  {isRealHotelInfo(dp.layoverHotelInfo) && (
+                    <p className="text-slate-700 text-[11px] leading-relaxed">
+                      {dp.layoverHotelInfo}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

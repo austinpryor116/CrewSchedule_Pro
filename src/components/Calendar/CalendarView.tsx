@@ -4,10 +4,10 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useCrewStore, convertOpenToTrip } from "../../store/useCrewStore";
 import { SequenceTrip, DutyPeriod } from "../../types";
-import { checkOpenSequenceConflict } from "../../lib/parser";
+import { checkOpenSequenceConflict, formatAviationHours } from "../../lib/parser";
 import { PersonalCalendarEvent } from "../../types";
 import { isPilotRole } from "../../lib/pilotBiddingDates";
-import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, ChevronDown, Info, Plane, Sun, Moon, Palmtree, Eye, EyeOff, ShoppingBag, Rss, X, Globe, Plus, Maximize2, Minimize2, SlidersHorizontal } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, ChevronDown, Info, Plane, Sun, Moon, Palmtree, Eye, EyeOff, ShoppingBag, Rss, X, Globe, Plus, Maximize2, Minimize2, SlidersHorizontal, AlertTriangle, CheckCircle2 } from "lucide-react";
 import CalendarSyncModal from "./CalendarSyncModal";
 import DayDetailModal from "./DayDetailModal";
 import GridFilterModal from "./GridFilterModal";
@@ -404,25 +404,20 @@ export default function CalendarView() {
   const sequences = useMemo(() => {
     const simulatedTrips = openSequences
       .filter((ot) => simulatedIds.includes(ot.id))
-      .map(convertOpenToTrip);
+      .map((ot) => {
+        const trip = convertOpenToTrip(ot);
+        const conflict = checkOpenSequenceConflict(ot, rawSequences, stationTurnLimits, defaultTurnLimit);
+        trip.isSimulated = true;
+        trip.hasConflict = conflict.hasConflict;
+        (trip as any).conflictReason = conflict.reason;
+        return trip;
+      });
     let list = [...rawSequences, ...simulatedTrips];
     if (!showDtsDropped) {
       list = list.filter((s) => !s.isDropped && s.statusTag !== "DROP" && s.statusTag !== "DTS DROP");
     }
     return list;
-  }, [rawSequences, openSequences, simulatedIds, showDtsDropped]);
-
-  // Helper: check if a date is within a sequence
-  const getSequenceForDate = (date: Date): SequenceTrip | null => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    const dateStr = `${y}-${m}-${d}`;
-    const match = sequences.find((seq) => {
-      return dateStr >= seq.startDate && dateStr <= seq.endDate;
-    });
-    return match || null;
-  };
+  }, [rawSequences, openSequences, simulatedIds, showDtsDropped, stationTurnLimits, defaultTurnLimit]);
 
   // Helper: get all sequences matching a date (e.g. multiple turns or overlapping trades)
   const getSequencesForDate = (date: Date): SequenceTrip[] => {
@@ -430,9 +425,24 @@ export default function CalendarView() {
     const m = String(date.getMonth() + 1).padStart(2, "0");
     const d = String(date.getDate()).padStart(2, "0");
     const dateStr = `${y}-${m}-${d}`;
-    return sequences.filter((seq) => {
-      return dateStr >= seq.startDate && dateStr <= seq.endDate;
-    });
+    return sequences
+      .filter((seq) => {
+        return dateStr >= seq.startDate && dateStr <= seq.endDate;
+      })
+      .sort((a, b) => {
+        // Normal flying (pilot's roster sequences) ALWAYS takes priority over Open Time / Pickups / Dropped
+        const aIsNormal = !a.isSimulated && !a.isGhost && !a.isDropped && a.statusTag !== "DROP" && a.statusTag !== "DTS DROP" && a.statusTag !== "PICKUP";
+        const bIsNormal = !b.isSimulated && !b.isGhost && !b.isDropped && b.statusTag !== "DROP" && b.statusTag !== "DTS DROP" && b.statusTag !== "PICKUP";
+        if (aIsNormal && !bIsNormal) return -1;
+        if (!aIsNormal && bIsNormal) return 1;
+        return 0;
+      });
+  };
+
+  // Helper: check if a date is within a sequence (always returns normal flying sequence first)
+  const getSequenceForDate = (date: Date): SequenceTrip | null => {
+    const matched = getSequencesForDate(date);
+    return matched[0] || null;
   };
 
   // Helper: get duty period for a specific date
@@ -687,13 +697,21 @@ export default function CalendarView() {
 
       // Sort:
       // 1. Vacation blocks ALWAYS take top priority (slot 0) across all vacation days
-      // 2. Regular active flights / OT add-ons
-      // 3. Dropped trips (e.g. dropped due to vacation) ALWAYS go below vacation and active trips
+      // 2. Normal flying (pilot's roster sequences) ALWAYS takes top priority (slot 0/1) over Open Time / Pickups / Ghost / Dropped trips
+      // 3. Regular active flights / OT add-ons
+      // 4. Simulated Open Time / Straight-pay Pickups / Ghost Open Time
+      // 5. Dropped trips (e.g. dropped due to vacation) ALWAYS go to the very bottom
       rowSegs.sort((a, b) => {
         const aIsVac = !!(a.seq.isVacation || a.seq.statusTag === "VA");
         const bIsVac = !!(b.seq.isVacation || b.seq.statusTag === "VA");
         if (aIsVac && !bIsVac) return -1;
         if (!aIsVac && bIsVac) return 1;
+
+        // Normal flying check: not simulated, not ghost, not dropped, not peer pickup
+        const aIsNormal = !a.seq.isSimulated && !a.seq.isGhost && !a.seq.isDropped && a.seq.statusTag !== "DROP" && a.seq.statusTag !== "DTS DROP" && a.seq.statusTag !== "PICKUP";
+        const bIsNormal = !b.seq.isSimulated && !b.seq.isGhost && !b.seq.isDropped && b.seq.statusTag !== "DROP" && b.seq.statusTag !== "DTS DROP" && b.seq.statusTag !== "PICKUP";
+        if (aIsNormal && !bIsNormal) return -1;
+        if (!aIsNormal && bIsNormal) return 1;
 
         const aIsDrop = !!(a.seq.isDropped || a.seq.statusTag === "DROP" || a.seq.statusTag === "DTS DROP");
         const bIsDrop = !!(b.seq.isDropped || b.seq.statusTag === "DROP" || b.seq.statusTag === "DTS DROP");
@@ -1069,13 +1087,25 @@ export default function CalendarView() {
               const activity = rowActivityMap[rowNum] || { maxSeqSlot: -1, maxMultiDaySlot: -1, maxSingleEventCount: 0 };
               const seqSlotCount = Math.max(0, activity.maxSeqSlot + 1);
               const multiSlotCount = Math.max(0, activity.maxMultiDaySlot + 1);
-              const seqSlotPx = isMobile ? 28 : 34;
-              const multiSlotPx = isMobile ? 24 : 28;
-              const basePx = isMobile ? 36 : 42;
-              const evtPx = Math.min(activity.maxSingleEventCount, 4) * (isMobile ? 24 : 28);
-              const contentMinHeight = basePx + seqSlotCount * seqSlotPx + multiSlotCount * multiSlotPx + evtPx + 36;
-              const viewportWeekHeight = isMobile ? "calc((100vh - 128px) / 3.4)" : "calc((100vh - 140px) / 3.4)";
-              return `minmax(max(${contentMinHeight}px, ${viewportWeekHeight}), 1fr)`;
+              
+              // Standard compact height for quiet / off-weeks (e.g. week of 9th)
+              const defaultCompactHeight = isMobile ? 68 : 78;
+              const seqSlotPx = isMobile ? 26 : 32;
+              const multiSlotPx = isMobile ? 22 : 26;
+              const baseHeaderPx = isMobile ? 28 : 34;
+              const evtPx = Math.min(activity.maxSingleEventCount, 1) * (isMobile ? 18 : 20);
+              const bottomRonPx = isMobile ? 26 : 30;
+
+              if (seqSlotCount === 0 && multiSlotCount === 0 && activity.maxSingleEventCount === 0) {
+                return `minmax(${defaultCompactHeight}px, auto)`;
+              }
+
+              const contentMinHeight = Math.max(
+                defaultCompactHeight,
+                baseHeaderPx + seqSlotCount * seqSlotPx + multiSlotCount * multiSlotPx + evtPx + bottomRonPx
+              );
+
+              return `minmax(${contentMinHeight}px, auto)`;
             }).join(" ");
 
             return (
@@ -1334,26 +1364,44 @@ export default function CalendarView() {
                     const isOt = seg.isDayOt !== undefined ? seg.isDayOt : (seg.seq.isOvertime || seg.seq.statusTag === "OT");
                     const isSim = seg.seq.isSimulated;
                     const isGhost = seg.seq.isGhost;
-                    const isDropped = seg.seq.isDropped || seg.seq.statusTag === "DROP" || seg.seq.statusTag === "DTS DROP";
+                    const isConflict = !!(seg.seq.hasConflict || (seg.seq as any).conflictReason);
+                    const isPickup = seg.seq.statusTag === "PICKUP" || seg.seq.colorTag === "cyan" || (seg.seq as any).isPickup;
+                    const isDropped = !isPickup && (seg.seq.isDropped || seg.seq.statusTag === "DROP" || seg.seq.statusTag === "DTS DROP");
                     const isVacation = seg.seq.statusTag === "VA" || !!(seg.seq as any).isVacation;
                     const isMultiDay = seg.endCol - seg.startCol >= 1;
 
-                    let cardStyle = "bg-sky-600 text-white border-sky-700 shadow-sm hover:bg-sky-700 font-bold";
-                    let subtextColor = "text-sky-100";
+                    let cardStyle = "bg-sky-100/95 text-sky-950 border border-sky-300 shadow-2xs hover:bg-sky-200/90 font-bold";
+                    let subtextColor = "text-sky-700 font-bold";
+                    let badgeBg = "bg-sky-200/80 text-sky-900 border border-sky-300";
 
                     if (isVacation) {
-                      cardStyle = "bg-emerald-600 text-white border-emerald-700 shadow-sm hover:bg-emerald-700 font-bold";
-                      subtextColor = "text-emerald-200";
+                      cardStyle = "bg-emerald-100/95 text-emerald-950 border border-emerald-300 shadow-2xs hover:bg-emerald-200/90 font-bold";
+                      subtextColor = "text-emerald-700 font-bold";
+                      badgeBg = "bg-emerald-200/80 text-emerald-900 border border-emerald-300";
                     } else if (isDropped) {
-                      cardStyle = "bg-rose-100 text-rose-900 border border-dashed border-rose-400 font-bold hover:bg-rose-200";
-                      subtextColor = "text-rose-800";
-                    } else if (isOt) {
-                      cardStyle = "bg-gradient-to-r from-amber-500 to-amber-600 text-white border-amber-600 shadow-sm hover:from-amber-600 hover:to-amber-700 font-bold";
-                      subtextColor = "text-amber-100";
+                      cardStyle = "bg-rose-50/95 text-rose-800 border border-dashed border-rose-300 font-medium hover:bg-rose-100";
+                      subtextColor = "text-rose-700";
+                      badgeBg = "bg-rose-100 text-rose-800 border border-rose-200";
+                    } else if (isPickup) {
+                      cardStyle = isConflict
+                        ? "bg-teal-50 text-teal-950 border-2 border-rose-400 shadow-2xs font-bold"
+                        : "bg-teal-100/95 text-teal-950 border border-teal-300 shadow-2xs hover:bg-teal-200 font-bold ring-1 ring-emerald-500/30";
+                      subtextColor = "text-teal-700 font-bold";
+                      badgeBg = "bg-teal-200/80 text-teal-900 border border-teal-300";
+                    } else if (isOt || isSim || isGhost) {
+                      cardStyle = isConflict
+                        ? "bg-amber-50 text-amber-950 border-2 border-rose-400 shadow-2xs font-bold"
+                        : "bg-amber-100/95 text-amber-950 border border-amber-300 shadow-2xs hover:bg-amber-200 font-bold ring-1 ring-emerald-500/30";
+                      subtextColor = "text-amber-700 font-bold";
+                      badgeBg = "bg-amber-200/80 text-amber-900 border border-amber-300";
+                    } else if (isConflict) {
+                      cardStyle = "bg-rose-50 text-rose-950 border-2 border-rose-400 shadow-2xs font-bold";
+                      subtextColor = "text-rose-700 font-bold";
+                      badgeBg = "bg-rose-200/80 text-rose-900 border border-rose-300";
                     }
 
                     const isSelected = seg.seq.id === selectedSequenceId;
-                    const credHrs = (seg.seq.totalCreditMinutes / 60).toFixed(1);
+                    const credHrs = formatAviationHours(seg.seq.totalCreditMinutes, "dot");
 
                     return (
                       <div
@@ -1373,30 +1421,52 @@ export default function CalendarView() {
                           position: "relative",
                         }}
                         className={`mx-0.5 py-0.5 px-1.5 rounded-lg border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden ${cardStyle} ${
-                          isSelected ? "ring-2 ring-sky-300 ring-offset-1" : ""
+                          isSelected ? "ring-2 ring-sky-500/60 ring-offset-1" : ""
                         }`}
-                        title={isVacation ? `Vacation Block\nDuration: 7 Days\nCredit: ${credHrs}h` : `Sequence #${seg.seq.sequenceNumber}\nBase: ${seg.seq.base} ${seg.seq.equipment}\nCredit: ${credHrs}h\nLayovers: ${seg.seq.layoverCities.join(" → ") || "None"}`}
+                        title={
+                          isVacation
+                            ? `Vacation Block\nDuration: 7 Days\nCredit: ${credHrs}h`
+                            : isConflict
+                            ? `🚫 NOT LEGAL TO FLY / SCHEDULE CONFLICT\nSequence #${seg.seq.sequenceNumber}\nReason: ${(seg.seq as any).conflictReason || "Overlap with active duty / turn limits / 117 rest"}\nCredit: ${credHrs}h`
+                            : isPickup
+                            ? `Straight Pay Pickup #${seg.seq.sequenceNumber}\nBase: ${seg.seq.base} ${seg.seq.equipment}\nCredit: ${credHrs}h\nLayovers: ${seg.seq.layoverCities.join(" → ") || "None"}`
+                            : `Sequence #${seg.seq.sequenceNumber}\nBase: ${seg.seq.base} ${seg.seq.equipment}\nCredit: ${credHrs}h\nLayovers: ${seg.seq.layoverCities.join(" → ") || "None"}`
+                        }
                       >
                         <div className="flex items-center gap-1 truncate min-w-0">
-                          <span className="flex items-center gap-0.5 font-black text-[9px] sm:text-xs truncate">
-                            {isVacation ? <Palmtree className="w-3 h-3 shrink-0 text-emerald-200" /> : <Plane className="w-3 h-3 shrink-0" />}
+                          <span className="flex items-center gap-0.5 font-bold text-[9px] sm:text-xs truncate">
+                            {isVacation ? (
+                              <Palmtree className="w-3 h-3 shrink-0 text-emerald-600" />
+                            ) : isConflict ? (
+                              <AlertTriangle className="w-3 h-3 shrink-0 text-rose-600" />
+                            ) : (isGhost || isPickup || isSim) ? (
+                              <CheckCircle2 className="w-3 h-3 shrink-0 text-teal-600" />
+                            ) : (
+                              <Plane className="w-3 h-3 shrink-0 text-sky-600" />
+                            )}
                             <span className="truncate">
-                              {isVacation ? "VACATION" : isDropped ? `DROP #${seg.seq.sequenceNumber}` : `#${seg.seq.sequenceNumber}`}
+                              {isVacation
+                                ? "VACATION"
+                                : isDropped
+                                ? `DROP #${seg.seq.sequenceNumber}`
+                                : isPickup
+                                ? `PICKUP #${seg.seq.sequenceNumber}`
+                                : `#${seg.seq.sequenceNumber}`}
                             </span>
                           </span>
 
-                          <span className={`text-[8px] sm:text-[10px] font-bold font-mono ${subtextColor} hidden sm:inline truncate`}>
-                            [{isVacation ? "VA" : seg.seq.base}]
+                          <span className={`text-[8px] sm:text-[10px] font-semibold font-mono ${subtextColor} hidden sm:inline truncate`}>
+                            [{isVacation ? "VA" : isPickup ? "PICKUP" : seg.seq.base}]
                           </span>
                         </div>
 
                         <div className="flex items-center gap-1 text-[8px] sm:text-[10px] font-mono font-bold shrink-0">
                           {seg.seq.layoverCities.length > 0 && !isMobile && !isVacation && (
-                            <span className="text-[8px] opacity-95 hidden lg:inline-flex items-center gap-0.5 bg-black/20 px-1 py-0.2 rounded">
-                              <Moon className="w-2 h-2 text-amber-300" /> {seg.seq.layoverCities.join("→")}
+                            <span className="text-[8px] opacity-95 hidden lg:inline-flex items-center gap-0.5 bg-white/80 border border-current/20 px-1 py-0.2 rounded">
+                              <Moon className="w-2 h-2 text-amber-600" /> {seg.seq.layoverCities.join("→")}
                             </span>
                           )}
-                          <span className="px-1 py-0.2 bg-black/20 rounded font-black text-[8px] sm:text-[10px]">
+                          <span className={`px-1 py-0.2 rounded font-black text-[8px] sm:text-[10px] ${badgeBg}`}>
                             {credHrs}h
                           </span>
                         </div>
@@ -1543,7 +1613,13 @@ export default function CalendarView() {
                             <Plane className={`w-3 h-3 ${leg.isCancelled ? 'text-red-400' : 'text-sky-600'}`} />
                             <span>{leg.flightNumber}{leg.isCancelled && " (CXLD)"}</span>
                             <span className={leg.isCancelled ? 'text-red-500/70' : 'text-slate-600'}>({leg.depAirport}→{leg.arrAirport})</span>
-                            <span className={`text-[10px] ${leg.isCancelled ? 'text-red-400/70' : 'text-slate-500'}`}>{leg.depTime}-{leg.arrTime}</span>
+                            <span className={`text-[10px] ${leg.isCancelled ? 'text-red-400/70' : 'text-slate-500'}`}>
+                              {leg.actualDepTime ? (
+                                <span className="text-emerald-700 font-extrabold">{leg.actualDepTime}-{leg.actualArrTime}</span>
+                              ) : (
+                                <span>{leg.depTime}-{leg.arrTime}</span>
+                              )}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -2089,10 +2165,10 @@ export default function CalendarView() {
       {/* Floating Jump to Today Button */}
       <button
         onClick={() => scrollToToday(true)}
-        className="fixed bottom-20 right-4 z-40 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-xl border border-slate-700/50 backdrop-blur-md text-xs font-extrabold flex items-center gap-1.5 cursor-pointer active-press transition duration-150"
+        className="fixed bottom-20 right-4 z-40 px-3.5 py-2 bg-white/95 hover:bg-sky-50 text-sky-700 rounded-full shadow-xl border border-sky-200 backdrop-blur-md text-xs font-black flex items-center gap-1.5 cursor-pointer active-press transition duration-150 ring-2 ring-sky-500/20"
         title="Jump to Today"
       >
-        <CalendarIcon className="w-3.5 h-3.5 text-sky-400" />
+        <CalendarIcon className="w-3.5 h-3.5 text-sky-600" />
         <span>Today</span>
       </button>
 

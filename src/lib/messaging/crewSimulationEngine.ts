@@ -98,8 +98,8 @@ export function getSimulatedCrewReplies(
       ];
     }
 
-    // LFA Elena Rostova
-    if (recipient.name.includes("Elena") || recipient.role === "LFA") {
+    // FA Elena Rostova
+    if (recipient.name.includes("Elena") || recipient.role === "FA") {
       if (macroTag === "CREW_VAN" || text.includes("van")) {
         return [
           {
@@ -143,7 +143,7 @@ export function getSimulatedCrewReplies(
   // 2. PAIRING / GROUP CHATS
   if (channel.type === "SEQUENCE") {
     const fo = CREW_ROSTER[0];
-    const lfa = CREW_ROSTER[2];
+    const fa = CREW_ROSTER[2];
 
     if (macroTag === "CREW_VAN" || text.includes("van") || text.includes("lobby")) {
       return [
@@ -153,7 +153,7 @@ export function getSimulatedCrewReplies(
           delayMs: 1200,
         },
         {
-          sender: lfa,
+          sender: fa,
           content: "Cabin crew is in the lobby waiting at the curb 🚐",
           delayMs: 2500,
         },

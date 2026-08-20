@@ -17,11 +17,12 @@ import {
   Plane,
   ChevronDown,
   ChevronUp,
-  FileText,
-  Trash2,
   Shield,
   Layers,
-  Terminal
+  Terminal,
+  Bed,
+  FileText,
+  Trash2,
 } from "lucide-react";
 import { useCrewStore } from "../../store/useCrewStore";
 import { 
@@ -30,12 +31,16 @@ import {
   detectMonthFromText,
   convertOpenToTrip,
   parseN4OpenTime,
-  parseHssSchedule
+  parseHssSchedule,
+  extractVacationsFromHI1
 } from "../../lib/parser";
+import { parseN6DReserves } from "../../lib/n6dParser";
+import { parseTurnbackList } from "../../lib/turnbackParser";
 import { readUploadedFileAsText } from "../../lib/pdfExtractor";
 import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
 import HSSSequencesModal from "./HSSSequencesModal";
+import HotelRequestModal from "./HotelRequestModal";
 
 export default function PortalBrowserStudio() {
   const isNative = typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -58,6 +63,8 @@ export default function PortalBrowserStudio() {
 
   const isHssModalOpen = useCrewStore((state) => state.isHssModalOpen);
   const setIsHssModalOpen = useCrewStore((state) => state.setIsHssModalOpen);
+  const isHotelRequestModalOpen = useCrewStore((state) => state.isHotelRequestModalOpen);
+  const setIsHotelRequestModalOpen = useCrewStore((state) => state.setIsHotelRequestModalOpen);
   const TARGET_URL = "https://webfos.aa.com/WebSabre/websabre";
   const [activeUrl, setActiveUrl] = useState(TARGET_URL);
   const [manualText, setManualText] = useState("");
@@ -81,13 +88,32 @@ export default function PortalBrowserStudio() {
       setIsHssModalOpen(true);
     };
 
+    const handleHotelTrigger = () => {
+      console.log("[PortalBrowser] Received openHotelRequestModal event!");
+      setIsHotelRequestModalOpen(true);
+    };
+
+    const handlePickupTrigger = () => {
+      console.log("[PortalBrowser] Received openTimePickupModal event!");
+      const state = useCrewStore.getState();
+      if (state.openSequences && state.openSequences.length > 0) {
+        state.setSelectedOpenTimeForPickup(state.openSequences[0]);
+      } else {
+        state.setIsPickupModalOpen(true);
+      }
+    };
+
     window.addEventListener("nativeScheduleImport", handleNativeImport);
     window.addEventListener("openHssSequencesModal", handleHssTrigger);
+    window.addEventListener("openHotelRequestModal", handleHotelTrigger);
+    window.addEventListener("openTimePickupModal", handlePickupTrigger);
     return () => {
       window.removeEventListener("nativeScheduleImport", handleNativeImport);
       window.removeEventListener("openHssSequencesModal", handleHssTrigger);
+      window.removeEventListener("openHotelRequestModal", handleHotelTrigger);
+      window.removeEventListener("openTimePickupModal", handlePickupTrigger);
     };
-  }, []);
+  }, [setIsHssModalOpen, setIsHotelRequestModalOpen]);
 
 
   // Launch Native In-App Browser (Desktop User-Agent + Full Top-Level Window)
@@ -137,7 +163,7 @@ export default function PortalBrowserStudio() {
 
     try {
       // 1. Check for N4 Open Time
-      if (text.includes("OPEN TIME") || text.includes("POSSIBLE TRIPS") || text.includes("SEQ/DATE") || text.includes("N4/")) {
+      if (text.includes("OPEN TIME") || text.includes("OPEN SEQUENCES") || text.includes("CREWED SEQUENCES") || text.includes("POSSIBLE TRIPS") || text.includes("SEQ/DATE") || text.includes("N4/") || text.includes("N4D") || text.includes("OPEN TRIPS")) {
         const parsedOpen = parseN4OpenTime(text);
         if (parsedOpen && parsedOpen.length > 0) {
           const merged = [...existingOpenSeqs];
@@ -156,20 +182,13 @@ export default function PortalBrowserStudio() {
         }
       }
 
-      // 2. Check for HSS Sequence text (Single or Multi-trip pairing details)
-      if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "))) {
-        const parsedHssTrips = parseHssSchedule(text);
-        if (parsedHssTrips && parsedHssTrips.length > 0) {
-          parsedHssTrips.forEach((hssTrip) => {
-            const existing = sequences.find((s) => s.sequenceNumber === hssTrip.sequenceNumber);
-            if (existing) {
-              mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
-            } else {
-              addSequences([hssTrip]);
-            }
-          });
+      // 2. Check for N6D Reserves Display
+      if (text.includes("RESERVES DISPLAY") || (text.includes("DOMESTIC") && text.includes("PROJ") && text.includes("ACT/SKD"))) {
+        const parsedN6D = parseN6DReserves(text);
+        if (parsedN6D && parsedN6D.pilots && parsedN6D.pilots.length > 0) {
+          useCrewStore.getState().setN6DReserves(parsedN6D);
           setStatusMessage({
-            text: `✓ Parsed & enriched SEQ #${parsedHssTrips[0].sequenceNumber} with flight legs & layovers!`,
+            text: `✓ Successfully imported N6D Reserve List (${parsedN6D.pilots.length} pilots)!`,
             type: "success",
           });
           setManualText("");
@@ -178,13 +197,52 @@ export default function PortalBrowserStudio() {
         }
       }
 
-      // 3. Parse Regular HI1 Schedule
+      // 3. Check for HIHR Turnback List
+      if (text.includes("HIHR") || text.includes("TURNBACK") || text.includes("TRNBK") || text.includes("TURN BACK")) {
+        const parsedTB = parseTurnbackList(text);
+        if (parsedTB && parsedTB.records && parsedTB.records.length > 0) {
+          useCrewStore.getState().setTurnbackData(parsedTB);
+          setStatusMessage({
+            text: `✓ Successfully imported Turnback List (${parsedTB.records.length} pilots identified)!`,
+            type: "success",
+          });
+          setManualText("");
+          setTimeout(() => setStatusMessage(null), 5000);
+          return;
+        }
+      }
+
+      // 4. Check for HSS Sequence text (Single or Multi-trip pairing details)
+      if (
+        !/MONTH\s*ENDING/i.test(text) &&
+        !text.includes("MONTHENDING") &&
+        !text.includes("BID SEL") &&
+        text.includes("SEQ ") &&
+        (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "))
+      ) {
+        const parsedHssTrips = parseHssSchedule(text);
+        if (parsedHssTrips && parsedHssTrips.length > 0) {
+          parsedHssTrips.forEach((hssTrip) => {
+            mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
+          });
+          setStatusMessage({
+            text: `✓ Parsed & enriched SEQ #${parsedHssTrips[0].sequenceNumber} with flight legs & layovers into Calendar & Open Time!`,
+            type: "success",
+          });
+          setManualText("");
+          setTimeout(() => setStatusMessage(null), 5000);
+          return;
+        }
+      }
+
+      // 5. Parse Regular Monthly HI1 / HI2 Schedule
       const parsedSeqs = parseRawSchedule(text);
       if (parsedSeqs && parsedSeqs.length > 0) {
         const meta = parseMonthlyHIMetadata(text);
-        importMonthlyHISchedule(parsedSeqs, [], meta, sourceName, text);
+        const vacs = extractVacationsFromHI1(text);
+        importMonthlyHISchedule(parsedSeqs, vacs, meta, sourceName, text);
         setStatusMessage({
-          text: `✓ Successfully imported ${parsedSeqs.length} trip(s) into your Calendar!`,
+          text: `✓ Successfully imported ${parsedSeqs.length} trip(s) and ${vacs.length} vacation(s) into your Calendar!`,
           type: "success",
         });
         setManualText("");
@@ -323,6 +381,16 @@ export default function PortalBrowserStudio() {
 
           <button
             type="button"
+            onClick={() => setIsHotelRequestModalOpen(true)}
+            className="px-4 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-md shadow-amber-600/20 flex items-center justify-center gap-2"
+            title="Open Crew Hotel Request in Base Form"
+          >
+            <Bed className="w-4 h-4" />
+            <span>🏨 Hotel Request</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleReadClipboard}
             className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2"
             title="Read Copied HI1 text from Clipboard"
@@ -414,6 +482,12 @@ export default function PortalBrowserStudio() {
       <HSSSequencesModal
         isOpen={isHssModalOpen}
         onClose={() => setIsHssModalOpen(false)}
+      />
+
+      {/* Crew Hotel Request in Base Modal */}
+      <HotelRequestModal
+        isOpen={isHotelRequestModalOpen}
+        onClose={() => setIsHotelRequestModalOpen(false)}
       />
     </div>
   );

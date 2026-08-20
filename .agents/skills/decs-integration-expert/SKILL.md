@@ -1,278 +1,267 @@
 ---
 name: decs-integration-expert
-description: Expert in the architecture, rules, schemas, and decoding of American Airlines / American Eagle DECS & FOS host terminal integration. Covers HI1, HI2, HSS, N4 open time, 3270 macros, and comprehensive FOS code lookups.
+description: Definitive expert guide on American Airlines / American Eagle DECS, FOS, WebSabre integration, 3270 state machine mechanics, Android WebView isolation, screen-wide line parsing, autonomous captures, and data decoders.
 ---
 
-# DECS & FOS Integration Expert Reference
+# DECS & FOS Host Terminal Integration Expert Guide
 
-This document provides the definitive specification for the American Airlines / American Eagle FOS (Flight Operating System) / WebSabre / DECS host terminal, based on official Flight Operations display guides and bid code manuals.
-
----
-
-## 1. HI1 Detailed Monthly Activity Record Layout
-
-### Header Block (Lines 1–15)
-- `(1) MONTH ENDING 31MAY00`: Contractual month end date.
-- `(2) AS OF 21MAR04`: Display query date (DDMMMYY).
-- `(3) /0927`: Query 24h clock time.
-- `(4) CKA / CKA-SUPL`: Check Airman or Supplemental Check Airman designation.
-- `(5) INTL`: International bid award flag.
-- `(6) SC-Y / SC-N`: Sick Self-Clear Indicator (`Y` = Yes, `N` = No).
-- `(7) HOLLANDAISE JJ`: Crewmember Name.
-- `(8) 2601`: Seniority number within partition (e.g. `NA`, `MQ`).
-- `(9) 23456 / 742840`: Crewmember Employee ID number.
-- `(10) DFW / ORD / MIA`: Permanent / Temporary Crew Base.
-- `(11) 301-CA / 301-FO`: Bid line award and Seat Category (`CA` = Captain, `FO` = First Officer).
-- `(12) E145 / E175 / B737`: Highest equipment type in bid selection.
-- `(13)-(16) H/B/T/O Phones`: Home, Business, Temporary, and Optional other contact numbers + PIN.
-- `(17) TCD ISSUED / CANCELLED`: Temporary Confirmation Document (FAR Exemption 5560/5487 for lost certificate). Max 4 per rolling window.
-
-### Cumulative Totals & Pay Accounting Block
-- `(18) GTD 55.25`: Greater Time to Date (cumulative total of all legs flown, greater of scheduled vs actual).
-- `(19) DEXP 182.02`: Domestic Expenses (Per Diem) to date (Hours.Minutes).
-- `(20) IEXP 0.00`: International Expenses (Per Diem) to date.
-- `(21) GUAR 72.00 / 75.00`: Monthly minimum guarantee (72h lineholder, 75h reserve).
-- `(22) FLT TIME 42.55`: Accrued actual flight time to date for month.
-- `(23) YTD TL / 12MO TL 456.12`: Accrued actual flight time for calendar year (FAR 121 Domestic / 135) or rolling 12 months (FAR 121 Flag).
-- `(24) TTL ICPD 2`: International City Per Diem count of completed international layovers.
-- `(25) PTL TRIP TRD`: Partial Trip Trades count.
-- `(26) DROP`: Number of partial trips dropped.
-- `(27) BID SEL PROJ FOR [EQ]`: Bid selection projection split by aircraft equipment.
-- `(28) BID SEL PROJ 79.58`: Total printed bid package value (before changes).
-- `(29) ACT/SKD PROJ 67.46`: Projected total flight time (actual flown + scheduled remaining) for Part 121 100-hour monthly limit.
-- `(30) YTD / 12M 228.37`: Actual YTD time + scheduled remaining time.
-
-### Sick Accrual & Bank Tracking
-- `(31) AVBL SK 000`: Available Sick Time.
-- `(32) YTD SK ACRL`: Sick Accrual Year-to-Date.
-- `(33) SK USED MTD`: Sick Used Month-to-Date.
-- `(34) LONG TERM SK AVAIL`: Long Term Sick Available bank (HH.MM).
-- `(35) LONG TERM SK USED MTD`: Long Term Sick Used this month.
-- `(36) ELIGIBLE FOR LONG TERM SICK`: Authorized to use LTS bank.
-- `(37) SHORT TERM SICK PAYOUT ACCRUAL`: Hours eligible for year-end cash/401(k) rollover payout (>100h / >200h).
-- `(38) SK TIME AVAIL FOR M/U`: Sick fly-back make-up time available.
+This document contains the definitive architectural rules, code patterns, and troubleshooting guides for DECS, FOS, WebSabre, and 3270 terminal integration in CrewSchedule Pro.
 
 ---
 
-## 2. Activity Table Columns `(39)`–`(54)`
+## 1. WebSabre Viewport & Canvas Isolation Rules (CRITICAL)
 
-| Col | Header | Description | Notes |
-|:---|:---|:---|:---|
-| **(39)** | `DD` | Calendar Day | 1 to 31 |
-| **(40)** | `ST` | Pay Status Code | See Pay Status table below |
-| **(41)** | `RMV` | Reason Code for Removal | E.g., `VC`, `SK`, `FP`, `FT`, `CL`, `SD` |
-| **(42)** | `ADD` | Reason Code for Addition | E.g., `TF`, `RA`, `SH`, `MU`, `OT`, `RF` |
-| **(43)** | `SEQ` | Sequence Number or Activity | Sequence # (e.g. `14731`), `HOMSTUDY`, `S/B`, `RAP`, `DO` |
-| **(44)** | `FLT` | Flight Numbers & Prefixes | Prefix defines leg type (`-`, `D`, `C`, `*XX`, `X`) |
-| **(45)** | `SKED` | Scheduled Flight Time & Duty Credit | For duty period (HH.MM) |
-| **(46)** | `STTL` | Sequence Scheduled Total | Total scheduled flight time & credit for sequence |
-| **(47)** | `ACT` | Actual Flight Time | Flown time for duty period legs |
-| **(48)** | `GRTR` | Greater Time (Duty Period) | Leg-by-leg greater of actual vs scheduled |
-| **(49)** | `GTTL` | Greater Total (Sequence) | Leg-by-leg greater total for sequence |
-| **(50)** | `EXP TAFB` | Time Away From Base Expenses | Multi-day per diem. Shows `Taxable` for 1-day turns |
-| **(51)** | `*` | Continuity Indicator | E.g. `*4113` indicates sequence fails continuity |
-| **(52)** | Misc | Misc Credit Codes | E.g. `HOMSTUDY`, `IOE`, `DR`, `RS` with pay in `GRTR`/`GTTL` |
-| **(53)** | `RAP` / `S/B` | Reserve Availability Period | E.g. `RAP 1400 2200`, `S/B 1400 2200` |
-| **(54)** | `MISC EXP` | Half Day Station Expenses | Historical per diem counts |
+### The Problem
+WebSabre / FOS is a legacy desktop web application containing navigation headers, sidebars, banners, iframes, and toolbars surrounding a 3270 terminal `<canvas>`. On a mobile device, rendering the unmodified web page causes the WebView to zoom out into desktop overview mode, displaying unnecessary website UI and making the terminal unreadable.
 
----
-
-## 3. Pay Status Codes `(Col ST)`
-
-- `1`: Captain, Lineholder, Domestic
-- `2`: Captain, Reserve, Domestic
-- `3`: Captain Lineholder on a Reserve Day, Domestic
-- `4`: First Officer, Lineholder, Domestic
-- `5`: First Officer, Reserve, Domestic
-- `6`: Management / Instructor
-- `7`: First Officer Lineholder on a Reserve Day, Domestic
-- `11`: Captain, Lineholder, International
-- `12`: Captain, Reserve, International
-- `13`: Captain Lineholder on a Reserve Day, International
-- `14`: First Officer, Lineholder, International
-- `15`: First Officer, Reserve, International
-- `17`: First Officer Lineholder on a Reserve Day, International
-
----
-
-## 4. Flight Number Prefix Identifiers
-
-- `-` (Dash, e.g. `-1340`): Normal operating flight leg.
-- `D` (Deadhead, e.g. `D452`): Company Deadhead.
-- `C` (Cancelled, e.g. `C2114`): Cancelled flight (protected pay).
-- `*XX` (OAL Deadhead, e.g. `*UA234`, `*DL112`): Other Airline Deadhead.
-- `X` (Removed, e.g. `X1509`): Flight removed from sequence.
-
----
-
-## 5. FOS Removal Codes `(Col RMV)`
-
-| Code | Print Code | Description |
-|:---|:---|:---|
-| `VC` | `VACATION` | Scheduled Vacation |
-| `V6` | `VACDAY` | Single Vacation Day |
-| `VX` | `VACNOFLY` | Vacation (No Fly) |
-| `CV` | `CXLD VAC` | Cancelled Vacation |
-| `SK` | `SICK` | Paid Sick Leave |
-| `SX` | `UNPDSICK` | Unpaid Sick |
-| `US` | `UNPDSICK` | Unpaid Sick Leave |
-| `SC` | `SK CALIF` | California Sick Leave |
-| `SF` | `SKINTFAM` | Sick in Family |
-| `IF` | `INTFAML` | Intermittent Family Leave |
-| `FP` | `FATG PD` | Fatigue Removal (Paid) |
-| `FT` | `FATG` | Fatigue Removal |
-| `CL` | `CL` | Closeout / Company Removal |
-| `SD` | `SEQDROP` | Sequence Dropped |
-| `DT` | `DRP TRP` | Dropped Trip |
-| `DV` | `DRP RSV` | Dropped Reserve Day |
-| `GA` | `GIVEAWAY` | Trip Giveaway / Trade |
-| `OE` | `OPT EXCH` | Option Exchange / Trade |
-| `SW` | `SKED WIRE` | Schedule Wire Change |
-| `SH` | `SKD CHG` | Schedule Change |
-| `XX` | `CXDRMVL` | Cancelled Sequence Removal |
-| `XL` | `CXDNOREV` | Cancelled - No Revision |
-| `XR` | `CXDRMVL` | Cancelled Removal |
-| `DP` | `DISPD` | Displaced by Check Airman / Management |
-| `PD` | `DISPD` | Displaced |
-| `CH` | `CHG OVR` | Changeover |
-| `AC` | `ACREFUSED`| Aircraft Refused |
-| `TO` | `TIMEDOUT` | FAR 117 / Duty Timed Out |
-| `EM` | `ACTOFGOD` | Act of God / Emergency |
-| `CP` | `COMMUTER` | Commuter Policy Removal |
-| `30` | `30 HRS` | FAR 30 Hours in 7 Days Rest |
-| `7D` | `7 DAYS` | 7 Consecutive Days Rest |
-| `V1` | `12 IN 24` | FAR 121.471 12 in 24 Rest |
-| `V2` | `20 IN 48` | FAR 121.471 20 in 48 Rest |
-| `V3` | `24 IN 72` | FAR 121.471 24 in 72 Rest |
-| `V8` | `PART 121` | FAR Part 121 Legality Removal |
-| `TR` | `TRNG` | Training Removal |
-| `TF` | `FLT TRNG`| Flight Training |
-| `TG` | `GRND TRN` | Ground Training |
-| `ST` | `SIM TRNG` | Simulator Training |
-| `T1`/`T2`/`T3` | `SPL TRG` | Special Training |
-| `0G` | `INIT GS` | Initial Ground School |
-| `AG` | `TRANS GS` | Transition Ground School |
-| `UG` | `UPGRD GS` | Upgrade Ground School |
-| `RG` | `RECUR GS` | Recurrent Ground School |
-| `AI` | `AWTGIOE` | Awaiting IOE |
-| `AQ` | `AWTGREQL`| Awaiting Requalification |
-| `BR` | `BEREAVMT` | Bereavement Leave |
-| `BU` | `BRUNPAID` | Bereavement Unpaid |
-| `JD` | `JD` | Jury Duty |
-| `ML` | `MIL LOA` | Military Leave of Absence |
-| `MR` | `MIL RQST` | Military Request |
-| `FC` | `FMLA` | Family Medical Leave Act |
-| `F6` | `FMLA V6` | FMLA Vacation Day |
-| `PL` | `PLOA` | Personal Leave of Absence |
-| `PE` | `PELOA` | Personal Emergency LOA |
-| `SL` | `SLOA` | Sick Leave of Absence |
-| `JI` | `IOD LOA` | Injury on Duty LOA |
-| `IS` | `INJURYSK` | Injury Sick Leave |
-| `MV` | `MV DAY` | Moving Day |
-| `UM` | `UNPD MV` | Unpaid Moving Day |
-| `WP` | `WITNESSP` | Company Witness (Paid) |
-| `WU` | `WITNESSU` | Witness (Unpaid) |
-| `AS` | `ASAP` | ASAP Program Removal |
-| `SP` | `SAFTYPRGM`| Safety Program Removal |
-| `MC` | `MISCON` | Misconnection |
-| `MT` | `MISSEDTRIP`| Missed Trip |
-| `LR` | `RPT LATE` | Report Late |
-| `LT` | `LATE4TR` | Late for Trip |
-| `MA` | `MISDASMT` | Missed Assignment |
-| `SS` | `SUSPEND` | Suspended |
-| `RL` | `RELEASED`| Released from Duty |
+### Strict Rules to Maintain Screen Isolation:
+1. **Never Remove `setInterval(applyDecsIsolation, 300)`**:
+   - WebSabre dynamically creates, modifies, and re-renders canvas elements during navigation.
+   - Isolation MUST be re-applied periodically (`setInterval(applyDecsIsolation, 300)`) to ensure the canvas remains pinned and isolated.
+2. **WebView Settings for Terminal vs. SSO**:
+   - **Login / SSO URLs** (`okta`, `ping`, `saml`, `sso`, `login`): Set `setLoadWithOverviewMode(true)` and `setUseWideViewPort(true)` so the authentication form fits comfortably.
+   - **Terminal URLs** (`websabre`, `webfos`, `fos`, `decs`, `sabre`, or when `<canvas>` exists): Set `setLoadWithOverviewMode(false)` and `setUseWideViewPort(false)` with `setSupportZoom(true)`.
+3. **Canvas Viewport Style Overrides**:
+   - The `<canvas>` element must have:
+     ```css
+     position: fixed !important;
+     top: 0px !important;
+     left: 0px !important;
+     width: 100vw !important;
+     min-width: 100vw !important;
+     max-width: 100vw !important;
+     height: 100% !important;
+     max-height: 100% !important;
+     object-fit: contain !important;
+     margin: 0px !important;
+     padding: 0px !important;
+     z-index: 2147483647 !important;
+     background: #000000 !important;
+     ```
+4. **Hiding Surrounding UI Elements**:
+   - Inject a global `<style id="csp-decs-isolated-style">`:
+     ```css
+     html, body {
+       background-color: #000000 !important;
+       margin: 0 !important;
+       padding: 0 !important;
+       overflow: hidden !important;
+       width: 100vw !important;
+       height: 100vh !important;
+     }
+     header, nav, footer, .header, .footer, .navbar, .nav-bar, #header, #footer, #nav, #navigation, .banner, .top-bar, .menu {
+       display: none !important;
+       visibility: hidden !important;
+       height: 0px !important;
+     }
+     ```
+   - Walk up from the canvas element to `document.body`, setting all sibling elements at each hierarchy level to `display: none !important; visibility: hidden !important; height: 0px !important;`.
+5. **Viewport Meta Tag Injection**:
+   ```javascript
+   var meta = document.querySelector('meta[name="viewport"]');
+   if (!meta) {
+     meta = document.createElement('meta');
+     meta.name = 'viewport';
+     document.head.appendChild(meta);
+   }
+   meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes';
+   ```
 
 ---
 
-## 6. FOS Add Codes `(Col ADD)`
+## 2. 3270 Screen Reading & Screen-Wide Line Detection
 
-| Code | Print Code | Description |
-|:---|:---|:---|
-| `TF` | `TRNGFLT` | Training Flight Addition |
-| `EX` | `EXTENDED` | Extended Duty / Sequence Extension |
-| `RE` | `REPO` | Repositioning Flight |
-| `CE` | `CHG EQP` | Change of Equipment |
-| `JM` | `JUN MAN` | Junior Manned Assignment |
-| `DP` | `DISPD` | Displaced Assignment |
-| `CH` | `CHG OVR` | Changeover Addition |
-| `TR` | `TRNG` | Training Assignment |
-| `TY` | `TDY` | Temporary Duty Assignment |
-| `RA` | `RA` | Regular Assignment / Sequence Added |
-| `JP` | `JMEXPAY` | Junior Available / Extension Premium Pay |
-| `LT` | `LOT` | Lock Out / Open Time Award |
-| `BO` | `BIDOPEN` | Bid Open Time Trip Award |
-| `SH` | `SKD CHG` | Schedule Change Addition |
-| `MX` | `TST FLT` | Test Flight |
-| `FR` | `MX FERRY`| Maintenance Ferry Flight |
-| `SL` | `SPVDLNFL`| Supervised Line Flying |
-| `MA` | `NEW ASMT`| New Flight Assignment |
-| `MU` | `MAKE UP` | Make-Up Flying |
-| `OT` | `OVERTIME`| Overtime Flying Assignment |
-| `AR` | `CA AS FO`| Captain Flying in FO Seat |
-| `RF` | `RESERVE` | Reserve Availability / Assignment Addition |
-| `SM` | `SK MKUP` | Sick Make-Up Flying |
-| `TT` | `TT` | Trip Trade Addition |
-| `R1` | `RSV SLF` | Reserve Supervised Line Flying |
-| `LM` | `LOTRSV` | Lock Out Open Time for Reserve |
-| `SF` | `SUPFLY` | Supplemental Flying |
-| `CS` | `CRSKACCT`| Credit Sick Account |
-| `AV` | `AVAIL` | Available for Duty |
-| `OE` | `OPT EXCH`| Option Exchange Addition |
-| `SB` | `STANDBY` | Airport Standby Reserve Assignment |
-| `LI` | `LINECKTC`| Line Check Training Center Instructor |
-| `IN` | `IOEINSTR`| Initial Operating Experience Instructor |
-| `LX` | `LCSTUDNT`| Line Check Student |
-| `LC` | `LINECK` | Line Check Flight |
-| `IT` | `IOEINST` | IOE Instructor Flight |
-| `IE` | `IOE` | Initial Operating Experience |
-| `SW` | `SKEDWIRE`| Schedule Wire Addition |
-| `LR` | `NEWASGN` | New Assignment Addition |
-| `SD` | `SEQDROP` | Sequence Drop Adjustment |
-| `OO` | `TTOPTIME`| Trip Trade Open Time |
+### The Bug & Lesson Learned
+- **Bug**: Using `st.getString().slice(r * 80, (r+1) * 80)` failed because `st.getString()` often contains `\n` or `\r\n` characters. Character slicing drifted, causing the scanner to stop prematurely around row 5–6 when encountering divider asterisks (`*****`) or header text, placing the cursor mid-screen.
+- **Rule**: When analyzing the terminal screen, ALWAYS evaluate the full 24 rows across all 80 columns.
 
----
+### Correct Algorithm: `findLastLineAcrossEntireScreen()`
+```javascript
+window.findLastLineAcrossEntireScreen = function() {
+  var st = window.sabreTerm;
+  var numCols = 80;
+  var numRows = 24;
+  if (st && st.screen && st.screen.size) {
+    if (st.screen.size.x) numCols = st.screen.size.x;
+    if (st.screen.size.y) numRows = st.screen.size.y;
+  }
 
-## 7. FOS Misc. Payroll & Credit Codes `(Col SEQ / Misc)`
+  var screenLines = [];
+  if (st && st.screen) {
+    if (Array.isArray(st.screen.lines) && st.screen.lines.length > 0) {
+      for (var i = 0; i < st.screen.lines.length; i++) {
+        var rowObj = st.screen.lines[i];
+        if (typeof rowObj === 'string') {
+          screenLines.push(rowObj);
+        } else if (rowObj && typeof rowObj.text === 'string') {
+          screenLines.push(rowObj.text);
+        } else if (rowObj && typeof rowObj.getString === 'function') {
+          screenLines.push(rowObj.getString());
+        }
+      }
+    } else if (typeof st.screen.getLineText === 'function') {
+      for (var r = 0; r < numRows; r++) {
+        screenLines.push(st.screen.getLineText(r) || '');
+      }
+    } else if (typeof st.screen.getLine === 'function') {
+      for (var r2 = 0; r2 < numRows; r2++) {
+        var lObj = st.screen.getLine(r2);
+        screenLines.push(typeof lObj === 'string' ? lObj : (lObj && lObj.text ? lObj.text : ''));
+      }
+    }
+  }
 
-- `HOMSTUDY` / `HOMESTUDY`: Home Study Pay Credit (credited to `GRTR` / `GTTL`).
-- `TRNGPAY`: Training Pay.
-- `IOE INST`: IOE Instructor Premium Pay.
-- `PERDIEM`: Domestic Expense Per Diem calculation.
-- `TPERDIEM`: Taxable Per Diem (single-day turns).
-- `ICPD PAY`: International City Per Diem overnight bonus.
-- `SAABVGUR`: Special Assignment Above Guarantee Pay.
-- `SATOWGUR`: Special Assignment Toward Guarantee Pay.
-- `ADTOWGUR`: Additional Hours Toward Guarantee.
-- `OTPREMCR`: Overtime Premium Credit.
-- `OTPREMDB`: Overtime Premium Debit.
-- `JMEXPRCR`: Junior Manned / Extension Premium Credit.
-- `JMEXPRDB`: Junior Manned / Extension Premium Debit.
-- `PDVACADJ`: Paid Vacation Adjustment (Manual adjustment to vacation pay).
-- `SICKCRPD`: Paid Sick Credit.
-- `SICKUNPD`: Unpaid Sick Credit.
-- `SKREDUCT`: Sick Reduction.
-- `PRKG PAY`: Parking Reimbursement ($$).
-- `TRNSPORT`: Transportation / Cab Pay.
-- `DRUGTEST`: Drug Testing Pay.
-- `TAXITIME`: Taxi Time Credit.
-- `DB BIDLN`: Debit to Bidline.
-- `CR BIDLN`: Credit / Increase to Bidline.
-- `TRANSNDB`: Transition Debit to Bidline.
-- `TRANSNCR`: Transition Credit to Bidline.
-- `FINALPAY`: Final Pay Override.
-- `GUAR`: Minimum Guarantee Override.
-- `PRORATED`: Prorated Guarantee for partial month.
+  if (screenLines.length === 0 && st && typeof st.getString === 'function') {
+    var raw = st.getString() || '';
+    if (raw.includes('\n')) {
+      screenLines = raw.split(/\r?\n/);
+    } else {
+      for (var c = 0; c < numRows; c++) {
+        screenLines.push(raw.slice(c * numCols, (c + 1) * numCols));
+      }
+    }
+  }
+
+  var lastRowWithText = 0;
+  for (var rowIdx = 0; rowIdx < screenLines.length && rowIdx < numRows; rowIdx++) {
+    var line = screenLines[rowIdx] || '';
+    var clean = line.replace(/[\u0000\s]/g, '').trim();
+    if (clean.length > 0) {
+      lastRowWithText = rowIdx;
+    }
+  }
+
+  var nextRow = lastRowWithText + 1;
+  if (nextRow >= numRows) {
+    nextRow = numRows - 1;
+  }
+  return { lastRowWithText: lastRowWithText, nextRow: nextRow, totalRows: numRows, totalCols: numCols };
+};
+```
 
 ---
 
-## 8. Screen Navigation & 3270 State Machine Rules
+## 3. Cursor & Start of Message (SOM) Manipulation
 
-1. **Clean Row Pagination (`MD`)**:
-   - In 3270 block mode, typing `MD` while cursor is in an active text row causes `‡FORMAT‡` error.
-   - Always drop cursor to `scr.currentLine + 1` with `scr.setSOM(0, nextRow)` before sending `MD`.
-2. **Page Completion Detection**:
-   - Look for `BOTTOM OF`, `NO MORE DATA`, `END OF DISP`, `END OF SCROL`, `LAST PAGE`, `NO MORE SCROLL`.
-   - On sequence detail screens (`HSS`), handle `MORE? (ENTER Y)` by typing `Y` rather than `MD`.
-3. **Sign-In Auto-Fill**:
-   - `BSIP[ID]` command displays `BASIC AGENT SIGN-IN`.
-   - DECS natively places the cursor in the `CURRENT PASSCODE` box at column 17 of row 1. Keystrokes must be passed directly to `st.keyPressed` without moving the cursor away to the `<` characters in the ID/Suffix fields.
+### 3270 Block Mode Rule
+- In 3270 block mode, typing `MD` (or entering a command) while the cursor is inside an active text row causes a `‡FORMAT‡` error or overwrites existing data fields.
+- **Rule**: ALWAYS place the cursor on the blank row immediately below the last line of text before typing `MD` or sending autonomous commands.
+
+### Correct Algorithm: `positionCursorBelowLastLine()`
+```javascript
+window.positionCursorBelowLastLine = function() {
+  var res = window.findLastLineAcrossEntireScreen();
+  var targetRow = res.nextRow;
+  var st = window.sabreTerm;
+  if (st && st.screen) {
+    var scr = st.screen;
+    try {
+      if (typeof scr.setCursor === 'function') scr.setCursor(0, targetRow);
+      if (typeof scr.setSOM === 'function') scr.setSOM(0, targetRow);
+      if (typeof scr.setCurrentLineCurrentColumn === 'function') scr.setCurrentLineCurrentColumn(0, targetRow);
+      scr.currentLine = targetRow;
+      scr.currentColumn = 0;
+      if (typeof scr.showLineNumber === 'function') scr.showLineNumber();
+    } catch(e) {}
+  }
+  // Dispatch synthetic mouse/pointer event on canvas
+  var canvas = document.querySelector('canvas');
+  if (canvas) {
+    var rect = canvas.getBoundingClientRect();
+    var cellH = rect.height / res.totalRows;
+    var clickX = rect.left + 10;
+    var clickY = rect.top + (targetRow * cellH) + (cellH / 2);
+    var evOpts = { clientX: clickX, clientY: clickY, bubbles: true, cancelable: true };
+    canvas.dispatchEvent(new MouseEvent('mousedown', evOpts));
+    canvas.dispatchEvent(new MouseEvent('mouseup', evOpts));
+    canvas.dispatchEvent(new MouseEvent('click', evOpts));
+  }
+  return targetRow;
+};
+```
+
+---
+
+## 4. Keystroke Emulation & Control Keys
+
+### Keystroke Protocol
+- Standard characters: Send ASCII char codes to `window.sabreTerm.keyPressed(code)`.
+- `^` (Caret) represents `Enter` (KeyCode 13).
+- Trailing Enter: If a command does not end with `/` or `^`, append KeyCode 13 (`st.keyPressed(13)`).
+- Special Keys:
+  - `SHIFT_ENTER` / `NEWLINE`: Advances cursor to `currentLine + 1` without sending data.
+  - `CTRL_HOME` / `HOME`: Calls `st.home()`, `scr.setCursor(0,0)`, and resets SOM to `(0,0)`.
+  - `SHIFT_DELETE` / `CLEAR` / `CLEAR_PAGE`: Calls `st.clearScreen()` / `scr.eraseScreen()`, clears input fields, and resets cursor to `(0,0)`.
+  - `MD`: Calls `positionCursorBelowLastLine()`, sleeps 350ms, then types `M`, `D`, `Enter`.
+
+---
+
+## 5. Autonomous Multi-Page Capture Engines
+
+### Protocol for HI1 / HI2 & HSS: `runAutonomousHiCapture(command)`
+1. Position cursor below last line with `window.positionCursorBelowLastLine()`.
+2. Type command (e.g. `HI1^`, `HSS 14731/15AUG/ORD^`).
+3. Poll for screen change against initial screen (timeout ~4 seconds).
+4. Wait for screen stability (`waitUntilStable(800)`).
+5. Check if display is complete:
+   - Check tokens: `BOTTOM OF`, `NO MORE DATA`, `END OF DISP`, `END F DISP`, `END OF SCROL`, `COMMAND COMPLETE`.
+   - If screen shows `MORE? (ENTER Y)`, send `Y^` instead of `MD^`.
+6. For each subsequent page (up to 30 pages max):
+   - Position cursor below last line.
+   - Send `MD^`.
+   - Poll for content change. If no change, retry once after 1000ms.
+   - If still no change or end-of-scroll detected, terminate pagination.
+7. Concatenate all pages with `\n` and pass to native Android bridge (`window.AndroidPortal.onHiCaptureComplete`).
+
+### Protocol for N6D Reserve Roster: `runAutonomousN6DCapture(command)`
+1. Position cursor below last line.
+2. Type `N6D/(BASE)/(DATE)/E75/(SEAT)^`.
+3. Wait for `RESERVES DISPLAY` screen.
+4. Check termination markers: `OTHERS`, `TOTAL AVAILABLE` + `AVAILABLE RSVS`, `BOTTOM OF`, `END OF DISP`, `NO MORE DATA`.
+5. Page turn using `MD` with `positionCursorBelowLastLine()`.
+6. When complete, dispatch to `AndroidPortal.onHiCaptureComplete` with `pages.length`.
+
+---
+
+## 6. DECS / FOS Layout Specifications & Code Dictionaries
+
+### HI1 Monthly Activity Record Layout
+- **Header Block**: Contract Month, Date As Of, Crewmember Name, Seniority, Employee ID, Crew Base, Bid Line, Equipment (`E175`, `E145`, `B737`), Phone Contacts.
+- **Pay Accounting Block**: `GTD` (Greater Time to Date), `DEXP` (Domestic Per Diem), `IEXP` (International Per Diem), `GUAR` (Guarantee, 72h line / 75h reserve), `FLT TIME` (Actual flown), `ACT/SKD PROJ` (100h monthly limit projection), `YTD TL` (Year-to-date total).
+- **Sick Banks**: `AVBL SK`, `YTD SK ACRL`, `SK USED MTD`, `LONG TERM SK AVAIL`, `SHORT TERM SICK PAYOUT ACCRUAL`.
+- **Activity Table Columns**:
+  - `(39) DD`: Day of month (1–31)
+  - `(40) ST`: Pay Status Code (`1`=CA Dom, `2`=CA RSV, `4`=FO Dom, `5`=FO RSV, `11`=CA Intl, `14`=FO Intl)
+  - `(41) RMV`: Removal code (`VC`, `SK`, `FP`, `FT`, `CL`, `SD`, `DT`, `GA`, `SW`, `SH`, `30`, `7D`, `V1`, `TR`, `ML`)
+  - `(42) ADD`: Addition code (`TF`, `EX`, `RE`, `JM`, `DP`, `RA`, `JP`, `LT`, `BO`, `SH`, `MU`, `OT`, `RF`, `SB`, `LC`, `IE`)
+  - `(43) SEQ`: Sequence # (e.g. `14731`), or activity code (`HOMSTUDY`, `S/B`, `RAP`, `DO`)
+  - `(44) FLT`: Flight numbers with prefix (`-`=Operate, `D`=Deadhead, `C`=Cancelled, `*XX`=OAL Deadhead, `X`=Removed)
+  - `(45) SKED`: Scheduled flight time
+  - `(46) STTL`: Scheduled sequence total
+  - `(47) ACT`: Actual flight time
+  - `(48) GRTR`: Greater time for duty period
+  - `(49) GTTL`: Greater total for sequence
+  - `(50) EXP TAFB`: Time Away From Base per diem
+
+### N6D Reserve Roster Columns
+- Header: `[BASE] [EQP] [SEAT] RESERVES DISPLAY [DATE] AS OF [TIME] [DATE] [CATEGORY]`
+- Pilot Row: `SEN NAME [DAY 1] [DAY 2] [DAY 3] [DAY 4] [DAY 5] [DAY 6] [DAY 7]`
+- Status Tokens:
+  - `24` / `RD`: Scheduled off day
+  - `RAP1` (e.g. 05:00–17:00) / `RAP2` (e.g. 14:00–02:00): Reserve Availability Period
+  - `SB` / `S/B`: Airport Standby
+  - `[SEQ#]` (e.g. `14731`): Assigned flight sequence
+  - `VC` / `SK` / `LOA`: Vacation, sick, or leave
+- Reverse Seniority Callout: Highest seniority number (lowest relative seniority) is called first within each available RAP window.
+
+---
+
+## 7. Checklist for Modifying DECS / WebView Code
+
+Before saving changes to `MainActivity.java` or terminal integration files:
+- [ ] Is `setInterval(applyDecsIsolation, 300)` present in `isolateAndFitDecsCanvas()`?
+- [ ] Are `setLoadWithOverviewMode(false)` and `setUseWideViewPort(false)` set for terminal pages?
+- [ ] Does line detection scan all rows `0..23` without fixed character slicing?
+- [ ] Is `positionCursorBelowLastLine()` called before any `MD` or macro command?
+- [ ] Are non-terminal website wrappers (`header`, `nav`, `footer`, `navbar`) hidden via `#csp-decs-isolated-style`?
+- [ ] Does the build compile without warnings and install cleanly on the Android device?

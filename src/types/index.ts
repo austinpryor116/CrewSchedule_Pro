@@ -84,7 +84,8 @@ export interface UserProfile {
   seniorityNumber?: string;
   base: string;
   equipment: string;
-  crewRole: "CA" | "FO" | "CHECK_PILOT" | "LFA" | "FA";
+  crewRole: "CA" | "FO" | "CHECK_PILOT" | "FA";
+  hourlyRate?: number;
   hireDate?: string;
   hasCompleted750Sic?: boolean; // FO reaches 750 SIC before Dec 31, 2026 -> Captain Pay
   sic750DateReached?: string;   // Date 750 SIC was logged (YYYY-MM-DD)
@@ -101,6 +102,11 @@ export interface UserProfile {
   syncCalendar?: boolean;
   autoSyncEnabled?: boolean;
   timezoneDisplay?: "LOCAL" | "BASE" | "ZULU";
+  airline?: string;
+  hasCompletedOnboarding?: boolean;
+  firebaseUid?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SequenceTrip {
@@ -126,6 +132,7 @@ export interface SequenceTrip {
   hasConflict?: boolean;
   conflictReason?: string;
   expTafbHours?: number; // Total EXP TAFB (Time Away From Base)
+  actualTafbHours?: number; // Total ACT TAFB (Actual Time Away From Base)
   hasContinuityIssue?: boolean; // Sequence continuity flag (*)
 }
 
@@ -151,7 +158,7 @@ export interface PayRates {
   tafbHours: number; // Time Away From Base
 
   // Crew Profile & Role Settings
-  crewRole?: "CA" | "FO" | "CHECK_PILOT" | "LFA" | "FA";
+  crewRole?: "CA" | "FO" | "CHECK_PILOT" | "FA";
   equipment?: string;
   homeBase?: string;
 
@@ -249,6 +256,54 @@ export interface OpenSequence {
   layoverDescription: string;
   isSimulated?: boolean;
   base?: string;
+  equipment?: string;
+  position?: string;
+  isDropBoard?: boolean;
+}
+
+export type OpenTimePickupMode = "STRAIGHT_HTO" | "SWAP_HTS" | "DROP_BOARD_HTD";
+
+export interface PickupLegalityAudit {
+  isLegal: boolean;
+  score: number; // 0 - 100 efficiency score
+  overallStatus: "LEGAL" | "WARNING" | "ILLEGAL";
+  overlapConflict: boolean;
+  overlapDetails?: string;
+  preDutyRestHours: number;
+  isPreDutyRestLegal: boolean;
+  postDutyRestHours: number;
+  isPostDutyRestLegal: boolean;
+  has30in7Rest: boolean;
+  isBaseCompatible: boolean;
+  isPositionCompatible: boolean;
+  isFleetCompatible: boolean;
+  reasons: string[];
+  warnings: string[];
+}
+
+export interface PickupFinancialImpact {
+  addedCreditHours: number;
+  hourlyRate: number;
+  estimatedGrossPay: number;
+  estimatedPerDiem: number;
+  newProjectedMonthlyCredit: number;
+  newProjectedGrossPay: number;
+  isOvertimeEligible: boolean;
+  overtimeBonusEst: number;
+}
+
+export interface OpenTimeSniperConfig {
+  enabled: boolean;
+  minCreditHours: number;
+  maxTripDays: number;
+  preferredBases: string[];
+  preferredLayovers: string[];
+  avoidLayovers: string[];
+  maxLegsPerDay: number;
+  earliestReport: string;
+  latestRelease: string;
+  autoExecuteDecs: boolean;
+  notificationsEnabled: boolean;
 }
 
 export interface StationTurnLimits {
@@ -409,5 +464,56 @@ export interface N6DReservesData {
   importedAt: string;
 }
 
+export interface TurnbackRecord {
+  seniority?: string;
+  employeeId?: string;
+  name: string;
+  date?: string;
+  reason?: string;
+  rawText?: string;
+}
+
+export interface TurnbackData {
+  importedAt: string;
+  dateRange?: string;
+  records: TurnbackRecord[];
+  pilotIdentifiers: string[]; // Fast lookup set of IDs, seniority #s, and names
+  rawText: string;
+}
+
+export interface HssChangeItem {
+  id: string;
+  field: "LEGS" | "BLOCK_TIME" | "CREDIT_TIME" | "CREW_MEMBERS" | "HOTEL" | "TAFB" | "EQUIPMENT" | "STATUS_TAG" | "DUTY_PERIODS";
+  changeType: "ADDED" | "REMOVED" | "MODIFIED" | "REASSIGNED";
+  flightNumber?: string;
+  previousValue: any;
+  newValue: any;
+  deltaMinutes?: number;
+  notes?: string;
+}
+
+export interface HssAuditRecord {
+  auditId: string;
+  sequenceNumber: string;
+  sequenceDate: string;
+  capturedAt: string;
+  source: "DECS_HSS_IMPORT" | "MANUAL_EDIT" | "SCHEDULE_SYNC" | "DECS_CAPTURE";
+  previousSnapshotTimestamp?: string;
+  changesDetected: HssChangeItem[];
+  contractImpactSummary: {
+    scheduledCreditMinutes: number;
+    actualCreditMinutes: number;
+    creditDifferenceMinutes: number;
+    hasOvertimeDelta: boolean;
+    hasReassignment: boolean;
+    reassignmentClauseApplicable?: string; // e.g. "Section 12.C (Junior Manning / Reassignment)"
+    hotelRequiredChanged?: boolean;
+  };
+  rawHssTextSnippet?: string;
+}
+
 export * from './messaging';
+export * from './decs';
+
+
 

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { SequenceTrip, DutyPeriod, FlightLeg } from "../../types";
 import { useCrewStore } from "../../store/useCrewStore";
+import { isRealHotelInfo } from "../../lib/parser";
 import { parseHssSchedule } from "../../lib/parser";
 import { parseHssText } from "../../lib/hssParser";
 import { typeMacroOnDecsScreen } from "../../lib/keyboardSimEngine";
@@ -662,12 +663,12 @@ export default function HSSSequencesModal({
                                       </div>
                                     </div>
 
-                                    {dp.layoverHotelInfo && (
-                                      <div className="text-[10.5px] text-slate-600 bg-amber-50/80 border border-amber-200/60 px-2 py-1 rounded-lg flex items-center gap-1.5">
-                                        <Building className="w-3 h-3 text-amber-600 shrink-0" />
-                                        <span className="truncate">{dp.layoverHotelInfo}</span>
-                                      </div>
-                                    )}
+                                     {isRealHotelInfo(dp.layoverHotelInfo) && (
+                                       <div className="text-[10.5px] text-slate-600 bg-amber-50/80 border border-amber-200/60 px-2 py-1 rounded-lg flex items-center gap-1.5">
+                                         <Building className="w-3 h-3 text-amber-600 shrink-0" />
+                                         <span className="truncate">{dp.layoverHotelInfo}</span>
+                                       </div>
+                                     )}
 
                                     {/* Flight Legs */}
                                     {dp.legs && dp.legs.length > 0 ? (

@@ -24,6 +24,20 @@ export function minutesToHHMM(mins: number): string {
 }
 
 /**
+ * Formats total minutes into airline/aviation standard format:
+ * "17.33" (HH.MM) or "17h 33m"
+ */
+export function formatAviationHours(totalMinutes: number, format: "dot" | "hm" = "hm"): string {
+  if (!totalMinutes || isNaN(totalMinutes)) return format === "dot" ? "0.00" : "0h 00m";
+  const hours = Math.floor(Math.abs(totalMinutes) / 60);
+  const mins = Math.round(Math.abs(totalMinutes) % 60);
+  if (format === "dot") {
+    return `${hours}.${String(mins).padStart(2, "0")}`;
+  }
+  return `${hours}h ${String(mins).padStart(2, "0")}m`;
+}
+
+/**
  * Calculates block minutes between departure and arrival time
  * Handles cross-midnight flights if arrival is earlier than departure (assuming <24h duration)
  */
@@ -56,21 +70,22 @@ export function parseAviationTime(timeStr: string): number {
   if (parts.length === 2) {
     const hours = parseInt(parts[0], 10) || 0;
     const mins = parseInt(parts[1], 10) || 0;
-    if (hours > 18 || mins >= 60) return 0;
+    if (mins >= 60) {
+      // In case it's pure decimal hours e.g. 7.75
+      return Math.round(parseFloat(clean) * 60);
+    }
     return hours * 60 + mins;
   }
-  // If it's a 4-digit aviation time string e.g. "0230"
+  // If it's a 4-digit aviation time string e.g. "0230" or "1842"
   if (/^\d{4}$/.test(clean)) {
     const h = parseInt(clean.substring(0, 2), 10);
     const m = parseInt(clean.substring(2, 4), 10);
-    if (h <= 18 && m < 60) return h * 60 + m;
+    if (m < 60) return h * 60 + m;
   }
-  // Single number without decimal:
-  // Only valid if <= 16 hours (e.g. "2" -> 120m). 
-  // Flat tokens like "25", "54" from DECS subfleets are discarded as non-times.
-  const val = parseFloat(clean);
-  if (!isNaN(val) && val > 0 && val <= 16) {
-    return Math.round(val * 60);
+  // Single number without decimal e.g. "2" -> 120m
+  const num = parseFloat(clean);
+  if (!isNaN(num) && num > 0 && num <= 100) {
+    return Math.round(num * 60);
   }
   return 0;
 }
@@ -241,13 +256,13 @@ function parseMonth(monthStr: string): number {
  * Parses unformatted monospace text blocks and converts them into structured SequenceTrip objects
  */
 export function parseRawSchedule(text: string): SequenceTrip[] {
-  // Check for HSS sequence pairing details first
-  if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "))) {
-    return parseHssSchedule(text);
-  }
+  if (!text || !text.trim()) return [];
+
+  // 1. Check for Monthly HI Schedule (HI1 / HI2 / Monthly Roster) first
   if (
-    text.includes("MONTH ENDING") ||
+    /MONTH\s*ENDING/i.test(text) ||
     text.includes("MONTHENDING") ||
+    text.includes("BID SEL") ||
     text.includes("EXP TAFB") ||
     text.includes("EP TAFB") ||
     text.includes("ACT TOTAL") ||
@@ -259,6 +274,12 @@ export function parseRawSchedule(text: string): SequenceTrip[] {
   ) {
     return parseHI1Schedule(text);
   }
+
+  // 2. Check for HSS sequence pairing details (Single/multi-day pairing breakdown)
+  if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "))) {
+    return parseHssSchedule(text);
+  }
+
   const sequences: SequenceTrip[] = [];
   const lines = text.split(/\r?\n/);
   
@@ -545,11 +566,11 @@ export function parseRawSchedule(text: string): SequenceTrip[] {
           dutyMinutes: 0,
           legs: [],
           layoverCity: city,
-          layoverHotelInfo: "LSO Layover Hotel",
+          layoverHotelInfo: "",
         };
       } else {
         activeDutyPeriod.layoverCity = city;
-        activeDutyPeriod.layoverHotelInfo = "LSO Layover Hotel";
+        activeDutyPeriod.layoverHotelInfo = "";
       }
 
       // Check next lines for hotel names
@@ -836,21 +857,26 @@ export function detectMonthFromText(text: string): { monthNum: number; monthAbbr
     JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11
   };
 
-  // 1. Check for explicit "MONTH ENDING 31AUG26" or "31AUG26" or "13AUG"
-  const monthEndingMatch = text.match(/(?:MONTH ENDING\s+)?(\d{1,2})([A-Z]{3})(\d{2,4})?/i) || text.match(/\b(\d{1,2})([A-Z]{3})(\d{2,4})?\b/i);
+  // 1. Check for explicit "MONTH ENDING 30SEP26" or "MONTH   ENDING   30SEP26" or "31AUG26" or "13AUG"
+  const monthEndingMatch = text.match(/MONTH\s*ENDING\s+(\d{1,2})\s*([A-Z]{3})\s*(\d{2,4})?/i) ||
+                           text.match(/MONTH\s*ENDING\s+([0-9A-Z\s]+?)(?:\s+AS|\n|$)/i);
   if (monthEndingMatch) {
-    const abbr = monthEndingMatch[2].toUpperCase();
-    let yr = monthEndingMatch[3] ? parseInt(monthEndingMatch[3], 10) : new Date().getFullYear();
-    if (yr < 100) yr += 2000;
+    const raw = monthEndingMatch[0];
+    const mMatch = raw.match(/(\d{1,2})\s*([A-Z]{3})\s*(\d{2,4})?/i);
+    if (mMatch) {
+      const abbr = mMatch[2].toUpperCase();
+      let yr = mMatch[3] ? parseInt(mMatch[3], 10) : new Date().getFullYear();
+      if (yr < 100) yr += 2000;
 
-    if (months[abbr] !== undefined) {
-      const mNum = months[abbr];
-      const lastDay = new Date(yr, mNum + 1, 0).getDate();
-      return { monthNum: mNum, monthAbbr: abbr, yearNum: yr, monthEnding: `${lastDay}${abbr}${String(yr).slice(-2)}` };
+      if (months[abbr] !== undefined) {
+        const mNum = months[abbr];
+        const lastDay = new Date(yr, mNum + 1, 0).getDate();
+        return { monthNum: mNum, monthAbbr: abbr, yearNum: yr, monthEnding: `${lastDay}${abbr}${String(yr).slice(-2)}` };
+      }
     }
   }
 
-  // 2. Check for month abbreviation anywhere in text (e.g. AUG, 13AUG, AUG26)
+  // 2. Check for month abbreviation anywhere in text (e.g. SEP, AUG, 13AUG, AUG26)
   const abbrMatch = text.match(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b/i);
   if (abbrMatch) {
     const abbr = abbrMatch[1].toUpperCase();
@@ -876,7 +902,7 @@ export function detectMonthFromText(text: string): { monthNum: number; monthAbbr
  * Reconstructs a date string (YYYY-MM-DD) from a month ending abbreviation and day number
  */
 function constructDateStr(monthEndingStr: string, dayNum: number): string {
-  // E.g., monthEndingStr = "31JUL26" or "31AUG26"
+  // E.g., monthEndingStr = "31JUL26" or "31AUG26" or "30SEP26"
   const m = monthEndingStr.match(/\d*([A-Z]{3})(\d{2,4})/i);
   if (m) {
     const monthAbbr = m[1].toUpperCase();
@@ -901,11 +927,12 @@ function constructDateStr(monthEndingStr: string, dayNum: number): string {
  * Parses header metadata from Monthly HI schedule documents (HI1, HI2, etc.)
  */
 export function parseMonthlyHIMetadata(text: string): MonthlyHIMetadata | null {
-  if (!text || (!text.includes("MONTH ENDING") && !text.includes("FLT TIME") && !text.includes("BID SEL"))) {
+  if (!text || (!/MONTH\s*ENDING/i.test(text) && !text.includes("FLT TIME") && !text.includes("BID SEL") && !text.includes("HI1") && !text.includes("HI2"))) {
     return null;
   }
 
-  let monthEnding = "31JUL26";
+  const detected = detectMonthFromText(text);
+  let monthEnding = detected.monthEnding;
   let asOfDateStr = "";
   let pilotName = "Captain Pryor";
   let seniorityNum = "";
@@ -924,9 +951,11 @@ export function parseMonthlyHIMetadata(text: string): MonthlyHIMetadata | null {
   const lines = text.split(/\r?\n/);
 
   for (const line of lines) {
-    const meMatch = line.match(/MONTH ENDING\s+([0-9A-Z]+)(?:\s+AS OF\s+([0-9A-Z\/]+))?/i);
+    const meMatch = line.match(/MONTH\s+ENDING\s+([0-9A-Z\s]+?)(?:\s+AS\s+OF\s+([0-9A-Z\/]+))?$/i) ||
+                    line.match(/MONTH\s*ENDING\s+([0-9A-Z]+)/i);
     if (meMatch) {
-      monthEnding = meMatch[1];
+      const cleanMe = meMatch[1].replace(/\s+/g, "");
+      if (cleanMe.length >= 5) monthEnding = cleanMe;
       if (meMatch[2]) asOfDateStr = meMatch[2];
     }
 
@@ -1017,12 +1046,17 @@ export function parseMonthlyHIMetadata(text: string): MonthlyHIMetadata | null {
  */
 export function extractVacationsFromHI1(text: string): VacationPeriod[] {
   const lines = text.split(/\r?\n/);
-  let monthEnding = "31JUL26";
-  const monthEndingPattern = /MONTH ENDING\s+(\d{1,2}[A-Z]{3}\d{2})/i;
+  let monthEnding = "";
+  const monthEndingPattern = /MONTH\s*ENDING\s+(\d{1,2}\s*[A-Z]{3}\s*\d{0,4})/i;
 
   for (const line of lines) {
     const meMatch = line.match(monthEndingPattern);
-    if (meMatch) monthEnding = meMatch[1];
+    if (meMatch) monthEnding = meMatch[1].replace(/\s+/g, "");
+  }
+
+  if (!monthEnding) {
+    const detected = detectMonthFromText(text);
+    monthEnding = detected.monthEnding;
   }
 
   const vacationDays: number[] = [];
@@ -1087,12 +1121,12 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
   let base = "ORD";
   let equipment = "E75E";
 
-  const monthEndingPattern = /MONTH ENDING\s+(\d{1,2}[A-Z]{3}\d{2})/i;
+  const monthEndingPattern = /MONTH\s*ENDING\s+(\d{1,2}\s*[A-Z]{3}\s*\d{0,4})/i;
   const pilotInfoPattern = /([A-Z]{3})\s+\d+-CA\s+([A-Z0-9]+)/i;
 
   for (const line of lines) {
     const meMatch = line.match(monthEndingPattern);
-    if (meMatch) monthEnding = meMatch[1];
+    if (meMatch) monthEnding = meMatch[1].replace(/\s+/g, "");
 
     const piMatch = line.match(pilotInfoPattern);
     if (piMatch) {
@@ -1119,6 +1153,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
     removalCode?: string;
     addCode?: string;
     flightLegs: ParsedDayLeg[];
+    scheduledBlockMinutes?: number;
     skedTime?: string;
     actTime?: string;
     grtrTime?: string;
@@ -1291,27 +1326,37 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         return raw.length === 3 ? raw : (decsMap[raw] || raw);
       });
 
-      // Look back up to 4 lines to find cumulative sequence credit (STTL or GTTL column, e.g. 12.57, 22.29, 16.26, 17.22)
+      // Look back up to 6 lines to find cumulative sequence credit (STTL or GTTL column, e.g. 17.33, 22.29, 16.26, 17.22)
       let extractedCredit = "";
-      for (let prev = idx - 1; prev >= Math.max(0, idx - 4); prev--) {
+      let maxDecCandidate = 0;
+      for (let prev = idx - 1; prev >= Math.max(0, idx - 6); prev--) {
         const pLine = lines[prev].trim();
-        const mashedMatch = pLine.match(/(\d{1,2}\.\d{2})(\d{1,2}\.\d{2})/);
-        if (mashedMatch) {
-          extractedCredit = mashedMatch[2];
+        // If line is a previous summary line or header, stop lookback
+        if (pLine.includes("EXP TAFB") || pLine.includes("MONTH ENDING") || pLine.includes("SKED STTL")) {
           break;
         }
-        const decMatches = Array.from(pLine.matchAll(/(\d{1,2}\.\d{2})/g)).map(m => m[1]);
-        if (decMatches.length > 0) {
-          // If multiple decimals present on line (e.g. 1.31 12.57 0.00 1.31 or 5.01 15.57 15.57),
-          // total sequence credit is the larger cumulative value (e.g. 12.57, 15.57)
-          const bigDecs = decMatches.filter(d => parseFloat(d) >= 7.0);
-          if (bigDecs.length > 0) {
-            extractedCredit = bigDecs[0];
-            break;
-          } else {
-            const nonZero = decMatches.filter(d => d !== "0.00");
-            extractedCredit = nonZero.length > 0 ? nonZero[nonZero.length - 1] : decMatches[decMatches.length - 1];
-            break;
+        const mashedMatch = pLine.match(/(\d{1,2}\.\d{2})(\d{1,2}\.\d{2})/);
+        if (mashedMatch) {
+          const val = parseFloat(mashedMatch[2]);
+          if (val > maxDecCandidate) {
+            maxDecCandidate = val;
+            extractedCredit = mashedMatch[2];
+          }
+        }
+        const decMatches = Array.from(pLine.matchAll(/(\d{1,2}\.\d{2})/g)).map((m) => m[1]);
+        if (decMatches.length > 1) {
+          // In DECS, when multiple decimals are on the final day line (e.g. "1.31 17.33" or "6.25 22.29"), the second decimal is the STTL total sequence credit
+          const sttlVal = parseFloat(decMatches[1]);
+          if (sttlVal > maxDecCandidate) {
+            maxDecCandidate = sttlVal;
+            extractedCredit = decMatches[1];
+          }
+        } else if (decMatches.length === 1) {
+          const singleVal = parseFloat(decMatches[0]);
+          // A single credit value >= 10.0 on a line can also be a total sequence credit
+          if (singleVal >= 10.0 && singleVal > maxDecCandidate) {
+            maxDecCandidate = singleVal;
+            extractedCredit = decMatches[0];
           }
         }
       }
@@ -1397,14 +1442,32 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
 
         // Extract flight legs for this day line
         const dayLegs = extractFlightLegsFromText(rest);
+
+        // Extract any decimal flight times on this day line (e.g. 7.18, 5.50, 4.32, 6.25, 22.29)
+        const decMatches = Array.from(rest.matchAll(/\b(\d{1,2}\.\d{2})\b/g)).map((m) => m[1]);
+        let dayBlockMins: number | undefined;
+        if (decMatches.length > 0) {
+          dayBlockMins = parseAviationTime(decMatches[0]);
+          if (decMatches.length > 1) {
+            if (currentSeqNum && foundSeqsMap.has(currentSeqNum)) {
+              foundSeqsMap.get(currentSeqNum)!.credit = decMatches[1];
+            }
+            lastLineCredit = decMatches[1];
+          }
+        }
+
         if (!currentDayDetails.has(dayNum)) {
           currentDayDetails.set(dayNum, {
             dayNum,
             payStatusCode: payStatusCandidate || undefined,
             flightLegs: dayLegs,
+            scheduledBlockMinutes: dayBlockMins,
           });
         } else {
           const dObj = currentDayDetails.get(dayNum)!;
+          if (dayBlockMins && !dObj.scheduledBlockMinutes) {
+            dObj.scheduledBlockMinutes = dayBlockMins;
+          }
           dayLegs.forEach((leg) => {
             if (!dObj.flightLegs.some((fl) => fl.flightNumber === leg.flightNumber && fl.prefix === leg.prefix)) {
               dObj.flightLegs.push(leg);
@@ -1427,6 +1490,21 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         const lCities = layoversStringMatch[1].split(/[-/,]+/).map((c) => c.trim()).filter(Boolean);
         currentLayovers.push(...lCities);
         LogicLogger.parser(`Extracted layovers: ${lCities.join(", ")} for sequence ${currentSeqNum}`);
+      }
+
+      // Check for decimal flight times on continuation line (e.g. "X3340 5.01 15.57" or "-3573 6.25 22.29")
+      const contDecs = Array.from(line.matchAll(/\b(\d{1,2}\.\d{2})\b/g)).map((m) => m[1]);
+      if (contDecs.length > 0 && currentActiveDayNum !== null) {
+        const dObj = currentDayDetails.get(currentActiveDayNum);
+        if (dObj) {
+          dObj.scheduledBlockMinutes = parseAviationTime(contDecs[0]);
+        }
+        if (contDecs.length > 1) {
+          if (foundSeqsMap.has(currentSeqNum)) {
+            foundSeqsMap.get(currentSeqNum)!.credit = contDecs[1];
+          }
+          lastLineCredit = contDecs[1];
+        }
       }
 
       // Check for wrapped flight numbers on continuation line
@@ -1464,7 +1542,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
   }
 
   foundSeqsMap.forEach((val) => {
-    if (!val.tafb && val.statusTag !== "VC") {
+    if (val.statusTag === "VC") {
       val.isDropped = true;
     }
 
@@ -1482,10 +1560,17 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
     const startDate = constructDateStr(monthEnding, startDay);
     const endDate = constructDateStr(monthEnding, endDay);
 
+    let totalTripBlockMinutes = 0;
     const dutyPeriods: DutyPeriod[] = fullDays.map((d, idx) => {
       const layover = (idx < fullDays.length - 1 && val.layovers && val.layovers[idx]) ? val.layovers[idx] : "";
       const dayDetail = val.dayDetails.get(d);
       const parsedLegs = dayDetail?.flightLegs || [];
+      const dayBlockMinutes = dayDetail?.scheduledBlockMinutes || (parsedLegs.length > 0 ? parsedLegs.length * 120 : 240);
+      totalTripBlockMinutes += dayBlockMinutes;
+      const dayDutyMinutes = dayBlockMinutes + 90; // Standard 45-min pre-flight report + 45-min post-flight release
+
+      // Distribute block minutes evenly across legs for the day
+      const legBlockMinutes = parsedLegs.length > 0 ? Math.round(dayBlockMinutes / parsedLegs.length) : dayBlockMinutes;
 
       let formattedLegs: FlightLeg[] = [];
       if (parsedLegs.length > 0) {
@@ -1512,7 +1597,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
             arrAirport: arr,
             depTime: "0800",
             arrTime: "1600",
-            blockMinutes: 180,
+            blockMinutes: legBlockMinutes,
             isDeadhead: fl.isDeadhead,
             isCancelled: fl.isCancelled,
           };
@@ -1526,7 +1611,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
             arrAirport: layover || base,
             depTime: "0900",
             arrTime: "1600",
-            blockMinutes: 420,
+            blockMinutes: dayBlockMinutes,
           },
         ];
       }
@@ -1535,7 +1620,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
         dayIndex: idx,
         reportTime: "0800",
         releaseTime: "1700",
-        dutyMinutes: 540,
+        dutyMinutes: dayDutyMinutes,
         layoverCity: layover,
         layoverHotelInfo: "",
         payStatusCode: dayDetail?.payStatusCode,
@@ -1545,9 +1630,9 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       };
     });
 
-    let parsedCreditMinutes = dutyPeriods.length * 480;
-    if (val.credit) {
-      parsedCreditMinutes = parseAviationTime(val.credit);
+    let parsedCreditMinutes = val.credit ? parseAviationTime(val.credit) : totalTripBlockMinutes;
+    if (parsedCreditMinutes === 0) {
+      parsedCreditMinutes = totalTripBlockMinutes || (dutyPeriods.length * 360);
     }
     
     const tafbHours = val.tafb ? parseFloat(val.tafb) : undefined;
@@ -1559,7 +1644,7 @@ export function parseHI1Schedule(text: string): SequenceTrip[] {
       endDate,
       base,
       equipment,
-      totalBlockMinutes: dutyPeriods.length * 420,
+      totalBlockMinutes: totalTripBlockMinutes || (dutyPeriods.length * 360),
       totalCreditMinutes: parsedCreditMinutes,
       expTafbHours: tafbHours,
       hasContinuityIssue: val.hasContinuityIssue,
@@ -1586,6 +1671,9 @@ export interface OpenSequence {
   layoverDescription: string;
   isSimulated?: boolean;
   base?: string;
+  equipment?: string;
+  position?: string;
+  isDropBoard?: boolean;
 }
 
 export function convertOpenToTrip(ot: OpenSequence): SequenceTrip {
@@ -1664,7 +1752,7 @@ export function convertOpenToTrip(ot: OpenSequence): SequenceTrip {
       dutyMinutes: 480,
       legs,
       layoverCity,
-      layoverHotelInfo: layoverCity ? `Overnight layover at ${layoverCity}` : "No layover",
+      layoverHotelInfo: "",
     };
   });
 
@@ -1674,14 +1762,15 @@ export function convertOpenToTrip(ot: OpenSequence): SequenceTrip {
     startDate: ot.startDate,
     endDate: ot.endDate,
     base: baseAirport,
-    equipment: "E175",
+    equipment: ot.equipment || "E175",
     totalBlockMinutes: totalCreditMinutes,
     totalCreditMinutes: totalCreditMinutes,
     layoverCities: layovers,
     dutyPeriods,
-    colorTag: "amber",
-    isOvertime: true,
-    statusTag: "OT",
+    colorTag: ot.isDropBoard ? "cyan" : "amber",
+    isOvertime: !ot.isDropBoard, // Drop board is standard straight pay (1.0x), while open time is overtime (1.5x)
+    statusTag: ot.isDropBoard ? "PICKUP" : "OT",
+    isDropped: false,
     isSimulated: false,
   } as SequenceTrip;
 }
@@ -1695,6 +1784,9 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
   const currentYear = String(detected.yearNum);
   let currentDay = "01";
   let currentBase = "ORD";
+  let currentEquipment = "E75";
+  let currentSeat = "CA";
+  let isDropBoard = false;
 
   const months: Record<string, string> = {
     JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06",
@@ -1705,22 +1797,30 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Check for base in header e.g. "DFW E75 CA" or "ORD E75 CA"
-    const headerMatch = line.match(/^([A-Z]{3})\s+([A-Z0-9]+)\s+CA\s+/i);
-    if (headerMatch) {
-      currentBase = headerMatch[1].toUpperCase();
+    if (line.includes("CREWED SEQUENCES POSTED FOR DROP")) {
+      isDropBoard = true;
+    } else if (line.includes("OPEN SEQUENCES")) {
+      isDropBoard = false;
     }
 
-    // Check for date header anywhere in the line (e.g. "21JUL DOM" at start, or at the end of a line)
-    const dateMatch = line.match(/(\d{2})([A-Z]{3})\s+DOM/);
+    // Check for base, equipment, seat in header e.g. "DFW E75 CA" or "ORD E75 FO"
+    const headerMatch = line.match(/^([A-Z]{3})\s+([A-Z0-9]+)\s+(CA|FO)\s+/i);
+    if (headerMatch) {
+      currentBase = headerMatch[1].toUpperCase();
+      currentEquipment = headerMatch[2].toUpperCase();
+      currentSeat = headerMatch[3].toUpperCase();
+    }
+
+    // Check for date header anywhere in the line (e.g. "19AUG DOM" or "20AUG DOM")
+    const dateMatch = line.match(/(\d{2})([A-Z]{3})\s+DOM/i);
     if (dateMatch) {
       currentDay = dateMatch[1];
       const monthStr = dateMatch[2].toUpperCase();
-      currentMonth = months[monthStr] || "07";
+      currentMonth = months[monthStr] || currentMonth;
     }
 
     // Check for sequence line: starts with 5-digit number, then decimal, then 4-digit number (report), then 4-digit/2-digit number (release/day)
-    // E.g. " 17457 19.28 0805 2159/25 3-3/3-1 SYR-DCA/XNA-"
+    // E.g. " 14330  16.41 0655 2200/22 4/3-3    TPA/GRR-"
     const match = line.match(/^\s*(\d{5})\s+(\d+\.\d+)\s+(\d{4})\s+(\d{4})\/(\d{2})/);
     if (match) {
       const seqNum = match[1];
@@ -1734,7 +1834,7 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
         
         const startDate = `${currentYear}-${currentMonth}-${currentDay.padStart(2, "0")}`;
         
-        // Handle month-crossing end date (e.g. starts 31JUL, releases 02AUG)
+        // Handle month-crossing end date (e.g. starts 31AUG, releases 02SEP)
         let endMonth = currentMonth;
         let endYear = currentYear;
         if (parseInt(releaseDay, 10) < parseInt(currentDay, 10)) {
@@ -1760,7 +1860,7 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
         const layovers = tokens.slice(1).join(" ") || "—";
 
         openSequences.push({
-          id: `${seqNum}-ot-${i}`,
+          id: `ot-${currentBase}-${seqNum}-${startDate}`,
           sequenceNumber: seqNum,
           creditHours: credit,
           reportTime: report,
@@ -1770,14 +1870,17 @@ export function parseN4OpenTime(text: string): OpenSequence[] {
           legsDescription: legs,
           layoverDescription: layovers,
           base: currentBase,
+          equipment: currentEquipment,
+          position: currentSeat,
+          isDropBoard,
         });
       }
     }
   }
 
-  // Filter out past-date open time (start date < July 27, 2026 reference active date)
-  const activeCutoffDate = "2026-07-27";
-  return openSequences.filter((s) => s.startDate >= activeCutoffDate);
+  // Filter out past-date open time
+  const todayIso = new Date().toISOString().split("T")[0];
+  return openSequences.filter((s) => !s.startDate || s.startDate >= todayIso || s.startDate >= "2026-08-01");
 }
 
 export interface RuleAudit {
@@ -2633,5 +2736,29 @@ export function diffScheduleSnapshots(oldSeqs: SequenceTrip[], newSeqs: Sequence
   });
 
   return diffs;
+}
+
+/**
+ * Helper to check whether layover hotel info is valid real information or placeholder text
+ */
+export function isRealHotelInfo(hotelStr?: string | null): boolean {
+  if (!hotelStr) return false;
+  const clean = hotelStr.trim().toLowerCase();
+  if (!clean) return false;
+
+  if (
+    clean === "lso layover hotel" ||
+    clean === "contract hotel" ||
+    clean === "layover hotel" ||
+    clean === "hotel tbd" ||
+    clean === "no layover" ||
+    clean === "tbd" ||
+    clean === "none" ||
+    clean.startsWith("overnight layover at") ||
+    clean.startsWith("layover at")
+  ) {
+    return false;
+  }
+  return true;
 }
 

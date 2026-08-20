@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
 import { parseN6DReserves, DEFAULT_N6D_RAW_TEXT } from "../../lib/n6dParser";
+import { isPilotTurnback, parseTurnbackList } from "../../lib/turnbackParser";
 import { N6DPilotRecord, N6DPilotDayStatus } from "../../types";
 import {
   Users,
@@ -21,20 +22,134 @@ import {
   ChevronUp,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   X,
   Upload,
   Sparkles,
+  RefreshCw,
+  Info,
+  History,
 } from "lucide-react";
+
+/**
+ * Calculates human-readable relative time, exact timestamp, and freshness status.
+ */
+function getTimestampMeta(isoString?: string) {
+  if (!isoString) {
+    return {
+      relative: "Never updated",
+      absolute: "No sync timestamp recorded",
+      freshness: "stale" as const,
+      freshnessLabel: "No Timestamp",
+      ageMinutes: Infinity,
+    };
+  }
+
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) {
+    return {
+      relative: "Unknown",
+      absolute: "Invalid timestamp",
+      freshness: "stale" as const,
+      freshnessLabel: "Unknown",
+      ageMinutes: Infinity,
+    };
+  }
+
+  const now = new Date();
+  const diffMs = Math.max(0, now.getTime() - date.getTime());
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  let relative = "Just now";
+  if (diffSec < 45) {
+    relative = "Just now";
+  } else if (diffMin === 1) {
+    relative = "1 min ago";
+  } else if (diffMin < 60) {
+    relative = `${diffMin} mins ago`;
+  } else if (diffHour === 1) {
+    relative = `1 hour ago`;
+  } else if (diffHour < 24) {
+    relative = `${diffHour}h ${diffMin % 60}m ago`;
+  } else if (diffDay === 1) {
+    relative = `Yesterday at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  } else {
+    relative = `${diffDay} days ago (${date.toLocaleDateString([], { month: "short", day: "numeric" })})`;
+  }
+
+  const absolute = date.toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+  let freshness: "fresh" | "recent" | "aged" | "stale" = "fresh";
+  let freshnessLabel = "Live & Current";
+
+  if (diffMin < 30) {
+    freshness = "fresh";
+    freshnessLabel = "Live & Current";
+  } else if (diffHour < 4) {
+    freshness = "recent";
+    freshnessLabel = "Recent (<4h)";
+  } else if (diffHour < 24) {
+    freshness = "aged";
+    freshnessLabel = "Needs Refresh (>4h)";
+  } else {
+    freshness = "stale";
+    freshnessLabel = "Stale List (>24h)";
+  }
+
+  return {
+    relative,
+    absolute,
+    freshness,
+    freshnessLabel,
+    ageMinutes: diffMin,
+  };
+}
 
 export default function ReserveStudio() {
   const n6dReserves = useCrewStore((state) => state.n6dReserves);
   const setN6DReserves = useCrewStore((state) => state.setN6DReserves);
   const resetN6DReservesToDefault = useCrewStore((state) => state.resetN6DReservesToDefault);
   const userProfile = useCrewStore((state) => state.userProfile);
+  const setActiveTab = useCrewStore((state) => state.setActiveTab);
 
-  // Active viewing day (defaults to first day in displayDays, e.g. 15 or 17)
+  // Live timer tick for relative time auto-updates every 30s
+  const [nowTick, setNowTick] = useState<number>(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Show detailed timestamp breakdown modal/sheet
+  const [showTimestampDetails, setShowTimestampDetails] = useState<boolean>(false);
+
+  // Active viewing day (defaults to today's date if present in displayDays, otherwise first day)
   const displayDays = n6dReserves?.displayDays || [15, 16, 17, 18, 19, 20, 21];
-  const [selectedDay, setSelectedDay] = useState<number>(displayDays[2] || displayDays[0]);
+  const todayDay = new Date().getDate();
+  const initialDay = displayDays.includes(todayDay) ? todayDay : (displayDays[0] ?? todayDay);
+  const [selectedDay, setSelectedDay] = useState<number>(initialDay);
+
+  // Always keep selectedDay defaulted to today when reserve data updates
+  useEffect(() => {
+    const currentToday = new Date().getDate();
+    if (displayDays.includes(currentToday)) {
+      setSelectedDay(currentToday);
+    } else if (!displayDays.includes(selectedDay) && displayDays.length > 0) {
+      setSelectedDay(displayDays[0]);
+    }
+  }, [displayDays]);
 
   // Order mode: "reverse" (Junior first / Callout order) vs "seniority" (Senior first)
   const [orderMode, setOrderMode] = useState<"reverse" | "seniority">("reverse");
@@ -48,10 +163,26 @@ export default function ReserveStudio() {
   // Expanded card pilot seniority
   const [expandedPilotSen, setExpandedPilotSen] = useState<string | null>(null);
 
-  // Import Modal State
+  // Turnback Data & Actions from Store
+  const turnbackData = useCrewStore((state) => state.turnbackData);
+  const setTurnbackData = useCrewStore((state) => state.setTurnbackData);
+  const clearTurnbackData = useCrewStore((state) => state.clearTurnbackData);
+
+  // Turnback Import Modal State
+  const [isTurnbackModalOpen, setIsTurnbackModalOpen] = useState<boolean>(false);
+  const [turnbackRawText, setTurnbackRawText] = useState<string>("");
+  const [turnbackImportError, setTurnbackImportError] = useState<string | null>(null);
+
+  // Import Modal State (N6D)
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [importRawText, setImportRawText] = useState<string>("");
   const [importError, setImportError] = useState<string | null>(null);
+
+  // Count turnback pilots matching currently loaded N6D roster
+  const turnbackPilotsCount = useMemo(() => {
+    if (!n6dReserves || !n6dReserves.pilots || !turnbackData) return 0;
+    return n6dReserves.pilots.filter((p) => isPilotTurnback(p, turnbackData)).length;
+  }, [n6dReserves, turnbackData]);
 
   // Statistics for selected day
   const dayStats = useMemo(() => {
@@ -106,6 +237,8 @@ export default function ReserveStudio() {
     // Filter by status for selected day
     if (statusFilter === "AVAILABLE") {
       list = list.filter((p) => p.days[selectedDay]?.isAvailable);
+    } else if (statusFilter === "TURNBACK") {
+      list = list.filter((p) => isPilotTurnback(p, turnbackData));
     } else if (statusFilter === "RAP1") {
       list = list.filter((p) => p.days[selectedDay]?.rapType === "RAP1");
     } else if (statusFilter === "RAP2") {
@@ -139,7 +272,7 @@ export default function ReserveStudio() {
     }
 
     return list;
-  }, [n6dReserves, selectedDay, statusFilter, searchQuery, orderMode]);
+  }, [n6dReserves, selectedDay, statusFilter, searchQuery, orderMode, turnbackData]);
 
   const handleImportSubmit = () => {
     if (!importRawText.trim()) {
@@ -158,6 +291,26 @@ export default function ReserveStudio() {
       setImportError(null);
     } catch (e: any) {
       setImportError(e.message || "Failed to parse N6D text");
+    }
+  };
+
+  const handleTurnbackImportSubmit = () => {
+    if (!turnbackRawText.trim()) {
+      setTurnbackImportError("Please paste HIHR Turnback text or upload a file.");
+      return;
+    }
+    try {
+      const parsed = parseTurnbackList(turnbackRawText);
+      if (!parsed.records || parsed.records.length === 0) {
+        setTurnbackImportError("Could not detect any pilot turnback records in the text. Verify HIHR format.");
+        return;
+      }
+      setTurnbackData(parsed);
+      setIsTurnbackModalOpen(false);
+      setTurnbackRawText("");
+      setTurnbackImportError(null);
+    } catch (e: any) {
+      setTurnbackImportError(e.message || "Failed to parse turnback list");
     }
   };
 
@@ -246,6 +399,24 @@ export default function ReserveStudio() {
     return "bg-slate-200 text-slate-700 border-slate-300";
   };
 
+  // Compute real-time timestamp status
+  const timestampMeta = useMemo(
+    () => getTimestampMeta(n6dReserves?.importedAt),
+    [n6dReserves?.importedAt, nowTick]
+  );
+
+  const handleTriggerDecsPull = () => {
+    if (typeof window !== "undefined") {
+      // Check if native Android bridge is available
+      if ((window as any).NativePortal && (window as any).NativePortal.open) {
+        (window as any).NativePortal.open("https://webfos.aa.com/WebSabre/websabre");
+        return;
+      }
+      // If web, switch to portal tab
+      setActiveTab("portal");
+    }
+  };
+
   return (
     <div className="w-full flex flex-col gap-3 pb-8 text-slate-900">
       {/* Header Banner */}
@@ -299,13 +470,148 @@ export default function ReserveStudio() {
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-white/10 font-bold text-indigo-200 flex items-center gap-1">
               <Clock className="w-3 h-3 text-indigo-300" />
-              AS OF {n6dReserves?.asOfTime} ({n6dReserves?.asOfDate})
+              HOST AS OF {n6dReserves?.asOfTime} ({n6dReserves?.asOfDate})
             </span>
             <span className="ml-auto text-[11px] font-bold text-emerald-400 flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
               {n6dReserves?.pilots?.length || 0} Pilots On Board
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Live Sync Timestamp & Freshness Status Card */}
+      <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <div
+            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+              timestampMeta.freshness === "fresh"
+                ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                : timestampMeta.freshness === "recent"
+                ? "bg-amber-50 text-amber-600 border-amber-200"
+                : timestampMeta.freshness === "aged"
+                ? "bg-orange-50 text-orange-600 border-orange-200"
+                : "bg-rose-50 text-rose-600 border-rose-200"
+            }`}
+          >
+            <History className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black text-slate-900 flex items-center gap-1">
+                <span>Last Updated:</span>
+                <span className="text-indigo-600 font-extrabold">{timestampMeta.relative}</span>
+              </span>
+              <span
+                className={`text-[9.5px] px-2 py-0.5 rounded-full font-black border flex items-center gap-1 ${
+                  timestampMeta.freshness === "fresh"
+                    ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/30"
+                    : timestampMeta.freshness === "recent"
+                    ? "bg-amber-500/15 text-amber-700 border-amber-500/30"
+                    : timestampMeta.freshness === "aged"
+                    ? "bg-orange-500/15 text-orange-700 border-orange-500/30"
+                    : "bg-rose-500/15 text-rose-700 border-rose-500/30"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    timestampMeta.freshness === "fresh"
+                      ? "bg-emerald-500 animate-pulse"
+                      : timestampMeta.freshness === "recent"
+                      ? "bg-amber-500"
+                      : timestampMeta.freshness === "aged"
+                      ? "bg-orange-500"
+                      : "bg-rose-500"
+                  }`}
+                />
+                {timestampMeta.freshnessLabel}
+              </span>
+            </div>
+            <p className="text-[10.5px] text-slate-500 font-medium">
+              Synced: {timestampMeta.absolute}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+          <button
+            onClick={() => setShowTimestampDetails(true)}
+            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer active-press border border-slate-200"
+            title="View sync timestamp details"
+          >
+            <Info className="w-3.5 h-3.5 text-slate-500" />
+            <span>Details</span>
+          </button>
+
+          <button
+            onClick={handleTriggerDecsPull}
+            className="flex-1 sm:flex-initial px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active-press"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Pull DECS Update</span>
+          </button>
+        </div>
+      </div>
+
+      {/* HIHR Turnback Status Card */}
+      <div
+        className={`rounded-2xl p-3 border shadow-xs flex items-center justify-between gap-2.5 ${
+          turnbackData && turnbackData.records.length > 0
+            ? "bg-rose-50/90 border-rose-200"
+            : "bg-white border-slate-200"
+        }`}
+      >
+        <div className="flex items-center gap-2.5">
+          <div
+            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+              turnbackData && turnbackData.records.length > 0
+                ? "bg-rose-600 text-white border-rose-700 shadow-xs"
+                : "bg-slate-100 text-slate-500 border-slate-200"
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black text-slate-900">
+                Turnback List (HIHR)
+              </span>
+              {turnbackData && turnbackData.records.length > 0 ? (
+                <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[9.5px] font-black tracking-wider flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-ping" />
+                  {turnbackData.records.length} TB PILOTS
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[9.5px] font-bold border border-slate-200">
+                  No Active Turnbacks
+                </span>
+              )}
+            </div>
+            <p className="text-[10.5px] text-slate-500 font-medium">
+              {turnbackData && turnbackData.records.length > 0
+                ? `${turnbackPilotsCount} matching reserve pilots tagged with TB badge on current roster.`
+                : "Run HIHR from DECS Portal to highlight reserve turnbacks."}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {turnbackData && (
+            <button
+              onClick={() => clearTurnbackData()}
+              className="px-2.5 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-xl text-xs font-black transition cursor-pointer active-press border border-rose-300"
+              title="Clear active turnback list"
+            >
+              Clear TB
+            </button>
+          )}
+          <button
+            onClick={() => setIsTurnbackModalOpen(true)}
+            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer active-press shadow-xs"
+          >
+            <Upload className="w-3.5 h-3.5 text-rose-300" />
+            <span>Import HIHR</span>
+          </button>
         </div>
       </div>
 
@@ -324,18 +630,27 @@ export default function ReserveStudio() {
         <div className="grid grid-cols-7 gap-1.5">
           {displayDays.map((d) => {
             const isSelected = selectedDay === d;
+            const isToday = d === new Date().getDate();
             const dayAvailCount = n6dReserves?.pilots?.filter((p) => p.days[d]?.isAvailable).length || 0;
             return (
               <button
                 key={d}
                 onClick={() => setSelectedDay(d)}
-                className={`flex flex-col items-center py-2 px-1 rounded-xl transition border cursor-pointer active-press ${
+                className={`relative flex flex-col items-center py-2 px-1 rounded-xl transition border cursor-pointer active-press ${
                   isSelected
                     ? "bg-indigo-600 text-white border-indigo-600 shadow-md font-black ring-2 ring-indigo-400/40"
                     : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
                 }`}
               >
-                <span className="text-[10px] uppercase font-bold opacity-80">AUG</span>
+                {isToday ? (
+                  <span className={`text-[8px] font-black uppercase tracking-wider px-1 rounded-xs mb-0.5 ${
+                    isSelected ? "bg-amber-400 text-slate-900" : "bg-indigo-100 text-indigo-700"
+                  }`}>
+                    TODAY
+                  </span>
+                ) : (
+                  <span className="text-[10px] uppercase font-bold opacity-80">AUG</span>
+                )}
                 <span className="text-sm sm:text-base font-black leading-none my-0.5">{d}</span>
                 <span
                   className={`text-[9px] px-1.5 py-0.2 rounded-full font-black mt-0.5 ${
@@ -432,6 +747,7 @@ export default function ReserveStudio() {
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
           {[
             { id: "AVAILABLE", label: `Available Reserves (${dayStats.available})` },
+            { id: "TURNBACK", label: `Turnback TB (${turnbackPilotsCount})` },
             { id: "ALL", label: `All Pilots (${dayStats.total})` },
             { id: "RAP1", label: `RAP 1 Early (${dayStats.rap1})` },
             { id: "RAP2", label: `RAP 2 Late (${dayStats.rap2})` },
@@ -444,7 +760,11 @@ export default function ReserveStudio() {
               onClick={() => setStatusFilter(tab.id)}
               className={`px-3 py-1 rounded-xl text-[11px] font-extrabold whitespace-nowrap transition cursor-pointer active-press border ${
                 statusFilter === tab.id
-                  ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                  ? tab.id === "TURNBACK"
+                    ? "bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-400/40"
+                    : "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                  : tab.id === "TURNBACK" && turnbackPilotsCount > 0
+                  ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
                   : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -496,18 +816,31 @@ export default function ReserveStudio() {
             const isUserProfileMatch =
               (userProfile?.seniorityNumber && pilot.seniority.includes(userProfile.seniorityNumber)) ||
               (userProfile?.employeeId && pilot.employeeId === userProfile.employeeId);
+            const isTurnback = isPilotTurnback(pilot, turnbackData);
 
             return (
               <div
                 key={pilot.seniority}
-                className={`bg-white rounded-2xl border transition-all shadow-xs overflow-hidden ${
-                  isNextUp
+                className={`relative bg-white rounded-2xl border transition-all shadow-xs overflow-hidden ${
+                  isTurnback
+                    ? "border-rose-400 ring-2 ring-rose-400/40 bg-rose-50/15"
+                    : isNextUp
                     ? "border-amber-400 ring-2 ring-amber-400/30 bg-amber-50/20"
                     : isUserProfileMatch
                     ? "border-sky-400 ring-2 ring-sky-400/30 bg-sky-50/20"
                     : "border-slate-200 hover:border-slate-300"
                 }`}
               >
+                {/* Big TB Corner Badge Identifier */}
+                {isTurnback && (
+                  <div className="absolute top-0 right-0 z-10 pointer-events-none">
+                    <div className="bg-gradient-to-r from-rose-600 to-rose-700 text-white text-[10px] font-black px-2.5 py-0.5 rounded-bl-xl shadow-xs border-b border-l border-rose-800 tracking-wider flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-ping" />
+                      <span>TB</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Main Pilot Card Header */}
                 <div
                   onClick={() => setExpandedPilotSen(isExpanded ? null : pilot.seniority)}
@@ -518,7 +851,9 @@ export default function ReserveStudio() {
                       {/* Queue Rank Badge */}
                       <div
                         className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-xs border ${
-                          isNextUp
+                          isTurnback
+                            ? "bg-rose-600 text-white border-rose-700 shadow-rose-500/20"
+                            : isNextUp
                             ? "bg-amber-400 text-slate-950 border-amber-500 shadow-amber-400/30 animate-pulse"
                             : queueRank <= 3
                             ? "bg-indigo-600 text-white border-indigo-700"
@@ -531,10 +866,16 @@ export default function ReserveStudio() {
                       </div>
 
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-sm font-black text-slate-900 tracking-tight leading-tight">
                             {pilot.name}
                           </h3>
+                          {isTurnback && (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider border border-rose-700 shadow-xs flex items-center gap-1">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-300" />
+                              TB
+                            </span>
+                          )}
                           {isNextUp && (
                             <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black uppercase tracking-wider">
                               🔥 NEXT TO CALL
@@ -614,6 +955,21 @@ export default function ReserveStudio() {
                 {/* Expanded Detailed Breakdown Accordion */}
                 {isExpanded && (
                   <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col gap-3 animate-fadeIn">
+                    {/* Turnback Alert Notice */}
+                    {isTurnback && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 shadow-2xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-xs font-black text-rose-900 block">
+                            RESERVE TURNBACK LIST (HIHR)
+                          </span>
+                          <span className="text-[11px] text-rose-700 font-medium leading-tight block mt-0.5">
+                            Pilot is currently identified on the DECS HIHR turnback roster.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
                       <div className="bg-white p-2 rounded-xl border border-slate-200">
                         <span className="text-[10px] text-slate-400 font-bold block">PROJECTED (PROJ)</span>
@@ -762,6 +1118,211 @@ export default function ReserveStudio() {
               >
                 <CheckCircle2 className="w-4 h-4" />
                 Apply N6D Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Timestamp & Sync Status Details Modal */}
+      {showTimestampDetails && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-slideUp">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center px-5 py-4 border-b border-slate-200 bg-slate-50/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                  <History className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">DECS Sync Timestamp</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Data freshness & host verification
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTimestampDetails(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 flex flex-col gap-3.5 overflow-y-auto">
+              {/* Freshness Banner */}
+              <div
+                className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${
+                  timestampMeta.freshness === "fresh"
+                    ? "bg-emerald-50 border-emerald-200"
+                    : timestampMeta.freshness === "recent"
+                    ? "bg-amber-50 border-amber-200"
+                    : timestampMeta.freshness === "aged"
+                    ? "bg-orange-50 border-orange-200"
+                    : "bg-rose-50 border-rose-200"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      timestampMeta.freshness === "fresh"
+                        ? "bg-emerald-500 animate-pulse ring-4 ring-emerald-400/20"
+                        : timestampMeta.freshness === "recent"
+                        ? "bg-amber-500"
+                        : timestampMeta.freshness === "aged"
+                        ? "bg-orange-500"
+                        : "bg-rose-500"
+                    }`}
+                  />
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block leading-tight">
+                      {timestampMeta.freshnessLabel}
+                    </span>
+                    <span className="text-[11px] text-slate-600 font-medium">
+                      Updated {timestampMeta.relative}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-white text-slate-700 border border-slate-200 shadow-2xs">
+                  N6D QUEUE
+                </span>
+              </div>
+
+              {/* Exact Timestamps Grid */}
+              <div className="flex flex-col gap-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                  <span className="text-slate-500 font-bold flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                    Local Device Sync
+                  </span>
+                  <span className="font-mono font-black text-slate-900 text-right text-[11px]">
+                    {timestampMeta.absolute}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                  <span className="text-slate-500 font-bold flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                    DECS Host As-Of
+                  </span>
+                  <span className="font-mono font-black text-slate-900 text-[11px]">
+                    {n6dReserves?.asOfTime} ({n6dReserves?.asOfDate})
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                  <span className="text-slate-500 font-bold">Roster Scope</span>
+                  <span className="font-bold text-slate-800">
+                    {n6dReserves?.base} • {n6dReserves?.equipment} • {n6dReserves?.seat} ({n6dReserves?.category})
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-bold">Pilots & Window</span>
+                  <span className="font-bold text-emerald-700">
+                    {n6dReserves?.pilots?.length || 0} Pilots • {displayDays.length} Days (AUG {displayDays[0]}–{displayDays[displayDays.length - 1]})
+                  </span>
+                </div>
+              </div>
+
+              {/* Info Note */}
+              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-indigo-950/80 leading-relaxed font-medium">
+                  The N6D list updates dynamically in DECS as Crew Scheduling assigns airport standbys (SB), RAP callouts, and open time pairings. Pulling an update refreshes your exact place in the callout queue.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-2">
+              <button
+                onClick={() => {
+                  setShowTimestampDetails(false);
+                  setIsImportModalOpen(true);
+                }}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active-press border border-slate-200"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Paste N6D</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowTimestampDetails(false);
+                  handleTriggerDecsPull();
+                }}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer active-press"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Pull from DECS</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HIHR Turnback Import Modal */}
+      {isTurnbackModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn">
+          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-slideUp">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center px-5 py-4 border-b border-slate-200 bg-slate-50/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Import Turnback List (HIHR)</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Paste raw DECS HIHR turnback output
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsTurnbackModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 flex flex-col gap-3.5 overflow-y-auto">
+              <div className="text-xs text-slate-600 leading-relaxed">
+                Paste the terminal text from DECS command <code className="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-slate-900 font-bold">HIHR/(DATE)/(DATE)^</code> to automatically tag turnback pilots on your reserve callout queue.
+              </div>
+
+              {turnbackImportError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{turnbackImportError}</span>
+                </div>
+              )}
+
+              <textarea
+                value={turnbackRawText}
+                onChange={(e) => setTurnbackRawText(e.target.value)}
+                placeholder="Paste raw HIHR turnback terminal text here..."
+                rows={8}
+                className="w-full p-3 font-mono text-xs bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-2">
+              <button
+                onClick={() => setIsTurnbackModalOpen(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer active-press"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTurnbackImportSubmit}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer active-press"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Apply Turnback Data
               </button>
             </div>
           </div>

@@ -31,10 +31,10 @@ export const CREW_ROSTER: CrewMemberContact[] = [
     status: "ONLINE",
   },
   {
-    userId: "crew-lfa-elena",
+    userId: "crew-fa-elena",
     name: "Elena Rostova",
     employeeId: "904123",
-    role: "LFA",
+    role: "FA",
     base: "ORD",
     seniorityNumber: "03114",
     status: "ONLINE",

@@ -1,13 +1,16 @@
 import { create } from "zustand";
-import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry, UserProfile, N6DReservesData } from "../types";
-import { DEFAULT_PAY_RATES, DEFAULT_LOGBOOK_ENTRIES, MOCK_VACATIONS, DEFAULT_SUBSCRIBED_CALENDARS, DEFAULT_PERSONAL_EVENTS } from "../lib/demoData";
-import { USER_LIVE_SEQUENCES, USER_LIVE_VACATIONS } from "../lib/userScheduleData";
-import { PILOT_BIDDING_CALENDAR, DEFAULT_PILOT_BIDDING_EVENTS, isPilotRole } from "../lib/pilotBiddingDates";
-import { DEFAULT_N6D_DATA } from "../lib/n6dParser";
+import { SequenceTrip, PayRates, AutomationConfig, PayCalculations, OpenSequence, RosterMetrics, ScheduleSnapshot, VacationPeriod, MonthlyHIMetadata, LogbookEntry, OpenTimePreset, SubscribedCalendar, PersonalCalendarEvent, LogicLogEntry, UserProfile, N6DReservesData, TurnbackData, OpenTimeSniperConfig, HssAuditRecord } from "@/types";
+import { DEFAULT_PAY_RATES, DEFAULT_LOGBOOK_ENTRIES, MOCK_VACATIONS, DEFAULT_SUBSCRIBED_CALENDARS, DEFAULT_PERSONAL_EVENTS } from "@/lib/demoData";
+import { USER_LIVE_SEQUENCES, USER_LIVE_VACATIONS, USER_LIVE_OPEN_SEQUENCES } from "@/lib/userScheduleData";
+import { PILOT_BIDDING_CALENDAR, DEFAULT_PILOT_BIDDING_EVENTS, isPilotRole } from "@/lib/pilotBiddingDates";
+import { DEFAULT_N6D_DATA } from "@/lib/n6dParser";
+import { parseTurnbackList } from "@/lib/turnbackParser";
+import { DEFAULT_OPEN_TIME_SNIPER_CONFIG } from "@/lib/openTimeEngine";
+import { HssDiffEngine } from "@/lib/hssDiffEngine";
 
-import { calculatePay, calculateSequenceTAFB, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole, sanitizeSequenceTrip, sanitizeFlightLeg } from "../lib/parser";
-import { getCbaRatesForProfile } from "../lib/cbaPayScale";
-import { StorageAdapter, safeLocalStorageSet } from "../lib/storage";
+import { calculatePay, calculateSequenceTAFB, parseN4OpenTime, convertOpenToTrip, computeRosterMetrics, diffScheduleSnapshots, timeToMinutes, isCaptainRank, isFlightAttendantRole, isFirstOfficerRole, sanitizeSequenceTrip, sanitizeFlightLeg } from "@/lib/parser";
+import { getCbaRatesForProfile } from "@/lib/cbaPayScale";
+import { StorageAdapter, safeLocalStorageSet } from "@/lib/storage";
 export { convertOpenToTrip, isPilotRole, sanitizeSequenceTrip, sanitizeFlightLeg };
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
@@ -20,11 +23,12 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   hireDate: "2015-08-15",
   email: "austin.pryor@envoyair.com",
   phone: "(812) 399-2574",
-  theme: "light",
+  airline: "Envoy Air (AA Eagle)",
   notificationsEnabled: true,
   syncCalendar: true,
   autoSyncEnabled: true,
   timezoneDisplay: "LOCAL",
+  hasCompletedOnboarding: true,
 };
 
 export const DEFAULT_OPEN_TIME_PRESETS: OpenTimePreset[] = [
@@ -60,6 +64,8 @@ interface CrewState {
 
   // Open Time state
   openSequences: OpenSequence[];
+  openTimeLastUpdated?: string;
+  setOpenTimeLastUpdated: (ts: string) => void;
   simulatedSequenceIds: string[];
   showOpenTimeOverlay: boolean;
   openTimeFilter: string;
@@ -87,6 +93,23 @@ interface CrewState {
   // HSS Sequences Monthly Modal State
   isHssModalOpen: boolean;
   setIsHssModalOpen: (val: boolean) => void;
+
+  // HSS Granular Audit Log & Change Tracking
+  hssAudits: HssAuditRecord[];
+  addHssAudit: (audit: HssAuditRecord) => void;
+  clearHssAudits: () => void;
+
+  // Hotel Request Modal State
+  isHotelRequestModalOpen: boolean;
+  setIsHotelRequestModalOpen: (val: boolean) => void;
+
+  // Open Time Pickup Engine State
+  selectedOpenTimeForPickup: OpenSequence | null;
+  isPickupModalOpen: boolean;
+  setIsPickupModalOpen: (val: boolean) => void;
+  setSelectedOpenTimeForPickup: (seq: OpenSequence | null) => void;
+  openTimeSniperConfig: OpenTimeSniperConfig;
+  setOpenTimeSniperConfig: (cfg: Partial<OpenTimeSniperConfig>) => void;
 
   // Live DECS Screen Terminal State
   decsScreenOutput: string;
@@ -168,6 +191,12 @@ interface CrewState {
   n6dReserves: N6DReservesData;
   setN6DReserves: (data: N6DReservesData) => void;
   resetN6DReservesToDefault: () => void;
+
+  // HIHR Turnback List State & Actions
+  turnbackData: TurnbackData | null;
+  setTurnbackData: (data: TurnbackData | null) => void;
+  importTurnbackList: (rawText: string) => void;
+  clearTurnbackData: () => void;
 
   // Derivations
   getEffectiveSequences: () => SequenceTrip[];
@@ -292,9 +321,14 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   snapshots: [],
   activeSnapshotId: null,
   logbookEntries: DEFAULT_LOGBOOK_ENTRIES,
-  openSequences: [],
+  openSequences: USER_LIVE_OPEN_SEQUENCES,
+  openTimeLastUpdated: "2026-08-19T12:18:00.000Z",
+  setOpenTimeLastUpdated: (ts: string) => {
+    set({ openTimeLastUpdated: ts });
+    safeLocalStorageSet("crewschedule_opentime_last_updated", ts);
+  },
   simulatedSequenceIds: [],
-  showOpenTimeOverlay: false,
+  showOpenTimeOverlay: true,
   openTimeFilter: "all",
   openTimePresets: DEFAULT_OPEN_TIME_PRESETS,
   subscribedCalendars: DEFAULT_SUBSCRIBED_CALENDARS,
@@ -306,6 +340,31 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   setIsCalendarToolsOpen: (val: boolean) => set({ isCalendarToolsOpen: val }),
   isHssModalOpen: false,
   setIsHssModalOpen: (val: boolean) => set({ isHssModalOpen: val }),
+  hssAudits: [],
+  addHssAudit: (audit: HssAuditRecord) => {
+    set((state) => {
+      const updated = [audit, ...state.hssAudits.filter((a) => a.auditId !== audit.auditId)].slice(0, 100);
+      safeLocalStorageSet("crewschedule_hss_audits", updated);
+      return { hssAudits: updated };
+    });
+  },
+  clearHssAudits: () => {
+    set({ hssAudits: [] });
+    safeLocalStorageSet("crewschedule_hss_audits", []);
+  },
+  isHotelRequestModalOpen: false,
+  setIsHotelRequestModalOpen: (val: boolean) => set({ isHotelRequestModalOpen: val }),
+
+  selectedOpenTimeForPickup: null,
+  isPickupModalOpen: false,
+  setIsPickupModalOpen: (val: boolean) => set({ isPickupModalOpen: val }),
+  setSelectedOpenTimeForPickup: (selectedOpenTimeForPickup) =>
+    set({ selectedOpenTimeForPickup, isPickupModalOpen: selectedOpenTimeForPickup !== null }),
+  openTimeSniperConfig: DEFAULT_OPEN_TIME_SNIPER_CONFIG,
+  setOpenTimeSniperConfig: (cfg) =>
+    set((state) => ({
+      openTimeSniperConfig: { ...state.openTimeSniperConfig, ...cfg },
+    })),
 
   decsScreenOutput: "",
   decsCurrentInput: "",
@@ -335,6 +394,26 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   resetN6DReservesToDefault: () => {
     set({ n6dReserves: DEFAULT_N6D_DATA });
     safeLocalStorageSet("crewschedule_n6d_reserves", DEFAULT_N6D_DATA);
+  },
+
+  turnbackData: null,
+  setTurnbackData: (data: TurnbackData | null) => {
+    set({ turnbackData: data });
+    safeLocalStorageSet("crewschedule_turnback_data", data);
+  },
+  importTurnbackList: (rawText: string) => {
+    const parsed = parseTurnbackList(rawText);
+    set({ turnbackData: parsed });
+    safeLocalStorageSet("crewschedule_turnback_data", parsed);
+    get().addLogicLog({
+      category: "DECS_API",
+      message: `Imported Turnback List with ${parsed.records.length} pilots`,
+      details: { recordsCount: parsed.records.length },
+    });
+  },
+  clearTurnbackData: () => {
+    set({ turnbackData: null });
+    safeLocalStorageSet("crewschedule_turnback_data", null);
   },
 
   autoGenerateLogbookFromRoster: () => {
@@ -649,25 +728,35 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     });
 
     const mergedSeqs = deduplicateSequences(Array.from(updatedMap.values()));
-    const finalVacs = newVacs.length > 0 ? newVacs : state.vacations;
+    
+    // Merge vacations across months
+    const mergedVacs = [...state.vacations];
+    if (newVacs && newVacs.length > 0) {
+      newVacs.forEach((nv) => {
+        if (!mergedVacs.some((ev) => ev.startDate === nv.startDate && ev.endDate === nv.endDate)) {
+          mergedVacs.push(nv);
+        }
+      });
+    }
     
     set({ 
       monthlyHIMetadata: metadata || state.monthlyHIMetadata,
       sequences: mergedSeqs,
-      vacations: finalVacs
+      vacations: mergedVacs
     });
 
     StorageAdapter.saveSequences(mergedSeqs);
-    StorageAdapter.saveVacations(finalVacs);
+    StorageAdapter.saveVacations(mergedVacs);
     if (metadata) StorageAdapter.saveSetting("crewschedule_hi_metadata", metadata);
 
     safeLocalStorageSet("crewschedule_sequences", mergedSeqs);
-    if (newVacs.length > 0) {
-      safeLocalStorageSet("crewschedule_vacations", finalVacs);
-    }
+    safeLocalStorageSet("crewschedule_vacations", mergedVacs);
     if (metadata) {
       safeLocalStorageSet("crewschedule_hi_metadata", metadata);
     }
+
+    // Auto-update logbook with newly imported sequences
+    get().autoGenerateLogbookFromRoster();
 
     const currentActiveSnap = state.snapshots.find((s) => s.id === state.activeSnapshotId) || state.snapshots[0];
     const diffs = currentActiveSnap ? diffScheduleSnapshots(currentActiveSnap.sequences, mergedSeqs) : [];
@@ -742,6 +831,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const storedLogbook = localStorage.getItem("crewschedule_logbook");
       const storedProfile = localStorage.getItem("crewschedule_userprofile");
       const storedN6D = localStorage.getItem("crewschedule_n6d_reserves");
+      const storedTurnback = localStorage.getItem("crewschedule_turnback_data");
 
       let sanitizedSeqs = deduplicateSequences([
         ...USER_LIVE_SEQUENCES,
@@ -753,7 +843,15 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       if (!parsedLogbook || parsedLogbook.length === 0) {
         parsedLogbook = DEFAULT_LOGBOOK_ENTRIES;
       }
-      const activeOpenSeqs: OpenSequence[] = storedOpen ? JSON.parse(storedOpen) : [];
+      let activeOpenSeqs: OpenSequence[] = storedOpen ? JSON.parse(storedOpen) : [];
+      if (!activeOpenSeqs || activeOpenSeqs.length === 0) {
+        activeOpenSeqs = USER_LIVE_OPEN_SEQUENCES;
+      } else {
+        const map = new Map<string, OpenSequence>();
+        USER_LIVE_OPEN_SEQUENCES.forEach((ot) => map.set(ot.id, ot));
+        activeOpenSeqs.forEach((ot) => map.set(ot.id, ot));
+        activeOpenSeqs = Array.from(map.values());
+      }
 
       const storedPresets = localStorage.getItem("crewschedule_openpresets");
       const storedCals = localStorage.getItem("crewschedule_subscribedcals");
@@ -790,18 +888,27 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         });
       }
 
+      const storedOpenLastUpdated = localStorage.getItem("crewschedule_opentime_last_updated");
+      const storedHssAudits = localStorage.getItem("crewschedule_hss_audits");
+      let parsedHssAudits: HssAuditRecord[] = [];
+      try {
+        if (storedHssAudits) parsedHssAudits = JSON.parse(storedHssAudits);
+      } catch {}
+
       set({
         userProfile: hydratedProfile,
         sequences: sanitizedSeqs,
         vacations: parsedVacations,
         monthlyHIMetadata: storedMeta ? JSON.parse(storedMeta) : null,
         snapshots: parsedSnaps,
+        hssAudits: parsedHssAudits,
         logbookEntries: parsedLogbook,
         payRates: storedRates ? JSON.parse(storedRates) : DEFAULT_PAY_RATES,
         automationConfig: storedConfig ? JSON.parse(storedConfig) : DEFAULT_AUTOMATION_CONFIG,
         openSequences: activeOpenSeqs,
+        openTimeLastUpdated: storedOpenLastUpdated || (activeOpenSeqs.length > 0 ? "2026-08-19T12:18:00.000Z" : undefined),
         simulatedSequenceIds: storedSim ? JSON.parse(storedSim) : [],
-        showOpenTimeOverlay: storedOverlay ? JSON.parse(storedOverlay) : false,
+        showOpenTimeOverlay: storedOverlay !== null ? JSON.parse(storedOverlay) : true,
         openTimeFilter: storedFilter ? JSON.parse(storedFilter) : "all",
         openTimePresets: storedPresets ? JSON.parse(storedPresets) : DEFAULT_OPEN_TIME_PRESETS,
         subscribedCalendars: mergedCals,
@@ -810,6 +917,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         defaultTurnLimit: storedDefaultTurn ? JSON.parse(storedDefaultTurn) : DEFAULT_TURN_LIMIT,
         highCreditThresholdHours: storedHighCredit ? JSON.parse(storedHighCredit) : 15.0,
         n6dReserves: storedN6D ? JSON.parse(storedN6D) : DEFAULT_N6D_DATA,
+        turnbackData: storedTurnback ? JSON.parse(storedTurnback) : null,
         isHydrated: true,
       });
 
@@ -845,7 +953,12 @@ export const useCrewStore = create<CrewState>((set, get) => ({
               updates.vacations = parsedVacations;
             }
             if (idbState.openSequences && idbState.openSequences.length > 0) {
-              updates.openSequences = idbState.openSequences;
+              const map = new Map<string, OpenSequence>();
+              USER_LIVE_OPEN_SEQUENCES.forEach((ot) => map.set(ot.id, ot));
+              idbState.openSequences.forEach((ot) => map.set(ot.id, ot));
+              updates.openSequences = Array.from(map.values());
+            } else {
+              updates.openSequences = activeOpenSeqs;
             }
             if (idbState.subscribedCalendars && idbState.subscribedCalendars.length > 0) {
               updates.subscribedCalendars = [
@@ -967,6 +1080,17 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       
       if (isSameSeqNum && isSameMonth) {
         matchFound = true;
+
+        // Perform granular HSS audit diff before mutating
+        try {
+          const audit = HssDiffEngine.computeDiff(s, hssData, "DECS_HSS_IMPORT");
+          if (audit && audit.changesDetected.length > 0) {
+            get().addHssAudit(audit);
+          }
+        } catch (e) {
+          console.warn("[useCrewStore] HSS diff audit exception:", e);
+        }
+
         const merged = {
           ...s,
           dutyPeriods: (hssData.dutyPeriods && hssData.dutyPeriods.length > 0) ? hssData.dutyPeriods : s.dutyPeriods,
@@ -985,9 +1109,51 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       return sanitizeSequenceTrip(s);
     });
 
-    const finalSeqs = deduplicateSequences(matchFound ? seqs : [...existingSeqs, sanitizeSequenceTrip(hssData)]);
+    const finalSeqs = matchFound ? deduplicateSequences(seqs) : existingSeqs;
 
-    set({ sequences: finalSeqs });
+    // Also enrich openSequences so Open Time cards get exact flight legs & layover hotels
+    const existingOpen = get().openSequences;
+    let updatedOpen = existingOpen;
+    if (existingOpen && existingOpen.length > 0) {
+      updatedOpen = existingOpen.map((ot) => {
+        const otClean = (ot.sequenceNumber || "").replace(/^[A-Za-z]+/, "");
+        if (ot.sequenceNumber.toLowerCase() === sequenceNumber.toLowerCase() || (cleanSeqNum.length > 0 && cleanSeqNum === otClean)) {
+          let legsDesc = ot.legsDescription;
+          if (hssData.dutyPeriods && hssData.dutyPeriods.length > 0) {
+            const legStrs: string[] = [];
+            hssData.dutyPeriods.forEach((dp: any) => {
+              if (dp.legs) {
+                dp.legs.forEach((l: any) => {
+                  legStrs.push(`${l.flightNumber} ${l.depAirport}-${l.arrAirport}`);
+                });
+              }
+            });
+            if (legStrs.length > 0) legsDesc = legStrs.join(" • ");
+          }
+
+          let layoverDesc = ot.layoverDescription;
+          if (hssData.layoverCities && hssData.layoverCities.length > 0) {
+            layoverDesc = hssData.layoverCities.join(" • ");
+          }
+
+          return {
+            ...ot,
+            legsDescription: legsDesc || ot.legsDescription,
+            layoverDescription: layoverDesc || ot.layoverDescription,
+            dutyPeriods: hssData.dutyPeriods || (ot as any).dutyPeriods,
+            ...(hssData.totalCreditMinutes && { creditHours: hssData.totalCreditMinutes / 60.0 }),
+            ...(hssData.base && { base: hssData.base }),
+            ...(hssData.equipment && { equipment: hssData.equipment }),
+            ...(hssData.reportTime && { reportTime: hssData.reportTime }),
+            ...(hssData.releaseTime && { releaseTime: hssData.releaseTime }),
+          };
+        }
+        return ot;
+      });
+      safeLocalStorageSet("crewschedule_opensequences", updatedOpen);
+    }
+
+    set({ sequences: finalSeqs, openSequences: updatedOpen });
     StorageAdapter.saveSequences(finalSeqs);
     safeLocalStorageSet("crewschedule_sequences", finalSeqs);
     get().autoGenerateLogbookFromRoster();
@@ -1074,9 +1240,11 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     now.setDate(now.getDate() - 7);
     const activeCutoffDate = now.toISOString().split("T")[0];
     const filtered = openSequences.filter((s) => !s.startDate || s.startDate >= activeCutoffDate);
-    set({ openSequences: filtered });
+    const ts = new Date().toISOString();
+    set({ openSequences: filtered, openTimeLastUpdated: ts });
     StorageAdapter.saveOpenSequences(filtered);
     safeLocalStorageSet("crewschedule_opensequences", filtered);
+    safeLocalStorageSet("crewschedule_opentime_last_updated", ts);
   },
 
   importN4OpenTime: (rawN4Text) => {
@@ -1084,10 +1252,12 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     const basesInText = Array.from(new Set(parsedNew.map((s) => s.base)));
     const existingOtherBases = get().openSequences.filter((s) => !basesInText.includes(s.base));
     const merged = [...existingOtherBases, ...parsedNew];
+    const ts = new Date().toISOString();
 
-    set({ openSequences: merged });
+    set({ openSequences: merged, openTimeLastUpdated: ts });
     StorageAdapter.saveOpenSequences(merged);
     safeLocalStorageSet("crewschedule_opensequences", merged);
+    safeLocalStorageSet("crewschedule_opentime_last_updated", ts);
     get().addConsoleLog(`Imported N4 Open Time: Loaded ${parsedNew.length} active sequence(s). Past dates automatically purged.`);
   },
 

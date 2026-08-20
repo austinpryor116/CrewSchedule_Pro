@@ -36,6 +36,13 @@ yarn-error.log*
 *.log
 dict.txt
 migrate_store.js
+*phone*.png
+current_phone_screen.png
+scratch/*.json
+scratch/*.txt
+android/app/build/
+android/.gradle/
+android/build/
 
 # env files (can opt-in for committing if needed)
 .env*

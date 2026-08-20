@@ -4,7 +4,7 @@ export interface MessageSender {
   userId: string;
   name: string;
   employeeId: string;
-  role: "CA" | "FO" | "LFA" | "FA";
+  role: "CA" | "FO" | "FA";
   base: string;
   avatarUrl?: string;
   seniorityNumber?: string;
@@ -92,6 +92,7 @@ export interface ChatMessage {
     textSnippet: string;
   };
   isEdited?: boolean;
+  editedAt?: number;
   isDeleted?: boolean;
 }
 

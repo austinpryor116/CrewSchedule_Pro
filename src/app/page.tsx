@@ -1,25 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useCrewStore } from "../store/useCrewStore";
-import CalendarView from "../components/Calendar/CalendarView";
-import ParserStudio from "../components/ParserStudio/ParserStudio";
-import PayCalculator from "../components/PayCalculator/PayCalculator";
-import CompliancePanel from "../components/Compliance/CompliancePanel";
-import SettingsTab from "../components/Settings/SettingsTab";
-import BriefingView from "../components/Briefing/BriefingView";
-import RevisionStudio from "../components/RevisionHistory/RevisionStudio";
-import LogbookStudio from "../components/Logbook/LogbookStudio";
-import PortalBrowserStudio from "../components/PortalBrowser/PortalBrowserStudio";
-import ScheduleImportReviewModal from "../components/ImportModal/ScheduleImportReviewModal";
-import CockpitScannerStudio from "../components/Scanner/CockpitScannerStudio";
-import ReserveStudio from "../components/Reserve/ReserveStudio";
-import ChatContainer from "../components/chat/ChatContainer";
-import { useMessageStore } from "../store/useMessageStore";
-
-import { parseRawSchedule, parseHssSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime } from "../lib/parser";
-import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "../types/index";
-
+import { useCrewStore } from "@/store/useCrewStore";
+import { useMessageStore } from "@/store/useMessageStore";
+import {
+  CalendarView,
+  ParserStudio,
+  PayCalculator,
+  CompliancePanel,
+  SettingsTab,
+  BriefingView,
+  RevisionStudio,
+  LogbookStudio,
+  PortalBrowserStudio,
+  ScheduleImportReviewModal,
+  CockpitScannerStudio,
+  ReserveStudio,
+  ChatContainer,
+  HSSSequencesModal,
+  HotelRequestModal,
+  OpenTimeStudio,
+  OpenTimePickupModal,
+  InitialProfileSetup,
+} from "@/components";
+import CloudSyncModal from "@/components/Firebase/CloudSyncModal";
+import { parseRawSchedule, parseHssSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime, checkOpenSequenceConflict } from "@/lib/parser";
+import { parseN6DReserves } from "@/lib/n6dParser";
+import { parseTurnbackList } from "@/lib/turnbackParser";
+import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "@/types";
+import { NotificationService } from "@/lib/notifications/notificationService";
 import {
   Calendar as CalendarIcon,
   FileSpreadsheet,
@@ -38,8 +47,10 @@ import {
   PhoneCall,
   Layers,
   MessageSquare,
+  User,
+  Bed,
+  Cloud,
 } from "lucide-react";
-import HSSSequencesModal from "@/components/PortalBrowser/HSSSequencesModal";
 
 
 export default function Home() {
@@ -50,12 +61,16 @@ export default function Home() {
   const setActiveTab = useCrewStore((state) => state.setActiveTab);
   const clearAll = useCrewStore((state) => state.clearAll);
   const sequences = useCrewStore((state) => state.sequences);
+  const userProfile = useCrewStore((state) => state.userProfile);
+  const updateUserProfile = useCrewStore((state) => state.updateUserProfile);
   const openSequences = useCrewStore((state) => state.openSequences);
   const vacations = useCrewStore((state) => state.vacations);
   const rosterMetrics = useCrewStore((state) => state.getRosterMetrics)();
   const selectedSequenceId = useCrewStore((state) => state.selectedSequenceId);
   const isHssModalOpen = useCrewStore((state) => state.isHssModalOpen);
   const setIsHssModalOpen = useCrewStore((state) => state.setIsHssModalOpen);
+  const isHotelRequestModalOpen = useCrewStore((state) => state.isHotelRequestModalOpen);
+  const setIsHotelRequestModalOpen = useCrewStore((state) => state.setIsHotelRequestModalOpen);
   const setSelectedSequenceId = useCrewStore((state) => state.setSelectedSequenceId);
   const importMonthlyHISchedule = useCrewStore((state) => state.importMonthlyHISchedule);
   const mergeHssIntoSequence = useCrewStore((state) => state.mergeHssIntoSequence);
@@ -71,6 +86,8 @@ export default function Home() {
   // Sidebar states for desktop
   // Modal / Menu States
   const [showToolsModal, setShowToolsModal] = useState(false);
+  const [isTestingProfileSetup, setIsTestingProfileSetup] = useState(false);
+  const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
   const [importReviewData, setImportReviewData] = useState<{
     sequences: SequenceTrip[];
     vacations: VacationPeriod[];
@@ -80,6 +97,27 @@ export default function Home() {
 
   useEffect(() => {
     hydrate();
+    NotificationService.init();
+    if (typeof window !== "undefined") {
+      (window as any).__CREW_STORE__ = useCrewStore;
+      (window as any).__MESSAGE_STORE__ = useMessageStore;
+      (window as any).__NOTIFICATION_SERVICE__ = NotificationService;
+      (window as any).__CHECK_OPEN_CONFLICT__ = (ot: any) => {
+        const state = useCrewStore.getState();
+        return checkOpenSequenceConflict(ot, state.sequences, state.stationTurnLimits, state.defaultTurnLimit);
+      };
+      (window as any).__GET_EVALUATED_OPEN_SEQUENCES__ = () => {
+        const state = useCrewStore.getState();
+        return (state.openSequences || []).map((ot) => {
+          const conflict = checkOpenSequenceConflict(ot, state.sequences, state.stationTurnLimits, state.defaultTurnLimit);
+          return {
+            ...ot,
+            hasConflict: conflict.hasConflict,
+            conflictReason: conflict.reason,
+          };
+        });
+      };
+    }
   }, [hydrate]);
 
   // Global listener for native Android DECS schedule imports (works across all tabs)
@@ -91,32 +129,54 @@ export default function Home() {
 
       try {
         // 1. Check for Open Time
-        if (text.includes("OPEN TIME") || text.includes("POSSIBLE TRIPS") || text.includes("SEQ/DATE") || text.includes("N4/")) {
+        if (text.includes("OPEN TIME") || text.includes("OPEN SEQUENCES") || text.includes("CREWED SEQUENCES") || text.includes("POSSIBLE TRIPS") || text.includes("SEQ/DATE") || text.includes("N4/") || text.includes("N4D") || text.includes("OPEN TRIPS")) {
           const parsedOpen = parseN4OpenTime(text);
           if (parsedOpen && parsedOpen.length > 0) {
             setOpenSequences(parsedOpen);
+            console.log("[Global] Successfully imported Open Time with", parsedOpen.length, "trips into store!");
             return;
           }
         }
 
-        // 2. Check for HSS Sequence text (Enrich silently without opening review modal or leaving DECS)
-        if (text.includes("SEQ ") && (text.includes("SKD ") || text.includes("ACT ") || text.includes("TAFB") || text.includes("FDPT") || text.includes("BASE "))) {
+        // 2. Check for N6D Reserves Display
+        if (text.includes("RESERVES DISPLAY") || (text.includes("DOMESTIC") && text.includes("PROJ") && text.includes("ACT/SKD"))) {
+          const parsedN6D = parseN6DReserves(text);
+          if (parsedN6D && parsedN6D.pilots && parsedN6D.pilots.length > 0) {
+            useCrewStore.getState().setN6DReserves(parsedN6D);
+            console.log("[Global] Successfully imported N6D Reserve List with", parsedN6D.pilots.length, "pilots into store!");
+            return;
+          }
+        }
+
+        // 3. Check for HIHR Turnback List
+        if (text.includes("HIHR") || text.includes("TURNBACK") || text.includes("TRNBK") || text.includes("TURN BACK")) {
+          const parsedTB = parseTurnbackList(text);
+          if (parsedTB && parsedTB.records && parsedTB.records.length > 0) {
+            useCrewStore.getState().setTurnbackData(parsedTB);
+            console.log("[Global] Successfully imported HIHR Turnback List with", parsedTB.records.length, "pilots into store!");
+            return;
+          }
+        }
+
+        // 3. Check for HSS Sequence pairing text (Enrich silently without opening review modal or leaving DECS)
+        if (
+          !/MONTH\s*ENDING/i.test(text) &&
+          !text.includes("MONTHENDING") &&
+          !text.includes("BID SEL") &&
+          text.includes("SEQ ") &&
+          (text.includes("SKD ") || text.includes("ACT ") || text.includes("TAFB") || text.includes("FDPT") || text.includes("BASE "))
+        ) {
           const parsedHssTrips = parseHssSchedule(text);
           if (parsedHssTrips && parsedHssTrips.length > 0) {
             parsedHssTrips.forEach((hssTrip) => {
-              const existing = sequences.find((s) => s.sequenceNumber === hssTrip.sequenceNumber);
-              if (existing) {
-                mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
-              } else {
-                addSequences([hssTrip]);
-              }
+              mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
             });
-            console.log("[Global] Silently enriched HSS sequence with flight legs & layovers into calendar store.");
+            console.log("[Global] Silently enriched HSS sequence with flight legs & layovers into calendar and open time store.");
             return;
           }
         }
 
-        // 3. Full Monthly HI1 Schedule (Opens Review Modal for whole-month import)
+        // 4. Full Monthly HI1 Schedule (Opens Review Modal for whole-month import)
         const parsedSeqs = parseRawSchedule(text);
         if (parsedSeqs && parsedSeqs.length > 0) {
           const meta = parseMonthlyHIMetadata(text);
@@ -135,11 +195,38 @@ export default function Home() {
       }
     };
 
+    const handleGlobalPickupTrigger = () => {
+      console.log("[Global] Received openTimePickupModal event!");
+      const state = useCrewStore.getState();
+      if (state.openSequences && state.openSequences.length > 0) {
+        state.setSelectedOpenTimeForPickup(state.openSequences[0]);
+      } else {
+        state.setIsPickupModalOpen(true);
+      }
+    };
+
+    const handleGlobalPickupSubmit = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.macro) {
+        console.log("[Global] Submitting DECS pickup macro:", customEvent.detail.macro);
+        const win = window as any;
+        if (win.AndroidPortal && win.AndroidPortal.sendDirectDecsCommand) {
+          win.AndroidPortal.sendDirectDecsCommand(customEvent.detail.macro);
+        } else if (win.sendDecsKey) {
+          win.sendDecsKey(customEvent.detail.macro);
+        }
+      }
+    };
+
     window.addEventListener("nativeScheduleImport", handleGlobalNativeImport);
+    window.addEventListener("openTimePickupModal", handleGlobalPickupTrigger);
+    window.addEventListener("submitDecsOpenTimePickup", handleGlobalPickupSubmit);
     return () => {
       window.removeEventListener("nativeScheduleImport", handleGlobalNativeImport);
+      window.removeEventListener("openTimePickupModal", handleGlobalPickupTrigger);
+      window.removeEventListener("submitDecsOpenTimePickup", handleGlobalPickupSubmit);
     };
-  }, [importMonthlyHISchedule, mergeHssIntoSequence, addSequences, sequences, setOpenSequences]);
+  }, [importMonthlyHISchedule, mergeHssIntoSequence, addSequences, setOpenSequences]);
 
   if (!isHydrated) {
     return (
@@ -165,6 +252,10 @@ export default function Home() {
 
 
   const toolsItems = [
+    { id: "cloud-sync", name: "Firebase Cloud Sync", icon: Cloud, desc: "Cloud Backup & Multi-Device" },
+    { id: "profile-setup", name: "Profile Setup (Test)", icon: User, desc: "Test Onboarding Wizard" },
+    { id: "hotel-request", name: "Hotel Request", icon: Bed, desc: "DECS In-Base & Commuter Hotel" },
+    { id: "open-time", name: "Open Time", icon: Plane, desc: "N4D Open Pairings & Drops" },
     { id: "chat", name: "Crew Comms", icon: MessageSquare, desc: "E2EE Pairings & Base Chat" },
     { id: "reserve", name: "Reserve List", icon: PhoneCall, desc: "N6D Callout Queue & Roster" },
     { id: "hss-modal", name: "HSS Sequences", icon: Layers, desc: "Monthly Legs & DECS Roster" },
@@ -178,7 +269,7 @@ export default function Home() {
     { id: "settings", name: "System Settings", icon: Settings, desc: "Preferences & Config" },
   ];
 
-  const isToolsActive = ["reserve", "scanner", "logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
+  const isToolsActive = ["open-time", "reserve", "scanner", "logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
 
   return (
     <main className="w-screen h-screen flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans relative select-none">
@@ -204,9 +295,8 @@ export default function Home() {
         {/* Other tabs unmount normally */}
         {activeTab !== "calendar" && activeTab !== "briefing" && activeTab !== "chat" && activeTab !== "portal" && (
           <div className="h-full w-full overflow-y-auto pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 scrollbar-thin">
+            {activeTab === "open-time" && <OpenTimeStudio />}
             {activeTab === "reserve" && <ReserveStudio />}
-
-
             {activeTab === "scanner" && <CockpitScannerStudio />}
             {activeTab === "logbook" && <LogbookStudio />}
             {activeTab === "revisions" && <RevisionStudio />}
@@ -256,7 +346,16 @@ export default function Home() {
                   <button
                     key={item.id}
                     onClick={() => {
-                      if (item.id === "hss-modal") {
+                      if (item.id === "cloud-sync") {
+                        setIsCloudSyncModalOpen(true);
+                        setShowToolsModal(false);
+                      } else if (item.id === "profile-setup") {
+                        setIsTestingProfileSetup(true);
+                        setShowToolsModal(false);
+                      } else if (item.id === "hotel-request") {
+                        setIsHotelRequestModalOpen(true);
+                        setShowToolsModal(false);
+                      } else if (item.id === "hss-modal") {
                         setIsHssModalOpen(true);
                         setShowToolsModal(false);
                       } else if (item.id === "calendar-tools") {
@@ -327,6 +426,48 @@ export default function Home() {
           rawText={importReviewData.rawText}
         />
       )}
+
+      {/* First-time Profile Setup Onboarding Flow */}
+      {isHydrated && userProfile && userProfile.hasCompletedOnboarding === false && (
+        <InitialProfileSetup
+          isOpen={true}
+          isStandaloneModal={true}
+          onClose={() => {
+            updateUserProfile({ hasCompletedOnboarding: true });
+          }}
+          onComplete={() => {
+            updateUserProfile({ hasCompletedOnboarding: true });
+          }}
+        />
+      )}
+
+      {/* Test Mode Profile Setup Modal Triggered from Tools */}
+      {isTestingProfileSetup && (
+        <InitialProfileSetup
+          isOpen={true}
+          isStandaloneModal={true}
+          onClose={() => setIsTestingProfileSetup(false)}
+          onComplete={() => {
+            setIsTestingProfileSetup(false);
+          }}
+        />
+      )}
+
+      {/* Hotel Request Modal Triggered from Tools or Portal */}
+      <HotelRequestModal
+        isOpen={isHotelRequestModalOpen}
+        onClose={() => setIsHotelRequestModalOpen(false)}
+      />
+
+      {/* Open Time 1-Tap Pickup & Trade Inspector Modal */}
+      <OpenTimePickupModal />
+
+      {/* Firebase Cloud Sync & Authentication Modal */}
+      <CloudSyncModal
+        isOpen={isCloudSyncModalOpen}
+        onClose={() => setIsCloudSyncModalOpen(false)}
+        onStartOnboarding={() => setIsTestingProfileSetup(true)}
+      />
 
       {/* Cell Phone First Mobile Bottom Navigation Dock */}
       <nav className="bg-white/95 border-t border-slate-200/90 shadow-xl flex items-center justify-around px-2 sm:px-12 shrink-0 z-[10000] relative backdrop-blur-xl pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))]">

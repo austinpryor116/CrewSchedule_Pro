@@ -61,8 +61,8 @@ export function generateDecsResponse(command: string): string {
     return `[${timestamp}] DECS TERMINAL CURSOR MOVED TO HOME (0,0) (CTRL+HOME EXECUTED)\n  READY FOR INPUT.`;
   }
 
-  if (cmdUpper === "SHIFT_DELETE" || cmdUpper === "CLEAR_PAGE" || cmdUpper === "CLEAR") {
-    return `[${timestamp}] DECS TERMINAL SCREEN CLEARED (SHIFT+DELETE EXECUTED)\n  READY FOR NEXT INPUT.`;
+  if (cmdUpper === "CTRL_BACKSPACE" || cmdUpper === "SHIFT_DELETE" || cmdUpper === "CLEAR_PAGE" || cmdUpper === "CLEAR") {
+    return `[${timestamp}] DECS TERMINAL SCREEN / BUFFER CLEARED (CTRL+BACKSPACE EXECUTED)\n  READY FOR NEXT INPUT.`;
   }
 
   if (cmdUpper.startsWith("BSO")) {

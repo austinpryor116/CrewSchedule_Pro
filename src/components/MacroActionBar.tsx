@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { PFKeyMacroBuilder } from "../lib/pfKeys";
-import { typeMacroOnDecsScreen } from "../lib/keyboardSimEngine";
+import { DecsMacroBuilder as PFKeyMacroBuilder } from "@/lib/decsReference";
+import { typeMacroOnDecsScreen } from "@/lib/keyboardSimEngine";
 import { useCrewStore } from "../store/useCrewStore";
 import HSSSequencesModal from "./PortalBrowser/HSSSequencesModal";
 
@@ -27,6 +27,7 @@ export default function MacroActionBar() {
   const consoleLogs = useCrewStore((state) => state.consoleLogs);
   const clearConsoleLogs = useCrewStore((state) => state.clearConsoleLogs);
   const sequences = useCrewStore((state) => state.sequences);
+  const userProfile = useCrewStore((state) => state.userProfile);
   const isTypingOnDecs = useCrewStore((state) => state.isTypingOnDecs);
 
   const [isLogOpen, setIsLogOpen] = useState(false);
@@ -81,6 +82,17 @@ export default function MacroActionBar() {
   const handleReserveProffer = () => {
     const macroStr = PFKeyMacroBuilder.profferReserve(["RAP1", "RAP2"]);
     runMacro(macroStr, "Reserve Proffer");
+  };
+
+  const handleReserveList = () => {
+    const base = userProfile.base || "ORD";
+    const seat = userProfile.crewRole?.toUpperCase().includes("FO") ? "FO" : "CA";
+    const dateObj = new Date();
+    const dayStr = String(dateObj.getDate()).padStart(2, "0");
+    const monthStr = dateObj.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+    const dateStr = `${dayStr}${monthStr}`;
+    const macroStr = PFKeyMacroBuilder.reserveList(base, dateStr, seat);
+    runMacro(macroStr, `Reserve List (${macroStr})`);
   };
 
   const handleDallasHotel = () => {
@@ -248,6 +260,17 @@ export default function MacroActionBar() {
           <span className="text-[9px] text-slate-600 font-mono font-bold">HI31 RAP 1&2</span>
         </button>
 
+        {/* Reserve List (N6D) */}
+        <button
+          onClick={handleReserveList}
+          disabled={isExecuting}
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          <Layers className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <span className="text-xs font-bold text-slate-900">Reserve List</span>
+          <span className="text-[9px] text-slate-600 font-mono font-bold">N6D List</span>
+        </button>
+
         {/* Dallas Hotel */}
         <button
           onClick={handleDallasHotel}
@@ -327,13 +350,20 @@ export default function MacroActionBar() {
 
         {/* Open Time Pickup Trigger */}
         <button
-          onClick={() => setActiveModal("pickup")}
+          onClick={() => {
+            const state = useCrewStore.getState();
+            if (state.openSequences && state.openSequences.length > 0) {
+              state.setSelectedOpenTimeForPickup(state.openSequences[0]);
+            } else {
+              state.setIsPickupModalOpen(true);
+            }
+          }}
           disabled={isExecuting}
-          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-purple-300 hover:bg-purple-50 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
+          className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-50 border border-purple-300 hover:border-purple-500 hover:bg-purple-100 text-slate-900 transition duration-150 group cursor-pointer disabled:opacity-50 shadow-xs"
         >
-          <ShoppingBag className="w-4 h-4 text-purple-600 group-hover:scale-110 transition duration-150 mb-1" />
+          <Zap className="w-4 h-4 text-purple-600 group-hover:scale-110 transition duration-150 mb-1" />
           <span className="text-xs font-bold text-slate-900">Open Time Pickup</span>
-          <span className="text-[9px] text-slate-600 font-mono font-bold">HTO/B</span>
+          <span className="text-[9px] text-purple-700 font-mono font-bold">HTO / HTS</span>
         </button>
 
         {/* DECS Login */}

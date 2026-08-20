@@ -60,8 +60,6 @@ export default function ChannelList({ onSelectChannel }: ChannelListProps) {
         return "bg-amber-100 text-amber-800 border-amber-300";
       case "FO":
         return "bg-sky-100 text-sky-800 border-sky-300";
-      case "LFA":
-        return "bg-emerald-100 text-emerald-800 border-emerald-300";
       case "FA":
         return "bg-teal-100 text-teal-800 border-teal-300";
       default:

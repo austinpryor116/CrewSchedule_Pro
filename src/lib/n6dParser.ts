@@ -226,8 +226,24 @@ export function parseN6DReserves(rawText: string): N6DReservesData {
     });
   }
 
-  // Sort default pilots by seniority ascending
-  pilots.sort((a, b) => a.seniorityNum - b.seniorityNum);
+  // Deduplicate and merge pilot records across multi-page captures
+  const uniquePilotsMap = new Map<string, N6DPilotRecord>();
+  pilots.forEach((p) => {
+    const key = p.employeeId ? `emp-${p.employeeId}` : `sen-${p.seniority}`;
+    if (!uniquePilotsMap.has(key)) {
+      uniquePilotsMap.set(key, p);
+    } else {
+      const existing = uniquePilotsMap.get(key)!;
+      uniquePilotsMap.set(key, {
+        ...existing,
+        ...p,
+        days: { ...existing.days, ...p.days },
+      });
+    }
+  });
+
+  const finalPilots = Array.from(uniquePilotsMap.values());
+  finalPilots.sort((a, b) => a.seniorityNum - b.seniorityNum);
 
   return {
     base,
@@ -237,7 +253,7 @@ export function parseN6DReserves(rawText: string): N6DReservesData {
     asOfDate,
     asOfTime,
     displayDays,
-    pilots,
+    pilots: finalPilots,
     dailySummaries,
     rawText,
     importedAt: new Date().toISOString(),

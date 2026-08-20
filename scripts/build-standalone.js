@@ -6,27 +6,30 @@ const rootDir = path.resolve(__dirname, '..');
 const apiDir = path.join(rootDir, 'src', 'app', 'api');
 const fallbackDir = path.join(rootDir, 'src', 'app', '[...proxyFallback]');
 
-const backupBaseDir = path.resolve(rootDir, '..', '.crewschedule_temp_build_stash');
-const apiBackupDir = path.join(backupBaseDir, 'api');
-const fallbackBackupDir = path.join(backupBaseDir, '[...proxyFallback]');
+const apiBackupDir = path.join(rootDir, 'src', 'app', '_api_stash');
+const fallbackBackupDir = path.join(rootDir, 'src', 'app', '_fallback_stash');
 
 const capConfigPath = path.join(rootDir, 'capacitor.config.ts');
 
 console.log('🚀 Starting Standalone Offline APK Build for CrewSchedule Pro...');
 
-if (!fs.existsSync(backupBaseDir)) {
-  fs.mkdirSync(backupBaseDir, { recursive: true });
+function safeMove(src, dest) {
+  if (process.platform === 'win32') {
+    execSync(`powershell -Command "Move-Item -LiteralPath '${src}' -Destination '${dest}' -Force"`, { stdio: 'ignore' });
+  } else {
+    fs.renameSync(src, dest);
+  }
 }
 
 try {
-  // 1. Stash dynamic server Route Handlers completely outside project root so TypeScript / Next.js doesn't type-check them
+  // 1. Stash dynamic server Route Handlers to private folders (_*) so Next.js static export ignores them
   if (fs.existsSync(apiDir)) {
-    console.log('📦 Stashing API routes outside project root...');
-    fs.renameSync(apiDir, apiBackupDir);
+    console.log('📦 Stashing API routes...');
+    safeMove(apiDir, apiBackupDir);
   }
   if (fs.existsSync(fallbackDir)) {
-    console.log('📦 Stashing proxy fallback route outside project root...');
-    fs.renameSync(fallbackDir, fallbackBackupDir);
+    console.log('📦 Stashing proxy fallback route...');
+    safeMove(fallbackDir, fallbackBackupDir);
   }
 
   // 2. Set capacitor.config.ts to standalone mode (no localhost server.url)
@@ -56,7 +59,13 @@ export default config;
 
   // 3. Clear .next cache and run Next.js static export build
   console.log('🧹 Clearing stale .next build cache...');
-  fs.rmSync(path.join(rootDir, '.next'), { recursive: true, force: true });
+  try {
+    if (process.platform === 'win32') {
+      execSync(`powershell -Command "Remove-Item -LiteralPath '${path.join(rootDir, '.next')}' -Recurse -Force -ErrorAction SilentlyContinue"`, { stdio: 'ignore' });
+    } else {
+      fs.rmSync(path.join(rootDir, '.next'), { recursive: true, force: true });
+    }
+  } catch {}
 
   console.log('🔨 Building Next.js static export bundle (output: "export")...');
   execSync('npx next build', {
@@ -71,11 +80,18 @@ export default config;
 
   // 5. Build Android standalone APK
   console.log('📦 Compiling Standalone Android APK with Gradle (Java 21)...');
+  const jdk21Path = fs.existsSync('C:\\Users\\austi\\.jdks\\jbr-21.0.11')
+    ? 'C:\\Users\\austi\\.jdks\\jbr-21.0.11'
+    : (fs.existsSync('C:\\Program Files\\Android\\Android Studio\\jbr') ? 'C:\\Program Files\\Android\\Android Studio\\jbr' : process.env.JAVA_HOME);
+
   const gradlewCmd = process.platform === 'win32' ? '.\\gradlew.bat assembleDebug' : './gradlew assembleDebug';
   execSync(gradlewCmd, {
     cwd: path.join(rootDir, 'android'),
     stdio: 'inherit',
-    env: { ...process.env, JAVA_HOME: 'C:\\Users\\austi\\.jdks\\jbr-21.0.11' },
+    env: { 
+      ...process.env, 
+      JAVA_HOME: jdk21Path,
+    },
   });
 
   // 6. Copy output APK to project root
@@ -105,13 +121,10 @@ export default config;
   // Always restore dynamic server routes so dev server works normally
   if (fs.existsSync(apiBackupDir)) {
     console.log('🔄 Restoring API routes for development...');
-    fs.renameSync(apiBackupDir, apiDir);
+    safeMove(apiBackupDir, apiDir);
   }
   if (fs.existsSync(fallbackBackupDir)) {
     console.log('🔄 Restoring proxy fallback route...');
-    fs.renameSync(fallbackBackupDir, fallbackDir);
-  }
-  if (fs.existsSync(backupBaseDir)) {
-    try { fs.rmdirSync(backupBaseDir); } catch {}
+    safeMove(fallbackBackupDir, fallbackDir);
   }
 }

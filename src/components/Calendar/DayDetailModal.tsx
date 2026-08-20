@@ -15,9 +15,13 @@ import {
   Plus,
   Edit2,
   ExternalLink,
+  DollarSign,
 } from "lucide-react";
 import CalendarEventModal from "./CalendarEventModal";
 import { isPilotRole } from "../../lib/pilotBiddingDates";
+import { OpenTimeEngine } from "../../lib/openTimeEngine";
+
+import { formatAviationHours } from "../../lib/parser";
 
 interface DayDetailModalProps {
   isOpen: boolean;
@@ -186,14 +190,12 @@ export default function DayDetailModal({
 
   return (
     <div
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn font-sans text-slate-900"
+      onClick={onClose}
+      className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn font-sans text-slate-900 cursor-pointer"
     >
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full border-t sm:border border-slate-200 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slideUp"
+        className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full border-t sm:border border-slate-200 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slideUp cursor-default"
       >
         {/* Mobile handle indicator */}
         <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-2 shrink-0 sm:hidden" />
@@ -323,13 +325,16 @@ export default function DayDetailModal({
                   ? dp.payCreditMinutes
                   : (dp?.actualDutyMinutes ?? (dayLegsBlockMins > 0 ? dayLegsBlockMins : Math.round(seq.totalCreditMinutes / Math.max(1, seq.dutyPeriods?.length || 1))));
 
-                const dayCreditHrs = (dayCreditMinutes / 60).toFixed(1);
+                const dayCreditHrs = formatAviationHours(dayCreditMinutes, "dot");
                 const dayBlockMins = dp?.actualBlockMinutes ?? (dayLegsBlockMins > 0 ? dayLegsBlockMins : Math.round(seq.totalBlockMinutes / Math.max(1, seq.dutyPeriods?.length || 1)));
-                const dayBlockHrs = (dayBlockMins / 60).toFixed(1);
-                const totalSeqCreditHrs = (seq.totalCreditMinutes / 60).toFixed(1);
+                const dayBlockHrs = formatAviationHours(dayBlockMins, "dot");
+                const totalSeqCreditHrs = formatAviationHours(seq.totalCreditMinutes, "dot");
 
                 const repTz = dp ? convertHHMMToTz(dp.reportTime, baseTzOffset, targetOffset) : "06:00";
                 const relTz = dp ? convertHHMMToTz(dp.releaseTime, baseTzOffset, targetOffset) : "18:00";
+
+                const payRates = useCrewStore.getState().payRates;
+                const seqMoney = OpenTimeEngine.calculateSequenceMoney(seq, payRates, userProfile);
 
                 return (
                   <div
@@ -349,15 +354,72 @@ export default function DayDetailModal({
                         </span>
                       </div>
 
-                      <div className="flex flex-col items-end">
-                        <span className="text-xs font-mono font-black text-emerald-700">
-                          {dayCreditHrs}h Pay Credit
-                        </span>
-                        {seq.dutyPeriods && seq.dutyPeriods.length > 1 && (
-                          <span className="text-[10px] font-mono text-slate-400 font-semibold">
-                            Trip Total: {totalSeqCreditHrs}h
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            let seat = "CA";
+                            const rankStr = (seq.rank || (seq as any).seat || (seq as any).role || "").toUpperCase();
+                            if (rankStr.includes("FA") || rankStr.includes("FLIGHT ATTENDANT") || rankStr.includes("ATTENDANT")) {
+                              seat = "FA";
+                            } else if (rankStr.includes("FO") || rankStr.includes("F/O") || rankStr.includes("FIRST OFFICER") || rankStr.includes("SIC")) {
+                              seat = "FO";
+                            }
+                            const datePart = seq.startDate ? seq.startDate.substring(8, 10) : "";
+                            const monthLetters = seq.startDate
+                              ? new Date(seq.startDate + "T12:00:00").toLocaleDateString("en-US", { month: "short" }).toUpperCase()
+                              : "";
+                            const command = `HSS/${seat}/${seq.sequenceNumber}/${datePart}${monthLetters}^`;
+                            if (typeof window !== "undefined" && (window as any).AndroidPortal?.executeHss) {
+                              (window as any).AndroidPortal.executeHss(command);
+                            }
+                          }}
+                          className="px-2 py-1 rounded-lg text-[10px] font-black bg-amber-400 hover:bg-amber-500 active:scale-95 text-slate-950 border border-amber-500 shadow-2xs transition flex items-center gap-1 cursor-pointer"
+                          title="Pull exact departure/arrival times from DECS (HSS)"
+                        >
+                          <Clock className="w-3 h-3" />
+                          <span>HSS Times</span>
+                        </button>
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs font-mono font-black text-emerald-700">
+                            {dayCreditHrs}h Pay Credit
                           </span>
-                        )}
+                          {seq.dutyPeriods && seq.dutyPeriods.length > 1 && (
+                            <span className="text-[10px] font-mono text-slate-400 font-semibold">
+                              Trip Total: {totalSeqCreditHrs}h
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trip Financial Value Breakdown */}
+                    <div className="p-3 bg-gradient-to-br from-emerald-50 via-slate-50 to-sky-50 border border-emerald-200/80 rounded-2xl text-slate-900 space-y-2 shadow-2xs">
+                      <div className="flex items-center justify-between border-b border-emerald-200/60 pb-1.5">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-emerald-800">
+                          <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>SEQ #{seqMoney.seqNum} Financial Value</span>
+                        </div>
+                        <span className="text-xs font-mono font-black text-emerald-700">
+                          +${seqMoney.totalTripValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono text-center">
+                        <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                          <span className="text-[8.5px] text-slate-500 font-sans font-bold block">Flight Pay</span>
+                          <strong className="text-slate-900 block font-black">+${seqMoney.grossPay.toLocaleString()}</strong>
+                          <span className="text-[8px] text-slate-500">{seqMoney.creditFormatted}h × ${seqMoney.hourlyRate}</span>
+                        </div>
+                        <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                          <span className="text-[8.5px] text-slate-500 font-sans font-bold block">Per Diem</span>
+                          <strong className="text-sky-700 block font-black">+${seqMoney.perDiemPay.toFixed(2)}</strong>
+                          <span className="text-[8px] text-slate-500">{seqMoney.tafbHours.toFixed(0)}h TAFB</span>
+                        </div>
+                        <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                          <span className="text-[8.5px] text-slate-500 font-sans font-bold block">Rate</span>
+                          <strong className="text-amber-700 block font-black">${seqMoney.hourlyRate}/hr</strong>
+                          <span className="text-[8px] text-slate-500">{seqMoney.role}</span>
+                        </div>
                       </div>
                     </div>
 
@@ -392,19 +454,62 @@ export default function DayDetailModal({
                           {dp.legs.map((leg, legIdx) => {
                             const depTz = convertHHMMToTz(leg.depTime, baseTzOffset, targetOffset);
                             const arrTz = convertHHMMToTz(leg.arrTime, baseTzOffset, targetOffset);
+                            const hasActual = Boolean(leg.actualDepTime || leg.actualArrTime);
+                            const actDepTz = leg.actualDepTime ? convertHHMMToTz(leg.actualDepTime, baseTzOffset, targetOffset) : "";
+                            const actArrTz = leg.actualArrTime ? convertHHMMToTz(leg.actualArrTime, baseTzOffset, targetOffset) : "";
+                            const actBlkHrs = leg.actualBlockMinutes !== undefined ? (leg.actualBlockMinutes / 60).toFixed(1) : "";
+
                             return (
                               <div
                                 key={legIdx}
-                                className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono space-y-1.5"
+                                className={`p-2.5 rounded-xl border text-xs font-mono space-y-1.5 transition ${
+                                  hasActual
+                                    ? "bg-emerald-50/50 border-emerald-200"
+                                    : "bg-slate-50 border-slate-200"
+                                }`}
                               >
                                 <div className="flex items-center justify-between">
-                                  <span className="font-black text-sky-700">{leg.flightNumber}</span>
-                                  <span className="text-[10px] text-slate-500 font-bold">{(leg.blockMinutes / 60).toFixed(1)}h</span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-black text-sky-800">{leg.flightNumber}</span>
+                                    {leg.tailNumber && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700 font-bold">
+                                        {leg.tailNumber}
+                                      </span>
+                                    )}
+                                    {leg.isDeadhead && (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-black">
+                                        DH
+                                      </span>
+                                    )}
+                                  </div>
+                                  {hasActual ? (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-black">
+                                      ACTUAL LOGGED
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-500 font-bold">
+                                      {(leg.blockMinutes / 60).toFixed(1)}h skd
+                                    </span>
+                                  )}
                                 </div>
+
                                 <div className="flex items-center justify-between text-xs font-black text-slate-900">
-                                  <span>{leg.depAirport} ({depTz})</span>
+                                  <span>{leg.depAirport}</span>
                                   <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                  <span>{leg.arrAirport} ({arrTz})</span>
+                                  <span>{leg.arrAirport}</span>
+                                </div>
+
+                                <div className="pt-1 border-t border-slate-200/60 space-y-0.5 text-[11px]">
+                                  <div className="flex items-center justify-between text-slate-600">
+                                    <span className="text-[9px] font-bold text-sky-700 uppercase">SKD:</span>
+                                    <span>{depTz} → {arrTz} ({(leg.blockMinutes / 60).toFixed(1)}h)</span>
+                                  </div>
+                                  {hasActual && (
+                                    <div className="flex items-center justify-between text-emerald-800 font-black">
+                                      <span className="text-[9px] font-extrabold text-emerald-700 uppercase">ACT:</span>
+                                      <span>{actDepTz} → {actArrTz} ({actBlkHrs}h)</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             );

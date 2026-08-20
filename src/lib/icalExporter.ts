@@ -62,7 +62,14 @@ export function generateRosterIcs(
       : "";
 
     const layoverSummary = seq.dutyPeriods
-      ? seq.dutyPeriods.map((d, i) => d.layoverCity ? `Day ${i + 1} Layover: ${d.layoverCity} (${d.layoverHotelInfo || "Hotel TBD"})` : null).filter(Boolean).join(" | ")
+      ? seq.dutyPeriods
+          .map((d, i) =>
+            d.layoverCity
+              ? `Day ${i + 1} Layover: ${d.layoverCity}${d.layoverHotelInfo ? ` (${d.layoverHotelInfo})` : ""}`
+              : null
+          )
+          .filter(Boolean)
+          .join(" | ")
       : "";
 
     // 1. Overall Sequence Trip Event
@@ -140,8 +147,8 @@ export function generateRosterIcs(
             `DTSTART:${hotelStart}`,
             `DTEND:${hotelEnd}`,
             `SUMMARY:🏨 Overnight Layover: ${dp.layoverCity}`,
-            `DESCRIPTION:City: ${dp.layoverCity}\\nHotel / Accommodations: ${dp.layoverHotelInfo || "Contract Hotel"}\\nDuty Release: ${dp.releaseTime}\\nNext Duty Report: ${nextDp ? nextDp.reportTime : "Morning"}\\nSequence #${seq.sequenceNumber}`,
-            `LOCATION:${dp.layoverCity} - ${dp.layoverHotelInfo || "Layover Hotel"}`,
+            `DESCRIPTION:City: ${dp.layoverCity}${dp.layoverHotelInfo ? `\\nHotel / Accommodations: ${dp.layoverHotelInfo}` : ""}\\nDuty Release: ${dp.releaseTime}\\nNext Duty Report: ${nextDp ? nextDp.reportTime : "Morning"}\\nSequence #${seq.sequenceNumber}`,
+            `LOCATION:${dp.layoverHotelInfo ? `${dp.layoverCity} - ${dp.layoverHotelInfo}` : `${dp.layoverCity} Layover`}`,
             "STATUS:CONFIRMED",
             "TRANSP:TRANSPARENT",
             "END:VEVENT"

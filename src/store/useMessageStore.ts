@@ -12,7 +12,7 @@ import {
   TradeOfferEmbed,
   UserProfile,
   SequenceTrip,
-} from "../types";
+} from "@/types";
 import {
   saveMessageLocally,
   saveMessagesBatch,
@@ -26,7 +26,7 @@ import {
   deleteMessageLocally,
   updateMessageLocally,
   deleteChannelLocally,
-} from "../lib/messaging/offlineMessageStore";
+} from "@/lib/messaging/offlineMessageStore";
 import {
   encryptMessage,
   decryptMessage,
@@ -45,6 +45,8 @@ import {
   shouldMuteNotification,
   RestShieldStatus,
 } from "../lib/messaging/restShield";
+import { FirebaseChatService } from "../lib/firebase/chatService";
+import { NotificationService } from "@/lib/notifications/notificationService";
 
 interface MessageState {
   channels: ChatChannel[];
@@ -164,7 +166,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
 
     set({
       channels: finalChannels,
-      activeChannelId: null,
+      activeChannelId: get().activeChannelId || null,
       messages: messagesMap,
       queuedCount: queued.length,
       restShieldStatus: restStatus,
@@ -187,6 +189,32 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     set({ activeChannelId: channelId, replyingTo: null, editingMessage: null });
     if (channelId) {
       get().markChannelAsRead(channelId);
+
+      // Subscribe to real-time Firebase Firestore updates for this channel
+      FirebaseChatService.subscribeToChannel(channelId, (cloudMsgs) => {
+        if (cloudMsgs && cloudMsgs.length > 0) {
+          set((state) => {
+            const existing = state.messages[channelId] || [];
+            const existingMap = new Map(existing.map((m) => [m.id, m]));
+            
+            // Merge cloud messages with existing local state
+            cloudMsgs.forEach((cm) => {
+              existingMap.set(cm.id, {
+                ...(existingMap.get(cm.id) || {}),
+                ...cm,
+              });
+            });
+
+            const merged = Array.from(existingMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+            return {
+              messages: {
+                ...state.messages,
+                [channelId]: merged,
+              },
+            };
+          });
+        }
+      });
     }
   },
 
@@ -290,6 +318,13 @@ export const useMessageStore = create<MessageState>((set, get) => ({
 
     await saveMessageLocally(newMessage);
 
+    // Push to Firebase Firestore in real-time
+    if (online) {
+      FirebaseChatService.sendMessage(channel.id, newMessage).catch((err) =>
+        console.warn("[useMessageStore] Firebase send notice:", err)
+      );
+    }
+
     // Trigger interactive simulated crew reply
     const simulatedReplies = getSimulatedCrewReplies(channel, params.content, params.quickMacroTag);
     if (simulatedReplies.length > 0) {
@@ -356,6 +391,14 @@ export const useMessageStore = create<MessageState>((set, get) => ({
           }));
 
           await saveMessageLocally(simMsg);
+          NotificationService.notifyNewMessage(simMsg, channel.title);
+
+          // Push simulated crew reply to Firebase Firestore
+          if (isOnline()) {
+            FirebaseChatService.sendMessage(channel.id, simMsg).catch((err) =>
+              console.warn("[useMessageStore] Firebase sim reply notice:", err)
+            );
+          }
         }, sim.delayMs);
       }
     }
@@ -411,6 +454,10 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       iv: iv || undefined,
       isEdited: true,
     });
+
+    FirebaseChatService.editMessage(channelId, messageId, newContent).catch((err) =>
+      console.warn("[useMessageStore] Firebase edit notice:", err)
+    );
   },
 
   deleteMessage: async (channelId, messageId) => {
@@ -426,6 +473,10 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     }));
 
     await deleteMessageLocally(messageId);
+
+    FirebaseChatService.deleteMessage(channelId, messageId).catch((err) =>
+      console.warn("[useMessageStore] Firebase delete notice:", err)
+    );
   },
 
   addReaction: async (channelId, messageId, emoji) => {
@@ -461,8 +512,12 @@ export const useMessageStore = create<MessageState>((set, get) => ({
 
     const targetMsg = updatedMsgs.find((m) => m.id === messageId);
     if (targetMsg) {
-      await updateMessageLocally(messageId, { reactions: targetMsg.reactions });
+      await updateMessageLocally(messageId, { reactions: updatedMsgs.find((m) => m.id === messageId)?.reactions });
     }
+
+    FirebaseChatService.addReaction(channelId, messageId, emoji, userId, "Austin Pryor").catch((err) =>
+      console.warn("[useMessageStore] Firebase reaction notice:", err)
+    );
   },
 
   deleteChannel: async (channelId) => {
@@ -555,6 +610,10 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       },
     }));
 
+    FirebaseChatService.updateTradeStatus(activeChannelId, offerId, newStatus).catch((err) =>
+      console.warn("[useMessageStore] Firebase trade update notice:", err)
+    );
+
     const target = updatedMsgs.find((m) => m.embeddedTrade?.offerId === offerId);
     if (target) {
       await saveMessageLocally(target);
@@ -580,3 +639,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     });
   },
 }));
+
+if (typeof window !== "undefined") {
+  (window as any).__MESSAGE_STORE__ = useMessageStore;
+}

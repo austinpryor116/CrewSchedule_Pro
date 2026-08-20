@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
 import { checkOpenSequenceConflict } from "../../lib/parser";
-import { Award, CheckCircle2, ShieldAlert, Sparkles, Plus, AlertCircle, Ban, Eye, EyeOff, Trash2, X, SlidersHorizontal } from "lucide-react";
+import { Award, CheckCircle2, ShieldAlert, Sparkles, Plus, AlertCircle, Ban, Eye, EyeOff, Trash2, X, SlidersHorizontal, Zap } from "lucide-react";
 import { OpenTimePreset } from "../../types";
 
 const parseTimeToMinutes = (timeStr: string | undefined): number | null => {
@@ -42,6 +42,7 @@ export default function OpenTimeOverlay() {
   const removePreset = useCrewStore((state) => state.removeOpenTimePreset);
   const stationTurnLimits = useCrewStore((state) => state.stationTurnLimits);
   const defaultTurnLimit = useCrewStore((state) => state.defaultTurnLimit);
+  const setSelectedOpenTimeForPickup = useCrewStore((state) => state.setSelectedOpenTimeForPickup);
 
   // Custom Preset Builder State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -390,10 +391,10 @@ export default function OpenTimeOverlay() {
             <div
               key={ot.id}
               className={`p-4 rounded-2xl border transition duration-200 flex flex-col justify-between ${
-                isSimulated
-                  ? "bg-amber-50 border-amber-400 shadow-sm"
-                  : conflict.hasConflict
-                  ? "bg-slate-100 border-slate-200 opacity-60"
+                conflict.hasConflict
+                  ? "bg-rose-50/20 border-rose-300/80 hover:border-rose-400"
+                  : isSimulated
+                  ? "bg-amber-50/80 border-amber-300 shadow-sm"
                   : "bg-slate-50 border-slate-200 hover:border-slate-300"
               }`}
             >
@@ -402,9 +403,30 @@ export default function OpenTimeOverlay() {
                   <span className="font-mono text-sm font-extrabold text-slate-900">
                     Seq #{ot.sequenceNumber}
                   </span>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-200 text-slate-800">
-                    {ot.base || "ORD"}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {conflict.hasConflict ? (
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                        🚫 NOT LEGAL
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        ✓ LEGAL
+                      </span>
+                    )}
+
+                    {ot.isDropBoard ? (
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200">
+                        💎 STRAIGHT PAY
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                        ⚡ OPEN TIME
+                      </span>
+                    )}
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-200 text-slate-800">
+                      {ot.base || "ORD"}
+                    </span>
+                  </div>
                 </div>
 
                 <p className="text-xs text-slate-600 font-bold mt-1 font-mono">
@@ -444,31 +466,41 @@ export default function OpenTimeOverlay() {
                 )}
               </div>
 
-              <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-200/80">
-                <span className="text-sm font-mono font-extrabold text-slate-900">
+              <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-200/80 gap-2">
+                <span className="text-sm font-mono font-extrabold text-slate-900 shrink-0">
                   {ot.creditHours.toFixed(1)} hrs Credit
                 </span>
 
-                <button
-                  onClick={() => toggleSimulate(ot.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition duration-150 cursor-pointer flex items-center gap-1.5 ${
-                    isSimulated
-                      ? "bg-rose-600 hover:bg-rose-700 text-white shadow-sm"
-                      : "bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
-                  }`}
-                >
-                  {isSimulated ? (
-                    <>
-                      <Ban className="w-3.5 h-3.5" />
-                      Remove
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5" />
-                      Simulate Pickup
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setSelectedOpenTimeForPickup(ot)}
+                    className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-95 text-white text-xs font-black transition cursor-pointer flex items-center gap-1 shadow-sm"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>⚡ Pick Up</span>
+                  </button>
+
+                  <button
+                    onClick={() => toggleSimulate(ot.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition duration-150 cursor-pointer flex items-center gap-1.5 ${
+                      isSimulated
+                        ? "bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+                        : "bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    {isSimulated ? (
+                      <>
+                        <Ban className="w-3.5 h-3.5" />
+                        Simulated
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5" />
+                        Simulate
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           ))

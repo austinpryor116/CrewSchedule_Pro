@@ -2,7 +2,7 @@
 
 import { useState, useRef, ChangeEvent, DragEvent } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { parseRawSchedule, parseN4OpenTime, extractVacationsFromHI1, parseMonthlyHIMetadata } from "../../lib/parser";
+import { parseRawSchedule, parseN4OpenTime, extractVacationsFromHI1, parseMonthlyHIMetadata, formatAviationHours } from "../../lib/parser";
 import { readUploadedFileAsText } from "../../lib/pdfExtractor";
 import { RAW_DEMO_TEXT, RAW_HI1_TEXT, RAW_HI1_AUG_TEXT, RAW_N4_TEXT } from "../../lib/demoData";
 import { SequenceTrip, OpenSequence, MonthlyHIMetadata, VacationPeriod } from "../../types";
@@ -467,10 +467,10 @@ export default function ParserStudio() {
                             Layovers: <span className="text-slate-900 font-bold">{seq.layoverCities.join(", ") || "None"}</span>
                           </div>
                           <div>
-                            Block: <span className="text-slate-900 font-bold">{(seq.totalBlockMinutes / 60).toFixed(2)} hrs</span>
+                            Block: <span className="text-slate-900 font-bold">{formatAviationHours(seq.totalBlockMinutes, "dot")} hrs</span>
                           </div>
                           <div>
-                            Credit: <span className="text-emerald-700 font-bold">{(seq.totalCreditMinutes / 60).toFixed(2)} hrs</span>
+                            Credit: <span className="text-emerald-700 font-bold">{formatAviationHours(seq.totalCreditMinutes, "dot")} hrs</span>
                           </div>
                           {seq.dropReason && (
                             <div className="col-span-2 text-[11px] text-rose-700 font-sans mt-1 pt-1 border-t border-slate-200 font-medium">

@@ -27,7 +27,9 @@ import {
   Trash2,
   Pin,
   MoreVertical,
+  Bell,
 } from "lucide-react";
+import { NotificationService } from "@/lib/notifications/notificationService";
 
 export default function ChatContainer() {
   const sequences = useCrewStore((s) => s.sequences);
@@ -159,23 +161,15 @@ export default function ChatContainer() {
   };
 
   return (
-    <div className="flex h-full w-full bg-[#f8fafc] text-slate-900 overflow-hidden relative font-sans select-none">
-      {/* MASTER CONVERSATION LIST */}
-      <div
-        className={`h-full w-full lg:w-80 shrink-0 ${
-          activeChannelId ? "hidden lg:block" : "block"
-        }`}
-      >
-        <ChannelList onSelectChannel={(id) => setActiveChannelId(id)} />
-      </div>
-
-      {/* ACTIVE CONVERSATION SCREEN */}
-      <div
-        className={`flex-1 flex flex-col h-full min-w-0 bg-[#f8fafc] relative ${
-          !activeChannelId ? "hidden lg:flex" : "flex"
-        }`}
-      >
-        {activeChannelId && activeChannel ? (
+    <div className="flex flex-col h-full w-full bg-[#f8fafc] text-slate-900 overflow-hidden relative font-sans select-none">
+      {!activeChannelId || !activeChannel ? (
+        /* MASTER CONVERSATION LIST (CELL PHONE VIEW) */
+        <div className="h-full w-full flex flex-col">
+          <ChannelList onSelectChannel={(id) => setActiveChannelId(id)} />
+        </div>
+      ) : (
+        /* ACTIVE CONVERSATION SCREEN (FULL CELL PHONE VIEW) */
+        <div className="flex-1 flex flex-col h-full min-w-0 bg-[#f8fafc] relative">
           <>
             {/* iOS / Samsung Top Navigation Bar */}
             <div className="px-3 pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-2.5 bg-white/95 border-b border-slate-200 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs z-30 relative">
@@ -212,16 +206,28 @@ export default function ChatContainer() {
                   {activeChannel.isPinned && (
                     <Pin className="w-2.5 h-2.5 text-sky-600 shrink-0 fill-sky-600" />
                   )}
+                  <span className="inline-flex items-center gap-1 px-1 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-black tracking-tight shrink-0 border border-emerald-200/60">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    LIVE
+                  </span>
                 </div>
                 <span className="text-[10px] text-slate-500 truncate max-w-[160px] sm:max-w-[240px] leading-none mt-0.5 font-medium">
                   {activeChannel.type === "SEQUENCE"
-                    ? `${activeChannel.participantDetails.length} Crew Members • E2EE`
-                    : activeChannel.subtitle || "Tap for details"}
+                    ? `${activeChannel.participantDetails.length} Crew Members • Cloud E2EE`
+                    : activeChannel.subtitle || "Real-time sync active"}
                 </span>
               </div>
 
               {/* Right: Actions */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 relative">
+                <button
+                  onClick={() => NotificationService.sendTestCrewNotification()}
+                  className="p-1.5 rounded-full bg-sky-50 text-sky-600 border border-sky-200 hover:bg-sky-100 transition cursor-pointer active:scale-95 shadow-2xs"
+                  title="Test Push Notification (with App Icon)"
+                >
+                  <Bell className="w-4 h-4" />
+                </button>
+
                 <button
                   onClick={() => toggleManualDnd(8)}
                   className={`p-1.5 rounded-full border transition cursor-pointer active:scale-95 ${
@@ -255,6 +261,17 @@ export default function ChatContainer() {
                   >
                     <Pin className="w-3.5 h-3.5 text-sky-600" />
                     <span>{activeChannel.isPinned ? "Unpin Chat" : "Pin to Top"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      NotificationService.sendTestCrewNotification();
+                      setShowChannelMenu(false);
+                    }}
+                    className="w-full px-3 py-2 flex items-center gap-2 text-sky-700 hover:bg-sky-50 rounded-xl transition cursor-pointer text-left"
+                  >
+                    <Bell className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Send Test Push Notification</span>
                   </button>
 
                   <button
@@ -503,19 +520,8 @@ export default function ChatContainer() {
               </form>
             </div>
           </>
-        ) : (
-          /* Desktop Placeholder */
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-center p-8 bg-[#f8fafc]">
-            <div className="w-16 h-16 rounded-full bg-white border border-slate-200 flex items-center justify-center mb-4 text-[#007AFF] shadow-xs">
-              <MessageSquare className="w-8 h-8" />
-            </div>
-            <h3 className="text-lg font-black text-slate-800 mb-1">Select a Conversation</h3>
-            <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
-              Choose a crew member from the list or tap the pencil to start a new chat.
-            </p>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Trade Proposal Bottom Sheet Modal */}
       <TradeProposalModal

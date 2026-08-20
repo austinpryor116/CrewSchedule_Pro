@@ -3,6 +3,8 @@
  * Strongly typed dictionary for DECS terminal interaction and automated macros.
  */
 
+export * from "../lib/decsReference";
+
 export enum DECSCommandType {
   // Schedule & Duty
   HI1 = "HI1", // Current Month Roster
@@ -17,6 +19,7 @@ export enum DECSCommandType {
   HI33 = "HI33", // Reserve Availability List
   HI25 = "HI25", // Reserve Standings
   N6D = "N6D",   // Base Reserve List
+  HIHR = "HIHR", // Reserve Turnback List
 
   // Preflight, Ops & Weather
   JP_STAR = "JP*",   // Dispatch Release Summary

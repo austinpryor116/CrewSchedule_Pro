@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "../../types/index";
-import { getFosPayStatus, getFosAddDescription, getFosRemovalDescription } from "../../lib/fosCodes";
+import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "@/types";
+import { getFosPayStatus, getFosAddDescription, getFosRemovalDescription } from "@/lib/decsReference";
 import {
   Calendar,
   CheckCircle2,
@@ -17,13 +17,14 @@ import {
   Layers,
   ArrowRight,
 } from "lucide-react";
+import { formatAviationHours } from "../../lib/parser";
 
 interface ScheduleImportReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   onViewCalendar: () => void;
   sequences: SequenceTrip[];
-  vacations: VacationPeriod[];
+  vacations?: VacationPeriod[];
   metadata?: MonthlyHIMetadata | null;
   rawText?: string;
 }
@@ -32,18 +33,21 @@ export default function ScheduleImportReviewModal({
   isOpen,
   onClose,
   onViewCalendar,
-  sequences,
-  vacations,
-  metadata,
-  rawText,
+  sequences = [],
+  vacations = [],
+  metadata = null,
+  rawText = "",
 }: ScheduleImportReviewModalProps) {
   const [showRaw, setShowRaw] = useState(false);
   const [selectedSeqId, setSelectedSeqId] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const totalCreditHours = sequences.reduce((acc, s) => acc + (s.isDropped ? 0 : s.totalCreditMinutes / 60), 0);
-  const totalBlockHours = sequences.reduce((acc, s) => acc + (s.isDropped ? 0 : s.totalBlockMinutes / 60), 0);
+  const totalCreditMins = sequences.reduce((acc, s) => acc + (s.isDropped ? 0 : s.totalCreditMinutes), 0);
+  const totalBlockMins = sequences.reduce((acc, s) => acc + (s.isDropped ? 0 : s.totalBlockMinutes), 0);
+
+  const totalCreditFormatted = formatAviationHours(totalCreditMins, "dot");
+  const totalBlockFormatted = formatAviationHours(totalBlockMins, "dot");
 
   const activeSequences = sequences.filter((s) => !s.isDropped);
   const droppedSequences = sequences.filter((s) => s.isDropped);
@@ -87,7 +91,7 @@ export default function ScheduleImportReviewModal({
             <div className="bg-slate-800/60 border border-slate-700/40 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Total Credit</span>
               <span className="text-base font-extrabold text-emerald-400 font-mono mt-0.5">
-                {totalCreditHours.toFixed(2)}h
+                {totalCreditFormatted}h
               </span>
               <span className="text-[9px] text-slate-500 font-mono">Guar: {metadata?.guaranteeHours || 72.0}h</span>
             </div>
@@ -97,7 +101,7 @@ export default function ScheduleImportReviewModal({
               <span className="text-base font-extrabold text-sky-400 font-mono mt-0.5">
                 {activeSequences.length}
               </span>
-              <span className="text-[9px] text-slate-500 font-mono">{totalBlockHours.toFixed(1)}h Block</span>
+              <span className="text-[9px] text-slate-500 font-mono">{totalBlockFormatted}h Block</span>
             </div>
 
             <div className="bg-slate-800/60 border border-slate-700/40 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
@@ -126,7 +130,7 @@ export default function ScheduleImportReviewModal({
             ) : (
               activeSequences.map((seq) => {
                 const isSelected = selectedSeqId === seq.id;
-                const creditHours = (seq.totalCreditMinutes / 60).toFixed(2);
+                const creditHours = formatAviationHours(seq.totalCreditMinutes, "dot");
                 const allFlightNumbers = seq.dutyPeriods.flatMap((dp) => dp.legs.map((l) => l.flightNumber));
 
                 return (

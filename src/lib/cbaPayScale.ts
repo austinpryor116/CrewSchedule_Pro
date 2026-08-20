@@ -48,19 +48,36 @@ export const CBA_AIRLINE_PAY_SCALE: CbaPayStep[] = [
   { year: 20, label: "Year 20+", caHourlyRate: 228.75, foHourlyRate: 120.75, checkPilotHourlyRate: 275.00, domesticPerDiem: 2.00, intlPerDiem: 2.00, intlPerDiemBonus: 5.00, lineholderGuarantee: 72.0, reserveGuarantee: 75.0, valueOfDay: 3.7 },
 ];
 
+function parseFlexibleDate(dateStr?: string): { year: number; month: number; day: number } | null {
+  if (!dateStr) return null;
+  const cleaned = dateStr.trim();
+  if (cleaned.includes("/")) {
+    const parts = cleaned.split("/").map((p) => parseInt(p, 10));
+    if (parts.length >= 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      if (parts[0] > 1900) {
+        return { year: parts[0], month: parts[1], day: parts[2] };
+      } else {
+        return { year: parts[2], month: parts[0], day: parts[1] };
+      }
+    }
+  }
+  const parts = cleaned.split("-").map((p) => parseInt(p, 10));
+  if (parts.length >= 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return { year: parts[0], month: parts[1], day: parts[2] };
+  }
+  return null;
+}
+
 /**
  * Calculates the start date and label for the next airline semi-monthly pay period.
  * Pay period rule: Pay adjustments take effect on the 1st or 16th of the month following the event date.
  */
 export function calculateNextPayPeriodDate(dateStr?: string): { nextPeriodDate: string; nextPeriodLabel: string } {
-  if (!dateStr) {
+  const parsed = parseFlexibleDate(dateStr);
+  if (!parsed) {
     return { nextPeriodDate: "", nextPeriodLabel: "Next Pay Period" };
   }
-  const parts = dateStr.split("-").map((p) => parseInt(p, 10));
-  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
-    return { nextPeriodDate: "", nextPeriodLabel: "Next Pay Period" };
-  }
-  const [year, month, day] = parts;
+  const { year, month, day } = parsed;
 
   if (day <= 15) {
     // Current period is 1st - 15th; next pay period starts 16th of current month
@@ -86,18 +103,14 @@ export function calculateLongevityYears(
   hireDateStr?: string,
   referenceDate = new Date()
 ): { years: number; months: number; payStepYear: number; longevityFormatted: string } {
-  if (!hireDateStr) {
+  const parsed = parseFlexibleDate(hireDateStr);
+  if (!parsed) {
     return { years: 0, months: 0, payStepYear: 1, longevityFormatted: "1st Year (0 mos)" };
   }
 
-  const parts = hireDateStr.split("-").map((p) => parseInt(p, 10));
-  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
-    return { years: 0, months: 0, payStepYear: 1, longevityFormatted: "1st Year (0 mos)" };
-  }
-
-  const hireYear = parts[0];
-  const hireMonth = parts[1] - 1; // 0-indexed month
-  const hireDay = parts[2];
+  const hireYear = parsed.year;
+  const hireMonth = parsed.month - 1; // 0-indexed month
+  const hireDay = parsed.day;
 
   const hireDate = new Date(hireYear, hireMonth, hireDay);
   if (isNaN(hireDate.getTime())) {
