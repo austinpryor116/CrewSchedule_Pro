@@ -15,6 +15,7 @@
     "android:sync": "npx cap sync android",
     "build:standalone": "node scripts/build-standalone.js",
     "dev:phone": "node scripts/switch-to-dev.js",
+    "deploy:fresh": "node scripts/live-phone-restart.js",
     "backup": "node scripts/backup-gdrive.js",
     "gdrive": "node scripts/backup-gdrive.js"
   },

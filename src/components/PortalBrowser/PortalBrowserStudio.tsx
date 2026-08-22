@@ -73,16 +73,8 @@ export default function PortalBrowserStudio() {
   // File Upload Ref
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Listen for Native Android Schedule Import Events & HSS Modal Trigger
+  // Listen for Modal Triggers
   useEffect(() => {
-    const handleNativeImport = (e: any) => {
-      const text = e.detail;
-      if (text && typeof text === "string") {
-        console.log("[PortalBrowser] Received native schedule text event!");
-        processAndImportText(text, "WebFOS_Live_Screen.txt");
-      }
-    };
-
     const handleHssTrigger = () => {
       console.log("[PortalBrowser] Received openHssSequencesModal event!");
       setIsHssModalOpen(true);
@@ -103,12 +95,10 @@ export default function PortalBrowserStudio() {
       }
     };
 
-    window.addEventListener("nativeScheduleImport", handleNativeImport);
     window.addEventListener("openHssSequencesModal", handleHssTrigger);
     window.addEventListener("openHotelRequestModal", handleHotelTrigger);
     window.addEventListener("openTimePickupModal", handlePickupTrigger);
     return () => {
-      window.removeEventListener("nativeScheduleImport", handleNativeImport);
       window.removeEventListener("openHssSequencesModal", handleHssTrigger);
       window.removeEventListener("openHotelRequestModal", handleHotelTrigger);
       window.removeEventListener("openTimePickupModal", handlePickupTrigger);
@@ -166,15 +156,9 @@ export default function PortalBrowserStudio() {
       if (text.includes("OPEN TIME") || text.includes("OPEN SEQUENCES") || text.includes("CREWED SEQUENCES") || text.includes("POSSIBLE TRIPS") || text.includes("SEQ/DATE") || text.includes("N4/") || text.includes("N4D") || text.includes("OPEN TRIPS")) {
         const parsedOpen = parseN4OpenTime(text);
         if (parsedOpen && parsedOpen.length > 0) {
-          const merged = [...existingOpenSeqs];
-          parsedOpen.forEach((ot) => {
-            if (!merged.some((m) => m.id === ot.id)) {
-              merged.push(ot);
-            }
-          });
-          setOpenSequences(merged);
+          setOpenSequences(parsedOpen);
           setStatusMessage({
-            text: `✓ Successfully imported ${parsedOpen.length} Open Time trip(s)!`,
+            text: `✓ Successfully synced ${parsedOpen.length} Open Time trip(s) (past & unlisted trips pruned)!`,
             type: "success",
           });
           setTimeout(() => setStatusMessage(null), 5000);
@@ -213,26 +197,51 @@ export default function PortalBrowserStudio() {
       }
 
       // 4. Check for HSS Sequence text (Single or Multi-trip pairing details)
-      if (
+      const isHss =
         !/MONTH\s*ENDING/i.test(text) &&
         !text.includes("MONTHENDING") &&
         !text.includes("BID SEL") &&
+        !text.includes("PAGE 01 OF") &&
         text.includes("SEQ ") &&
-        (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "))
-      ) {
-        const parsedHssTrips = parseHssSchedule(text);
+        (text.includes("SKD ") || text.includes("ACT ") || text.includes("FDPT") || text.includes("BASE ") || text.includes("RLS "));
+
+      if (isHss) {
+        const storeState = useCrewStore.getState();
+        let targetMonthKey: string | undefined;
+
+        // Check if sequence already exists on calendar (e.g. 18061 in September)
+        const seqMatch = text.match(/^SEQ\s+([A-Z0-9]{3,6})/im);
+        const seqNum = seqMatch ? seqMatch[1].replace(/^[A-Za-z]+/, "") : null;
+        if (seqNum) {
+          const existing = storeState.sequences.find((s) => (s.sequenceNumber || "").replace(/^[A-Za-z]+/, "") === seqNum);
+          if (existing && existing.startDate) {
+            targetMonthKey = existing.startDate.substring(0, 7);
+          }
+        }
+
+        const parsedHssTrips = parseHssSchedule(text, {
+          existingSequences: storeState.sequences,
+          targetMonthKey,
+        });
         if (parsedHssTrips && parsedHssTrips.length > 0) {
           parsedHssTrips.forEach((hssTrip) => {
             mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
           });
+          const first = parsedHssTrips[0];
+          const legsCount = first.dutyPeriods.reduce((acc, dp) => acc + dp.legs.length, 0);
           setStatusMessage({
-            text: `✓ Parsed & enriched SEQ #${parsedHssTrips[0].sequenceNumber} with flight legs & layovers into Calendar & Open Time!`,
+            text: `✓ Enriched SEQ #${first.sequenceNumber} (${first.startDate} to ${first.endDate} • ${first.dutyPeriods.length} days • ${legsCount} legs) into Calendar & Logbook!`,
             type: "success",
           });
-          setManualText("");
-          setTimeout(() => setStatusMessage(null), 5000);
-          return;
+        } else {
+          setStatusMessage({
+            text: `⚠️ No pairing legs detected in HSS text.`,
+            type: "error",
+          });
         }
+        setManualText("");
+        setTimeout(() => setStatusMessage(null), 5000);
+        return; // NEVER fall through to monthly import
       }
 
       // 5. Parse Regular Monthly HI1 / HI2 Schedule
@@ -397,6 +406,23 @@ export default function PortalBrowserStudio() {
           >
             <Clipboard className="w-4 h-4" />
             <span>📋 Paste HI1</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const win = window as any;
+              if (win.openDecsDiagnostics) {
+                win.openDecsDiagnostics();
+              } else if (win.dispatchEvent) {
+                win.dispatchEvent(new CustomEvent("openDecsDiagnostics"));
+              }
+            }}
+            className="px-4 py-3 bg-purple-950 hover:bg-purple-900 text-purple-200 border border-purple-700/60 rounded-2xl text-xs font-black transition cursor-pointer active-press shadow-md flex items-center justify-center gap-2"
+            title="Open Live DECS Diagnostics & Terminal Capture Logs"
+          >
+            <Terminal className="w-4 h-4 text-purple-300" />
+            <span>🩺 DECS Logs</span>
           </button>
         </div>
       </div>

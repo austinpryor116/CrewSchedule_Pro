@@ -684,8 +684,9 @@ export async function runFullAutonomousRosterPipeline(
 
       const detailedTrips = parseHssSchedule(hssText);
       if (detailedTrips.length > 0) {
-        // Merge detailed duty period legs and metadata safely into store
-        store.mergeHssIntoSequence(seqNum, detailedTrips[0]);
+        detailedTrips.forEach((t) => {
+          store.mergeHssIntoSequence(t.sequenceNumber || seqNum, t);
+        });
       }
 
       await new Promise((r) => setTimeout(r, 400));

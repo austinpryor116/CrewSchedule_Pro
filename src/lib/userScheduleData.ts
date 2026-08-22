@@ -1,5 +1,5 @@
 // Auto-generated real schedule & logbook data from Austin Pryor's live HI1, HI2, and HSS files
-import { SequenceTrip, LogbookEntry, VacationPeriod, OpenSequence } from "../types";
+import { SequenceTrip, LogbookEntry, VacationPeriod, OpenSequence } from "../types/index";
 
 export const USER_LIVE_VACATIONS: VacationPeriod[] = [
   {

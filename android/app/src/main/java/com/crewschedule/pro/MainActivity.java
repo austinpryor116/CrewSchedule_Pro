@@ -3251,9 +3251,16 @@ public class MainActivity extends BridgeActivity {
 
         WebView mainWv = getBridge() != null ? getBridge().getWebView() : null;
         if (mainWv != null) {
-            String cleanForJs = capturedText.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$");
-            String triggerScript = "window.dispatchEvent(new CustomEvent('nativeScheduleImport', { detail: `" + cleanForJs + "` }));";
-            mainWv.evaluateJavascript(triggerScript, null);
+            try {
+                org.json.JSONObject detailObj = new org.json.JSONObject();
+                detailObj.put("text", capturedText);
+                detailObj.put("command", command != null ? command : "");
+                detailObj.put("pageCount", pageCount);
+                String triggerScript = "if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('nativeScheduleImport', { detail: " + detailObj.toString() + " })); }";
+                mainWv.evaluateJavascript(triggerScript, null);
+            } catch (Exception e) {
+                Log.e("MainActivity", "Failed to dispatch nativeScheduleImport", e);
+            }
         }
 
         if (command != null && command.toUpperCase().startsWith("N6D")) {

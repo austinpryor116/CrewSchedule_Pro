@@ -10,6 +10,8 @@ import {
 } from "@/types";
 import { checkOpenSequenceConflict, timeToMinutes, formatAviationHours } from "./parser";
 import { getCbaRatesForProfile } from "./cbaPayScale";
+import { isOpenSequenceInPast, reconcileOpenSequences } from "./openTimeUtils";
+export { isOpenSequenceInPast, reconcileOpenSequences };
 
 // ============================================================================
 // ENVOY AIR CONSTANTS
@@ -429,5 +431,27 @@ export class OpenTimeEngine {
     }
 
     return true;
+  }
+
+  /**
+   * Evaluates whether an open time sequence starts in the past or has already departed/closed.
+   */
+  static isSequenceInPast(seq: OpenSequence): boolean {
+    return isOpenSequenceInPast(seq);
+  }
+
+  /**
+   * Reconciles newly pulled Open Time sequences against existing Open Time:
+   * 1. Automatically purges all past-date sequences.
+   * 2. Scopes by base & position of the newly fetched data: any existing trip in that scope that is NOT on the new list is deleted.
+   * 3. Preserves active trips from other bases/positions.
+   * 4. Returns the clean authoritative list.
+   */
+  static reconcileOpenTime(
+    existingOpen: OpenSequence[],
+    newlyFetched: OpenSequence[],
+    forcedScope?: { bases?: string[]; positions?: string[] }
+  ): { reconciled: OpenSequence[]; deletedCount: number; addedCount: number } {
+    return reconcileOpenSequences(existingOpen, newlyFetched, forcedScope);
   }
 }

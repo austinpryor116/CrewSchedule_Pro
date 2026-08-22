@@ -23,8 +23,10 @@ import {
   OpenTimePickupModal,
   InitialProfileSetup,
 } from "@/components";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import CloudSyncModal from "@/components/Firebase/CloudSyncModal";
-import { parseRawSchedule, parseHssSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime, checkOpenSequenceConflict } from "@/lib/parser";
+import DecsDiagnosticsModal, { recordDecsDiagnostic } from "@/components/DecsDiagnosticsModal";
+import { parseRawSchedule, parseHssSchedule, parseMonthlyHIMetadata, extractVacationsFromHI1, parseN4OpenTime, checkOpenSequenceConflict, detectMonthFromText } from "@/lib/parser";
 import { parseN6DReserves } from "@/lib/n6dParser";
 import { parseTurnbackList } from "@/lib/turnbackParser";
 import { SequenceTrip, VacationPeriod, MonthlyHIMetadata } from "@/types";
@@ -50,6 +52,7 @@ import {
   User,
   Bed,
   Cloud,
+  Terminal,
 } from "lucide-react";
 
 
@@ -88,6 +91,7 @@ export default function Home() {
   const [showToolsModal, setShowToolsModal] = useState(false);
   const [isTestingProfileSetup, setIsTestingProfileSetup] = useState(false);
   const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
+  const [isDecsDiagnosticsOpen, setIsDecsDiagnosticsOpen] = useState(false);
   const [importReviewData, setImportReviewData] = useState<{
     sequences: SequenceTrip[];
     vacations: VacationPeriod[];
@@ -102,6 +106,7 @@ export default function Home() {
       (window as any).__CREW_STORE__ = useCrewStore;
       (window as any).__MESSAGE_STORE__ = useMessageStore;
       (window as any).__NOTIFICATION_SERVICE__ = NotificationService;
+      (window as any).openDecsDiagnostics = () => setIsDecsDiagnosticsOpen(true);
       (window as any).__CHECK_OPEN_CONFLICT__ = (ot: any) => {
         const state = useCrewStore.getState();
         return checkOpenSequenceConflict(ot, state.sequences, state.stationTurnLimits, state.defaultTurnLimit);
@@ -123,9 +128,14 @@ export default function Home() {
   // Global listener for native Android DECS schedule imports (works across all tabs)
   useEffect(() => {
     const handleGlobalNativeImport = (e: any) => {
-      const text = e.detail;
+      const detail = e.detail;
+      const text = typeof detail === "string" ? detail : detail?.text;
+      const command = typeof detail === "object" ? detail?.command : undefined;
       if (!text || typeof text !== "string" || text.trim().length === 0) return;
-      console.log("[Global] Received native schedule import event:", text.length, "bytes");
+      
+      const beforeSeqs = useCrewStore.getState().sequences;
+      const storeBeforeCount = beforeSeqs.length;
+      console.log("[Global] Received native schedule import event:", text.length, "bytes, command:", command);
 
       try {
         // 1. Check for Open Time
@@ -133,6 +143,15 @@ export default function Home() {
           const parsedOpen = parseN4OpenTime(text);
           if (parsedOpen && parsedOpen.length > 0) {
             setOpenSequences(parsedOpen);
+            recordDecsDiagnostic({
+              command,
+              classification: "Open Time (N4D)",
+              rawText: text,
+              storeBeforeCount,
+              storeAfterCount: useCrewStore.getState().sequences.length,
+              status: "success",
+              details: `Imported ${parsedOpen.length} open sequences into Open Time board.`,
+            });
             console.log("[Global] Successfully imported Open Time with", parsedOpen.length, "trips into store!");
             return;
           }
@@ -143,6 +162,15 @@ export default function Home() {
           const parsedN6D = parseN6DReserves(text);
           if (parsedN6D && parsedN6D.pilots && parsedN6D.pilots.length > 0) {
             useCrewStore.getState().setN6DReserves(parsedN6D);
+            recordDecsDiagnostic({
+              command,
+              classification: "Reserve Roster (N6D)",
+              rawText: text,
+              storeBeforeCount,
+              storeAfterCount: useCrewStore.getState().sequences.length,
+              status: "success",
+              details: `Imported N6D list with ${parsedN6D.pilots.length} reserve pilots.`,
+            });
             console.log("[Global] Successfully imported N6D Reserve List with", parsedN6D.pilots.length, "pilots into store!");
             return;
           }
@@ -153,45 +181,181 @@ export default function Home() {
           const parsedTB = parseTurnbackList(text);
           if (parsedTB && parsedTB.records && parsedTB.records.length > 0) {
             useCrewStore.getState().setTurnbackData(parsedTB);
+            recordDecsDiagnostic({
+              command,
+              classification: "Turnback List (HIHR)",
+              rawText: text,
+              storeBeforeCount,
+              storeAfterCount: useCrewStore.getState().sequences.length,
+              status: "success",
+              details: `Imported HIHR turnback roster with ${parsedTB.records.length} records.`,
+            });
             console.log("[Global] Successfully imported HIHR Turnback List with", parsedTB.records.length, "pilots into store!");
             return;
           }
         }
 
-        // 3. Check for HSS Sequence pairing text (Enrich silently without opening review modal or leaving DECS)
-        if (
-          !/MONTH\s*ENDING/i.test(text) &&
-          !text.includes("MONTHENDING") &&
-          !text.includes("BID SEL") &&
-          text.includes("SEQ ") &&
-          (text.includes("SKD ") || text.includes("ACT ") || text.includes("TAFB") || text.includes("FDPT") || text.includes("BASE "))
-        ) {
-          const parsedHssTrips = parseHssSchedule(text);
-          if (parsedHssTrips && parsedHssTrips.length > 0) {
-            parsedHssTrips.forEach((hssTrip) => {
-              mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
+        // 4. Check for Full Monthly HI1 / HI2 Schedule first
+        const isMonthlyHI =
+          (command && (command.toUpperCase().startsWith("HI1") || command.toUpperCase().startsWith("HI2"))) ||
+          /MONTH\s*[-:\s]?\s*ENDING/i.test(text) ||
+          text.includes("MONTHENDING") ||
+          text.includes("BID SEL") ||
+          text.includes("FLT DUTY") ||
+          text.includes("GUAR 72.00") ||
+          (text.includes("PAGE 01 OF") && !command?.toUpperCase().startsWith("HSS"));
+
+        if (isMonthlyHI) {
+          const parsedSeqs = parseRawSchedule(text);
+          if (parsedSeqs && parsedSeqs.length > 0) {
+            const meta = parseMonthlyHIMetadata(text);
+            const vacs = extractVacationsFromHI1(text);
+            importMonthlyHISchedule(parsedSeqs, vacs, meta, "DECS_Live_Screen.txt", text);
+            setImportReviewData({
+              sequences: parsedSeqs,
+              vacations: vacs,
+              metadata: meta,
+              rawText: text,
             });
-            console.log("[Global] Silently enriched HSS sequence with flight legs & layovers into calendar and open time store.");
+            const afterSeqs = useCrewStore.getState().sequences;
+            recordDecsDiagnostic({
+              command,
+              classification: "Monthly HI Schedule",
+              rawText: text,
+              storeBeforeCount,
+              storeAfterCount: afterSeqs.length,
+              status: "success",
+              details: `Imported whole-month schedule with ${parsedSeqs.length} trips & ${vacs.length} vacations. Month Ending: ${meta?.monthEnding || "N/A"}`,
+            });
+            console.log("[Global] Successfully imported", parsedSeqs.length, "trips and", vacs.length, "vacations into store!");
             return;
           }
         }
 
-        // 4. Full Monthly HI1 Schedule (Opens Review Modal for whole-month import)
-        const parsedSeqs = parseRawSchedule(text);
-        if (parsedSeqs && parsedSeqs.length > 0) {
-          const meta = parseMonthlyHIMetadata(text);
-          const vacs = extractVacationsFromHI1(text);
-          importMonthlyHISchedule(parsedSeqs, vacs, meta, "DECS_Live_Screen.txt", text);
-          setImportReviewData({
-            sequences: parsedSeqs,
-            vacations: vacs,
-            metadata: meta,
-            rawText: text,
+        // 5. Check for HSS Sequence pairing signature
+        const hasHssSignature =
+          !!(command && command.toUpperCase().startsWith("HSS")) ||
+          (text.includes("SEQ ") && (
+            text.includes("SKD") ||
+            text.includes("ACT") ||
+            text.includes("TAFB") ||
+            text.includes("FDPT") ||
+            text.includes("D/P") ||
+            text.includes("HALF DAY") ||
+            text.includes("ONDUTY")
+          ));
+
+        if (hasHssSignature) {
+          const state = useCrewStore.getState();
+          const existingSeqs = state.sequences;
+          let targetMonthKey: string | undefined;
+
+          // 1. Check if command explicitly specifies month (e.g. "HSS/CA/18061/04SEP^")
+          if (command) {
+            const cmdMonth = detectMonthFromText(command);
+            if (cmdMonth.hasExplicitMonth) {
+              targetMonthKey = `${cmdMonth.yearNum}-${String(cmdMonth.monthNum + 1).padStart(2, "0")}`;
+            }
+          }
+
+          // 2. If no month in command, check if sequence already exists on calendar (e.g. 18061 in September)
+          if (!targetMonthKey) {
+            const seqMatch = text.match(/^SEQ\s+([A-Z0-9]{3,6})/im) || (command ? command.match(/HSS\/(?:[A-Z]{2}\/)?([A-Z0-9]{3,6})/i) : null);
+            const seqNum = seqMatch ? seqMatch[1].replace(/^[A-Za-z]+/, "") : null;
+            if (seqNum) {
+              const existing = existingSeqs.find((s) => (s.sequenceNumber || "").replace(/^[A-Za-z]+/, "") === seqNum);
+              if (existing && existing.startDate) {
+                targetMonthKey = existing.startDate.substring(0, 7);
+              }
+            }
+          }
+
+          const parsedHssTrips = parseHssSchedule(text, {
+            command,
+            existingSequences: existingSeqs,
+            targetMonthKey,
           });
-          console.log("[Global] Successfully imported", parsedSeqs.length, "trips and", vacs.length, "vacations into store!");
+
+          if (parsedHssTrips && parsedHssTrips.length > 0) {
+            parsedHssTrips.forEach((hssTrip) => {
+              mergeHssIntoSequence(hssTrip.sequenceNumber, hssTrip);
+            });
+            const afterSeqs = useCrewStore.getState().sequences;
+            const storeAfterCount = afterSeqs.length;
+
+            recordDecsDiagnostic({
+              command,
+              classification: "HSS Pairing",
+              rawText: text,
+              targetMonthKey,
+              parsedSummary: {
+                tripsCount: parsedHssTrips.length,
+                sequences: parsedHssTrips.map((t) => ({
+                  seqNum: t.sequenceNumber,
+                  startDate: t.startDate,
+                  endDate: t.endDate,
+                  dutyPeriodsCount: t.dutyPeriods?.length || 0,
+                  legsCount: t.dutyPeriods?.reduce((a, b) => a + b.legs.length, 0) || 0,
+                  layoverCities: t.layoverCities || [],
+                  totalCreditMinutes: t.totalCreditMinutes || 0,
+                  expTafbHours: t.expTafbHours,
+                  legs: (t.dutyPeriods || []).flatMap((dp) =>
+                    dp.legs.map((l) => ({
+                      flightNumber: l.flightNumber,
+                      dep: l.depAirport,
+                      arr: l.arrAirport,
+                      depTime: l.depTime,
+                      arrTime: l.arrTime,
+                      blockMinutes: l.blockMinutes,
+                      isDeadhead: l.isDeadhead,
+                    }))
+                  ),
+                })),
+              },
+              storeBeforeCount,
+              storeAfterCount,
+              status: "success",
+              details: `Successfully merged HSS #${parsedHssTrips[0].sequenceNumber} (${parsedHssTrips[0].startDate} to ${parsedHssTrips[0].endDate}) with ${parsedHssTrips[0].dutyPeriods?.length} duty periods.`,
+            });
+
+            console.log("[Global] Authoritatively updated HSS sequence with flight legs & layovers into calendar and logbook.");
+          } else {
+            recordDecsDiagnostic({
+              command,
+              classification: "HSS Pairing",
+              rawText: text,
+              targetMonthKey,
+              storeBeforeCount,
+              storeAfterCount: useCrewStore.getState().sequences.length,
+              status: "warning",
+              details: "HSS signature detected but parser returned 0 valid sequences.",
+            });
+          }
+          // NEVER fall through to monthly schedule import for HSS screens
+          return;
         }
-      } catch (err) {
+
+        // 6. Fallback Unrecognized Screen
+        recordDecsDiagnostic({
+          command,
+          classification: "Unrecognized Screen",
+          rawText: text,
+          storeBeforeCount,
+          storeAfterCount: useCrewStore.getState().sequences.length,
+          status: "warning",
+          details: `Captured ${text.length} chars but matched no schedule or roster patterns.`,
+        });
+      } catch (err: any) {
         console.error("[Global] Native import parse error:", err);
+        recordDecsDiagnostic({
+          command,
+          classification: "Parser Exception",
+          rawText: text,
+          storeBeforeCount,
+          storeAfterCount: useCrewStore.getState().sequences.length,
+          status: "error",
+          details: `Error: ${err?.message || String(err)}`,
+        });
       }
     };
 
@@ -252,6 +416,7 @@ export default function Home() {
 
 
   const toolsItems = [
+    { id: "decs-diagnostics", name: "DECS Diagnostics", icon: Terminal, desc: "Live Terminal Capture & Sync Logs" },
     { id: "cloud-sync", name: "Firebase Cloud Sync", icon: Cloud, desc: "Cloud Backup & Multi-Device" },
     { id: "profile-setup", name: "Profile Setup (Test)", icon: User, desc: "Test Onboarding Wizard" },
     { id: "hotel-request", name: "Hotel Request", icon: Bed, desc: "DECS In-Base & Commuter Hotel" },
@@ -272,7 +437,8 @@ export default function Home() {
   const isToolsActive = ["open-time", "reserve", "scanner", "logbook", "revisions", "import", "compliance", "financials", "settings"].includes(activeTab);
 
   return (
-    <main className="w-screen h-screen flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans relative select-none">
+    <ErrorBoundary>
+      <main className="w-screen h-[100dvh] fixed inset-0 flex flex-col bg-[#f8fafc] text-slate-900 overflow-hidden font-sans select-none">
       {/* Main Full-Screen Workspace Tab View */}
       <div className="flex-grow overflow-hidden relative">
         <div className={`h-full w-full ${activeTab === "calendar" ? "block" : "hidden"}`}>
@@ -346,7 +512,10 @@ export default function Home() {
                   <button
                     key={item.id}
                     onClick={() => {
-                      if (item.id === "cloud-sync") {
+                      if (item.id === "decs-diagnostics") {
+                        setIsDecsDiagnosticsOpen(true);
+                        setShowToolsModal(false);
+                      } else if (item.id === "cloud-sync") {
                         setIsCloudSyncModalOpen(true);
                         setShowToolsModal(false);
                       } else if (item.id === "profile-setup") {
@@ -469,6 +638,12 @@ export default function Home() {
         onStartOnboarding={() => setIsTestingProfileSetup(true)}
       />
 
+      {/* Real-time DECS Terminal Capture & Sync Diagnostics Modal */}
+      <DecsDiagnosticsModal
+        isOpen={isDecsDiagnosticsOpen}
+        onClose={() => setIsDecsDiagnosticsOpen(false)}
+      />
+
       {/* Cell Phone First Mobile Bottom Navigation Dock */}
       <nav className="bg-white/95 border-t border-slate-200/90 shadow-xl flex items-center justify-around px-2 sm:px-12 shrink-0 z-[10000] relative backdrop-blur-xl pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))]">
         {mainNavItems.map((item) => {
@@ -505,7 +680,8 @@ export default function Home() {
         })}
       </nav>
 
-    </main>
+      </main>
+    </ErrorBoundary>
   );
 }
 

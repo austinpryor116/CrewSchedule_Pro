@@ -306,6 +306,20 @@ export interface OpenTimeSniperConfig {
   notificationsEnabled: boolean;
 }
 
+export const DEFAULT_OPEN_TIME_SNIPER_CONFIG: OpenTimeSniperConfig = {
+  enabled: false,
+  minCreditHours: 12.0,
+  maxTripDays: 4,
+  preferredBases: ["ORD", "DFW"],
+  preferredLayovers: [],
+  avoidLayovers: [],
+  maxLegsPerDay: 4,
+  earliestReport: "06:00",
+  latestRelease: "22:00",
+  autoExecuteDecs: false,
+  notificationsEnabled: true,
+};
+
 export interface StationTurnLimits {
   limits: Record<string, number>;
   defaultLimit: number;

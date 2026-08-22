@@ -296,21 +296,27 @@ export default function HSSSequencesModal({
     if (!hssPasteText.trim()) return;
 
     try {
-      const singleHss = parseHssText(hssPasteText);
-      if (singleHss && singleHss.sequenceNumber) {
-        mergeHssIntoSequence(singleHss.sequenceNumber, singleHss);
-        setPasteSuccess(`✓ Updated SEQ #${singleHss.sequenceNumber} with live legs!`);
-        setHssPasteText("");
-        setTimeout(() => setPasteSuccess(null), 4000);
-        return;
-      }
-
-      const parsedTrips = parseHssSchedule(hssPasteText);
+      const targetMonthKey =
+        selectedMonthFilter === "prior"
+          ? PRIOR_MONTH_KEY
+          : selectedMonthFilter === "future"
+          ? FUTURE_MONTH_KEY
+          : CURRENT_MONTH_KEY;
+      const parsedTrips = parseHssSchedule(hssPasteText, {
+        targetMonthKey,
+        existingSequences: sequences,
+      });
       if (parsedTrips && parsedTrips.length > 0) {
-        addSequences(parsedTrips);
-        setPasteSuccess(`✓ Imported ${parsedTrips.length} HSS sequence(s)!`);
+        parsedTrips.forEach((trip) => {
+          mergeHssIntoSequence(trip.sequenceNumber, trip);
+        });
+        const first = parsedTrips[0];
+        const legsCount = first.dutyPeriods.reduce((acc, dp) => acc + dp.legs.length, 0);
+        setPasteSuccess(
+          `✓ Updated SEQ #${first.sequenceNumber} (${first.startDate} to ${first.endDate} • ${first.dutyPeriods.length} days • ${legsCount} legs)!`
+        );
         setHssPasteText("");
-        setTimeout(() => setPasteSuccess(null), 4000);
+        setTimeout(() => setPasteSuccess(null), 5000);
         return;
       }
 

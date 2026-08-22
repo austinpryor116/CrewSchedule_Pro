@@ -25,6 +25,62 @@ function parseLocalDateString(dateStr: string): Date {
   return new Date(dateStr);
 }
 
+function getPersonalEventColor(color?: string) {
+  switch (color) {
+    case "indigo":
+      return {
+        pill: "bg-indigo-50/95 text-indigo-950 border border-indigo-200/90 border-l-[3.5px] border-l-indigo-600 hover:bg-indigo-100/90 shadow-2xs font-bold",
+        text: "text-indigo-950 font-bold",
+        iconText: "text-indigo-600",
+        badge: "bg-indigo-100/80 text-indigo-900 border border-indigo-200/90",
+      };
+    case "teal":
+      return {
+        pill: "bg-teal-50/95 text-teal-950 border border-teal-200/90 border-l-[3.5px] border-l-teal-600 hover:bg-teal-100/90 shadow-2xs font-bold",
+        text: "text-teal-950 font-bold",
+        iconText: "text-teal-600",
+        badge: "bg-teal-100/80 text-teal-900 border border-teal-200/90",
+      };
+    case "rose":
+      return {
+        pill: "bg-rose-50/95 text-rose-950 border border-rose-200/90 border-l-[3.5px] border-l-rose-600 hover:bg-rose-100/90 shadow-2xs font-bold",
+        text: "text-rose-950 font-bold",
+        iconText: "text-rose-600",
+        badge: "bg-rose-100/80 text-rose-900 border border-rose-200/90",
+      };
+    case "amber":
+      return {
+        pill: "bg-amber-50/95 text-amber-950 border border-amber-200/90 border-l-[3.5px] border-l-amber-600 hover:bg-amber-100/90 shadow-2xs font-bold",
+        text: "text-amber-950 font-bold",
+        iconText: "text-amber-600",
+        badge: "bg-amber-100/80 text-amber-900 border border-amber-200/90",
+      };
+    case "emerald":
+      return {
+        pill: "bg-emerald-50/95 text-emerald-950 border border-emerald-200/90 border-l-[3.5px] border-l-emerald-600 hover:bg-emerald-100/90 shadow-2xs font-bold",
+        text: "text-emerald-950 font-bold",
+        iconText: "text-emerald-600",
+        badge: "bg-emerald-100/80 text-emerald-900 border border-emerald-200/90",
+      };
+    case "sky":
+    case "cyan":
+      return {
+        pill: "bg-sky-50/95 text-sky-950 border border-sky-200/90 border-l-[3.5px] border-l-sky-600 hover:bg-sky-100/90 shadow-2xs font-bold",
+        text: "text-sky-950 font-bold",
+        iconText: "text-sky-600",
+        badge: "bg-sky-100/80 text-sky-900 border border-sky-200/90",
+      };
+    case "purple":
+    default:
+      return {
+        pill: "bg-purple-50/95 text-purple-950 border border-purple-200/90 border-l-[3.5px] border-l-purple-600 hover:bg-purple-100/90 shadow-2xs font-bold",
+        text: "text-purple-950 font-bold",
+        iconText: "text-purple-600",
+        badge: "bg-purple-100/80 text-purple-900 border border-purple-200/90",
+      };
+  }
+}
+
 export default function CalendarView() {
   const [streamBaseDate] = useState(() => new Date());
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -580,7 +636,14 @@ export default function CalendarView() {
                d.getDate() === seqEndObj.getDate()
       );
 
-      if (startIdx === -1 && endIdx === -1) return;
+      if (startIdx === -1 && endIdx === -1) {
+        if (seqStartObj <= days[days.length - 1] && seqEndObj >= days[0]) {
+          startIdx = 0;
+          endIdx = days.length - 1;
+        } else {
+          return;
+        }
+      }
 
       if (startIdx === -1) {
         if (seqStartObj < days[0]) {
@@ -1137,10 +1200,44 @@ export default function CalendarView() {
                     return dateStr >= v.startDate && dateStr <= v.endDate;
                   });
 
+                  // Row-level month boundary detection
+                  const rowStartIdx = (row - 1) * 7;
+                  const rowEndIdx = Math.min(streamDays.length - 1, rowStartIdx + 6);
+                  const rowDates = streamDays.slice(rowStartIdx, rowEndIdx + 1);
+                  const firstOfMonthIndexInRow = rowDates.findIndex((d) => d.getDate() === 1);
+
                   const isFirstOfMonth = date.getDate() === 1;
                   const isMonthStartInStream = idx === 0 || streamDays[idx - 1].getMonth() !== date.getMonth();
                   const monthAnchorKey = `${date.getFullYear()}-${date.getMonth()}`;
                   const monthAbbrev = date.toLocaleString("default", { month: "short" }).toUpperCase();
+
+                  // Calculate clear month boundary line & background styling
+                  let cellBorderClasses = "border-r border-b border-slate-200";
+                  let cellBgClasses = "bg-white hover:bg-slate-50/80";
+                  let isPrevMonthTail = false;
+
+                  if (firstOfMonthIndexInRow !== -1) {
+                    const firstCol = firstOfMonthIndexInRow + 1;
+                    if (col < firstCol) {
+                      // Tail of previous month in transition row
+                      isPrevMonthTail = true;
+                      cellBorderClasses = "border-r border-b border-slate-200" + (row === 1 ? " border-t border-t-slate-200" : "");
+                      cellBgClasses = "bg-slate-100/55 hover:bg-slate-100/80";
+                    } else if (col === firstCol) {
+                      // Day 1 of new month
+                      cellBorderClasses = "border-t-[3px] border-t-sky-500 border-r border-b border-slate-200" + (col > 1 ? " border-l-[3px] border-l-sky-500" : "");
+                      cellBgClasses = "bg-white hover:bg-slate-50/80";
+                    } else {
+                      // Columns after Day 1 in the new month row
+                      cellBorderClasses = "border-t-[3px] border-t-sky-500 border-r border-b border-slate-200";
+                      cellBgClasses = "bg-white hover:bg-slate-50/80";
+                    }
+                  } else {
+                    // Normal row where all cells belong to the same month
+                    const isEvenMonth = date.getMonth() % 2 === 0;
+                    cellBorderClasses = "border-r border-b border-slate-200" + (row === 1 ? " border-t border-t-slate-200" : "");
+                    cellBgClasses = isEvenMonth ? "bg-white hover:bg-slate-50/80" : "bg-slate-50/40 hover:bg-slate-100/70";
+                  }
 
                   return (
                     <div
@@ -1153,56 +1250,58 @@ export default function CalendarView() {
                         gridColumn: col,
                       }}
                       onClick={() => setSelectedDayDetail(date)}
-                      className={`relative p-1 sm:p-2 border-r border-b border-slate-200 flex flex-col justify-between transition-all duration-200 min-h-0 overflow-hidden cursor-pointer ${
+                      className={`relative p-1 sm:p-2 ${cellBorderClasses} flex flex-col justify-between transition-all duration-200 min-h-0 overflow-hidden cursor-pointer ${
                         isVacationDay
                           ? "bg-emerald-50/70 border-emerald-300"
                           : isToday
-                          ? "bg-sky-50/40"
-                          : "bg-white hover:bg-slate-50/80"
+                          ? "bg-sky-50/50 ring-1 ring-inset ring-sky-400/50"
+                          : cellBgClasses
                       } ${hide ? "opacity-10" : ""}`}
                     >
                       {/* 1. Date cell header bar */}
                       <div className="flex items-center justify-between w-full min-w-0 z-10">
                         <div className="flex items-center gap-1 min-w-0">
                           {isFirstOfMonth ? (
-                            <div className="flex items-baseline gap-1 min-w-0">
+                            <div className="flex items-center gap-0.5 sm:gap-1 min-w-0">
                               <span
-                                className={`text-[10px] sm:text-xs font-black font-mono px-1.5 py-0.5 rounded-full shrink-0 ${
+                                className={`text-[9px] sm:text-xs font-black font-mono px-1.5 sm:px-2 py-0.2 sm:py-0.5 rounded-md shrink-0 ${
                                   isToday
                                     ? "bg-sky-600 text-white shadow-xs ring-2 ring-sky-300"
-                                    : "text-sky-700 font-extrabold bg-sky-50 border border-sky-200"
+                                    : "bg-sky-600 text-white shadow-2xs"
                                 }`}
                               >
-                                {date.getDate()}
+                                1
                               </span>
-                              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-sky-700 font-sans">
+                              <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-tight text-sky-900 bg-sky-100 border border-sky-300 px-1 sm:px-1.5 py-0.2 sm:py-0.5 rounded font-sans shrink-0">
                                 {monthAbbrev}
                               </span>
                             </div>
                           ) : (
                             <span
-                              className={`text-[10px] sm:text-xs font-bold font-mono px-1.5 py-0.5 rounded-full shrink-0 ${
+                              className={`text-[10px] sm:text-xs font-mono px-1.5 py-0.5 rounded-full shrink-0 ${
                                 isToday
-                                    ? "bg-sky-600 text-white font-black shadow-xs ring-2 ring-sky-300"
-                                    : "text-slate-800 font-extrabold"
+                                  ? "bg-sky-600 text-white font-black shadow-xs ring-2 ring-sky-300"
+                                  : isPrevMonthTail
+                                  ? "text-slate-400 font-bold"
+                                  : "text-slate-900 font-extrabold"
                               }`}
                             >
                               {date.getDate()}
                             </span>
                           )}
                           {extraTripsCount > 0 && (
-                            <span className="text-[8px] font-black text-indigo-800 bg-indigo-100 border border-indigo-300 px-1 py-0.2 rounded font-mono shadow-2xs">
+                            <span className="text-[8px] font-black text-indigo-900 bg-indigo-100 border border-indigo-300 px-1 py-0.2 rounded font-mono shadow-2xs">
                               +{extraTripsCount}
                             </span>
                           )}
                         </div>
 
-                        {isVacationDay ? (
+                        {isVacationDay && !isFirstOfMonth ? (
                           <span className="text-[8px] sm:text-[9px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-1 py-0.5 rounded uppercase tracking-wider shrink-0 font-mono">
                             VA
                           </span>
                         ) : isDfp && !seq && filterMode !== "trips" && !isFirstOfMonth ? (
-                          <span className="text-[8px] sm:text-[9px] font-extrabold text-slate-400 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded uppercase tracking-wider shrink-0 font-mono">
+                          <span className="text-[8px] sm:text-[9px] font-extrabold text-slate-400 bg-slate-100/90 border border-slate-200 px-1 py-0.5 rounded uppercase tracking-wider shrink-0 font-mono">
                             OFF
                           </span>
                         ) : null}
@@ -1211,12 +1310,12 @@ export default function CalendarView() {
                       {/* 2. Bottom Layover / RON and Flight Leg Summary */}
                       <div className="mt-auto w-full pt-1 flex items-center justify-between gap-1 overflow-hidden pointer-events-none z-10">
                         {ronCity ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] sm:text-[9.5px] font-black text-amber-950 bg-amber-100/90 border border-amber-300 rounded-md shadow-2xs truncate">
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] sm:text-[9.5px] font-black text-amber-950 bg-amber-100/95 border border-amber-300 rounded-md shadow-2xs truncate">
                             <Moon className="w-2.5 h-2.5 fill-amber-500 text-amber-600 shrink-0" />
                             <span className="truncate font-mono font-black">{ronCity}</span>
                           </span>
                         ) : dutyInfo?.legsSummary ? (
-                          <span className="text-[7.5px] sm:text-[9px] font-mono font-bold text-slate-500 truncate bg-slate-100/90 px-1 py-0.5 rounded border border-slate-200 ml-auto">
+                          <span className="text-[7.5px] sm:text-[9px] font-mono font-bold text-slate-600 truncate bg-slate-100/90 px-1 py-0.5 rounded border border-slate-200 ml-auto">
                             {dutyInfo.legsSummary}
                           </span>
                         ) : null}
@@ -1298,14 +1397,7 @@ export default function CalendarView() {
                             className="absolute left-0.5 right-0.5 space-y-1 z-30 pointer-events-auto overflow-hidden pb-1"
                           >
                             {visibleEvents.map((evt) => {
-                              let pillStyle = "bg-purple-100/95 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs";
-                              if (evt.color === "indigo") pillStyle = "bg-indigo-100/95 border-indigo-300 text-indigo-950 shadow-2xs";
-                              else if (evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 shadow-2xs";
-                              else if (evt.color === "rose") pillStyle = "bg-rose-100/95 border-rose-300 text-rose-950 shadow-2xs";
-                              else if (evt.color === "amber") pillStyle = "bg-amber-100/95 border-amber-300 text-amber-950 shadow-2xs";
-                              else if (evt.color === "emerald") pillStyle = "bg-emerald-100/95 border-emerald-300 text-emerald-950 shadow-2xs";
-                              else if (evt.color === "sky") pillStyle = "bg-sky-100/95 border-sky-300 text-sky-950 shadow-2xs";
-
+                              const st = getPersonalEventColor(evt.color);
                               const cTime = formatCompactTime(evt.startTime);
 
                               return (
@@ -1315,12 +1407,12 @@ export default function CalendarView() {
                                     e.stopPropagation();
                                     setSelectedPersonalEvent(evt);
                                   }}
-                                  className={`px-1 py-0.5 rounded-md border text-[8px] sm:text-[9.5px] font-bold cursor-pointer leading-[1.15] active-press shadow-2xs ${pillStyle}`}
+                                  className={`px-1 py-0.5 rounded-md border text-[8px] sm:text-[9.5px] font-extrabold cursor-pointer leading-[1.15] active-press shadow-2xs transition ${st.pill}`}
                                   title={`${evt.title}${evt.startTime ? ` (${evt.startTime})` : ""}`}
                                 >
                                   <div className="line-clamp-2 break-words">
                                     {cTime && (
-                                      <span className="font-mono font-black opacity-80 text-[7px] sm:text-[8.5px] mr-0.5 inline-block bg-black/10 px-0.5 rounded">
+                                      <span className={`font-mono font-black text-[7px] sm:text-[8.5px] mr-0.5 inline-block ${st.badge} px-0.5 rounded`}>
                                         {cTime}
                                       </span>
                                     )}
@@ -1337,7 +1429,7 @@ export default function CalendarView() {
                                   e.stopPropagation();
                                   setSelectedDayDetail(date);
                                 }}
-                                className="w-full text-center text-[7.5px] font-extrabold text-sky-700 bg-sky-50 border border-sky-200 rounded py-0.5 cursor-pointer leading-none active-press"
+                                className="w-full text-center text-[7.5px] font-extrabold text-sky-700 bg-sky-50 border border-sky-200 rounded py-0.5 cursor-pointer leading-none active-press shadow-2xs"
                               >
                                 +{overflowCount} more
                               </button>
@@ -1370,34 +1462,40 @@ export default function CalendarView() {
                     const isVacation = seg.seq.statusTag === "VA" || !!(seg.seq as any).isVacation;
                     const isMultiDay = seg.endCol - seg.startCol >= 1;
 
-                    let cardStyle = "bg-sky-100/95 text-sky-950 border border-sky-300 shadow-2xs hover:bg-sky-200/90 font-bold";
-                    let subtextColor = "text-sky-700 font-bold";
-                    let badgeBg = "bg-sky-200/80 text-sky-900 border border-sky-300";
+                    let cardStyle = "bg-gradient-to-r from-blue-600 via-sky-600 to-blue-700 text-white border border-blue-700/80 shadow-xs hover:from-blue-700 hover:to-sky-800 font-extrabold";
+                    let subtextColor = "text-blue-100 font-bold";
+                    let badgeBg = "bg-black/30 text-white border border-white/25";
+                    let iconEl = <Plane className="w-3 h-3 shrink-0 text-white drop-shadow-xs" />;
 
                     if (isVacation) {
-                      cardStyle = "bg-emerald-100/95 text-emerald-950 border border-emerald-300 shadow-2xs hover:bg-emerald-200/90 font-bold";
-                      subtextColor = "text-emerald-700 font-bold";
-                      badgeBg = "bg-emerald-200/80 text-emerald-900 border border-emerald-300";
+                      cardStyle = "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white border border-emerald-800 shadow-xs hover:from-emerald-700 hover:to-teal-800 font-extrabold";
+                      subtextColor = "text-emerald-100 font-bold";
+                      badgeBg = "bg-emerald-950/40 text-emerald-100 border border-emerald-400/30";
+                      iconEl = <Palmtree className="w-3 h-3 shrink-0 text-white drop-shadow-xs" />;
                     } else if (isDropped) {
-                      cardStyle = "bg-rose-50/95 text-rose-800 border border-dashed border-rose-300 font-medium hover:bg-rose-100";
-                      subtextColor = "text-rose-700";
-                      badgeBg = "bg-rose-100 text-rose-800 border border-rose-200";
+                      cardStyle = "bg-slate-100 text-slate-500 border border-dashed border-slate-300 font-medium hover:bg-slate-200 line-through opacity-80";
+                      subtextColor = "text-slate-400";
+                      badgeBg = "bg-slate-200 text-slate-600 border border-slate-300";
+                      iconEl = <Plane className="w-3 h-3 shrink-0 text-slate-400" />;
                     } else if (isPickup) {
                       cardStyle = isConflict
-                        ? "bg-teal-50 text-teal-950 border-2 border-rose-400 shadow-2xs font-bold"
-                        : "bg-teal-100/95 text-teal-950 border border-teal-300 shadow-2xs hover:bg-teal-200 font-bold ring-1 ring-emerald-500/30";
-                      subtextColor = "text-teal-700 font-bold";
-                      badgeBg = "bg-teal-200/80 text-teal-900 border border-teal-300";
+                        ? "bg-gradient-to-r from-teal-700 to-teal-800 text-white border-2 border-rose-400 shadow-xs font-extrabold"
+                        : "bg-gradient-to-r from-teal-600 via-cyan-600 to-teal-700 text-white border border-teal-700 shadow-xs hover:from-teal-700 hover:to-cyan-800 font-extrabold ring-1 ring-cyan-300/40";
+                      subtextColor = "text-teal-100 font-bold";
+                      badgeBg = "bg-black/30 text-cyan-100 border border-white/25";
+                      iconEl = <CheckCircle2 className="w-3 h-3 shrink-0 text-white drop-shadow-xs" />;
                     } else if (isOt || isSim || isGhost) {
                       cardStyle = isConflict
-                        ? "bg-amber-50 text-amber-950 border-2 border-rose-400 shadow-2xs font-bold"
-                        : "bg-amber-100/95 text-amber-950 border border-amber-300 shadow-2xs hover:bg-amber-200 font-bold ring-1 ring-emerald-500/30";
-                      subtextColor = "text-amber-700 font-bold";
-                      badgeBg = "bg-amber-200/80 text-amber-900 border border-amber-300";
+                        ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white border-2 border-rose-400 shadow-xs font-extrabold"
+                        : "bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white border border-amber-600 shadow-xs hover:from-amber-600 hover:to-orange-700 font-extrabold ring-1 ring-amber-300/40";
+                      subtextColor = "text-amber-100 font-bold";
+                      badgeBg = "bg-black/30 text-amber-100 border border-white/25";
+                      iconEl = <CheckCircle2 className="w-3 h-3 shrink-0 text-white drop-shadow-xs" />;
                     } else if (isConflict) {
-                      cardStyle = "bg-rose-50 text-rose-950 border-2 border-rose-400 shadow-2xs font-bold";
-                      subtextColor = "text-rose-700 font-bold";
-                      badgeBg = "bg-rose-200/80 text-rose-900 border border-rose-300";
+                      cardStyle = "bg-gradient-to-r from-rose-600 to-red-600 text-white border-2 border-rose-700 shadow-md font-black animate-pulse";
+                      subtextColor = "text-rose-100 font-bold";
+                      badgeBg = "bg-black/40 text-white border border-white/30";
+                      iconEl = <AlertTriangle className="w-3 h-3 shrink-0 text-white drop-shadow-xs" />;
                     }
 
                     const isSelected = seg.seq.id === selectedSequenceId;
@@ -1421,7 +1519,7 @@ export default function CalendarView() {
                           position: "relative",
                         }}
                         className={`mx-0.5 py-0.5 px-1.5 rounded-lg border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden ${cardStyle} ${
-                          isSelected ? "ring-2 ring-sky-500/60 ring-offset-1" : ""
+                          isSelected ? "ring-2 ring-sky-300 ring-offset-1" : ""
                         }`}
                         title={
                           isVacation
@@ -1434,16 +1532,8 @@ export default function CalendarView() {
                         }
                       >
                         <div className="flex items-center gap-1 truncate min-w-0">
-                          <span className="flex items-center gap-0.5 font-bold text-[9px] sm:text-xs truncate">
-                            {isVacation ? (
-                              <Palmtree className="w-3 h-3 shrink-0 text-emerald-600" />
-                            ) : isConflict ? (
-                              <AlertTriangle className="w-3 h-3 shrink-0 text-rose-600" />
-                            ) : (isGhost || isPickup || isSim) ? (
-                              <CheckCircle2 className="w-3 h-3 shrink-0 text-teal-600" />
-                            ) : (
-                              <Plane className="w-3 h-3 shrink-0 text-sky-600" />
-                            )}
+                          <span className="flex items-center gap-0.5 font-black text-[9px] sm:text-xs truncate text-white">
+                            {iconEl}
                             <span className="truncate">
                               {isVacation
                                 ? "VACATION"
@@ -1451,19 +1541,23 @@ export default function CalendarView() {
                                 ? `DROP #${seg.seq.sequenceNumber}`
                                 : isPickup
                                 ? `PICKUP #${seg.seq.sequenceNumber}`
+                                : isOt
+                                ? `OT #${seg.seq.sequenceNumber}`
+                                : isGhost
+                                ? `OPEN #${seg.seq.sequenceNumber}`
                                 : `#${seg.seq.sequenceNumber}`}
                             </span>
                           </span>
 
-                          <span className={`text-[8px] sm:text-[10px] font-semibold font-mono ${subtextColor} hidden sm:inline truncate`}>
-                            [{isVacation ? "VA" : isPickup ? "PICKUP" : seg.seq.base}]
+                          <span className={`text-[8px] sm:text-[10px] font-mono px-1 py-0.2 rounded bg-white/20 text-white font-bold border border-white/20 hidden sm:inline truncate`}>
+                            {isVacation ? "VA" : isPickup ? "PICKUP" : seg.seq.base}
                           </span>
                         </div>
 
                         <div className="flex items-center gap-1 text-[8px] sm:text-[10px] font-mono font-bold shrink-0">
                           {seg.seq.layoverCities.length > 0 && !isMobile && !isVacation && (
-                            <span className="text-[8px] opacity-95 hidden lg:inline-flex items-center gap-0.5 bg-white/80 border border-current/20 px-1 py-0.2 rounded">
-                              <Moon className="w-2 h-2 text-amber-600" /> {seg.seq.layoverCities.join("→")}
+                            <span className="text-[8px] opacity-95 hidden lg:inline-flex items-center gap-0.5 bg-black/20 text-white border border-white/20 px-1 py-0.2 rounded">
+                              <Moon className="w-2 h-2 text-amber-300" /> {seg.seq.layoverCities.join("→")}
                             </span>
                           )}
                           <span className={`px-1 py-0.2 rounded font-black text-[8px] sm:text-[10px] ${badgeBg}`}>
@@ -1476,58 +1570,52 @@ export default function CalendarView() {
 
                 {/* Multi-Day Personal Calendar Event Spanning Ribbons */}
                 {multiDayPersonalEventSegments.map((seg, idx) => {
-                  let pillStyle = "bg-purple-100/95 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs";
-                  if (seg.evt.color === "indigo") pillStyle = "bg-indigo-100/95 border-indigo-300 text-indigo-950 hover:bg-indigo-200 shadow-2xs";
-                  else if (seg.evt.color === "teal") pillStyle = "bg-teal-100/95 border-teal-300 text-teal-950 hover:bg-teal-200 shadow-2xs";
-                  else if (seg.evt.color === "rose") pillStyle = "bg-rose-100/95 border-rose-300 text-rose-950 hover:bg-rose-200 shadow-2xs";
-                  else if (seg.evt.color === "amber") pillStyle = "bg-amber-100/95 border-amber-300 text-amber-950 hover:bg-amber-200 shadow-2xs";
-                  else if (seg.evt.color === "emerald") pillStyle = "bg-emerald-100/95 border-emerald-300 text-emerald-950 hover:bg-emerald-200 shadow-2xs";
-                  else if (seg.evt.color === "sky") pillStyle = "bg-sky-100/95 border-sky-300 text-sky-950 hover:bg-sky-200 shadow-2xs";
+                  const st = getPersonalEventColor(seg.evt.color);
 
                   const rowSeqSegs = sequenceSegments.filter((s) => s.row === seg.row);
                   const maxSeqSlotInRow = rowSeqSegs.length > 0 ? Math.max(...rowSeqSegs.map((s) => s.slot)) : -1;
                   const seqHeight = maxSeqSlotInRow >= 0 ? (maxSeqSlotInRow + 1) * (isMobile ? 26 : 32) : 0;
                   const topPx = (isMobile ? 28 : 34) + seqHeight + seg.slot * (isMobile ? 22 : 26);
 
-                      const roundedClass = `${seg.isRealStart ? "rounded-l-md ml-0.5" : "rounded-l-none border-l-0 ml-0"} ${seg.isRealEnd ? "rounded-r-md mr-0.5" : "rounded-r-none border-r-0 mr-0"}`;
+                  const roundedClass = `${seg.isRealStart ? "rounded-l-md ml-0.5" : "rounded-l-none border-l-0 ml-0"} ${seg.isRealEnd ? "rounded-r-md mr-0.5" : "rounded-r-none border-r-0 mr-0"}`;
 
-                      return (
-                        <div
-                          key={`multi-evt-${idx}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPersonalEvent(seg.evt);
-                          }}
-                          style={{
-                            gridRow: seg.row,
-                            gridColumnStart: seg.startCol,
-                            gridColumnEnd: seg.endCol + 1,
-                            alignSelf: "start",
-                            marginTop: `${topPx}px`,
-                            height: isMobile ? "20px" : "24px",
-                            zIndex: 22,
-                            position: "relative",
-                          }}
-                          className={`py-0.5 px-1.5 border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden font-bold active-press ${roundedClass} ${pillStyle}`}
-                          title={`${seg.evt.title} (${seg.evt.startDate} to ${seg.evt.endDate})`}
-                        >
-                          <div className="flex items-center gap-1 truncate min-w-0">
-                            {seg.evt.category === "pilot_bidding" || seg.evt.isPilotOnly ? (
-                              <span className="text-[9px] shrink-0">✈️</span>
-                            ) : (
-                              <CalendarIcon className="w-2.5 h-2.5 shrink-0 opacity-85" />
-                            )}
-                            <span className="truncate text-[8.5px] sm:text-[10px] font-black">{seg.evt.title}</span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {seg.evt.location && (
-                              <span className="text-[7.5px] sm:text-[9px] opacity-85 truncate hidden sm:inline font-mono">
-                                📍 {seg.evt.location}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
+                  return (
+                    <div
+                      key={`multi-evt-${idx}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPersonalEvent(seg.evt);
+                      }}
+                      style={{
+                        gridRow: seg.row,
+                        gridColumnStart: seg.startCol,
+                        gridColumnEnd: seg.endCol + 1,
+                        alignSelf: "start",
+                        marginTop: `${topPx}px`,
+                        height: isMobile ? "20px" : "24px",
+                        zIndex: 22,
+                        position: "relative",
+                      }}
+                      className={`py-0.5 px-1.5 border text-left cursor-pointer transition duration-150 select-none flex items-center justify-between gap-1 overflow-hidden active-press ${roundedClass} ${st.pill}`}
+                      title={`${seg.evt.title} (${seg.evt.startDate} to ${seg.evt.endDate})`}
+                    >
+                      <div className="flex items-center gap-1 truncate min-w-0">
+                        {seg.evt.category === "pilot_bidding" || seg.evt.isPilotOnly ? (
+                          <span className="text-[9px] shrink-0">✈️</span>
+                        ) : (
+                          <CalendarIcon className={`w-2.5 h-2.5 shrink-0 ${st.iconText}`} />
+                        )}
+                        <span className={`truncate text-[8.5px] sm:text-[10px] ${st.text}`}>{seg.evt.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {seg.evt.location && (
+                          <span className={`text-[7.5px] sm:text-[9px] opacity-90 truncate hidden sm:inline font-mono ${st.badge} px-1 rounded`}>
+                            📍 {seg.evt.location}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
                 })}
               </div>
             );
@@ -1541,14 +1629,26 @@ export default function CalendarView() {
             const isToday = new Date().toDateString() === date.toDateString();
             const dutyPeriod = seq ? getDutyPeriodForDate(seq, date) : undefined;
             const isSelected = seq ? seq.id === selectedSequenceId : false;
+            const isVacation = seq?.sequenceNumber === "VACATION" || seq?.statusTag === "VA";
+            const isPickup = seq?.statusTag === "PICKUP" || seq?.colorTag === "cyan";
+            const isOt = seq?.isOvertime || seq?.statusTag === "OT";
+            const isDropped = !isPickup && !isVacation && (seq?.isDropped || seq?.statusTag === "DROP" || seq?.statusTag === "DTS DROP");
+
+            let borderAccent = "border-slate-200";
+            if (isSelected) borderAccent = "border-sky-600 ring-2 ring-sky-600/30";
+            else if (isVacation) borderAccent = "border-emerald-300 border-l-4 border-l-emerald-600";
+            else if (isPickup) borderAccent = "border-teal-300 border-l-4 border-l-teal-600";
+            else if (isOt) borderAccent = "border-amber-300 border-l-4 border-l-amber-500";
+            else if (seq) borderAccent = "border-blue-200 border-l-4 border-l-blue-600";
+            else if (isToday) borderAccent = "border-sky-400 bg-sky-50/40";
 
             return (
               <div
                 key={idx}
                 onClick={() => seq && setSelectedSequenceId(seq.id)}
-                className={`p-4 bg-white border rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition duration-200 shadow-sm ${
-                  isSelected ? "border-sky-600 ring-2 ring-sky-600/30" : isToday ? "border-sky-400 bg-sky-50" : "border-slate-200"
-                } ${seq ? "cursor-pointer hover:border-slate-400" : ""}`}
+                className={`p-4 bg-white border rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition duration-200 shadow-sm ${borderAccent} ${
+                  seq ? "cursor-pointer hover:border-slate-400" : ""
+                }`}
               >
                 <div className="flex items-center gap-4">
                   <div className="text-center w-14 py-2 rounded-xl bg-slate-100 border border-slate-200 font-mono">
@@ -1562,10 +1662,18 @@ export default function CalendarView() {
                     {seq ? (
                       <div>
                         <div className="flex items-center gap-2.5">
-                          <span className="text-md font-bold text-slate-900">
-                            Sequence {seq.sequenceNumber}
+                          <span className="text-md font-black text-slate-900">
+                            {isVacation
+                              ? "Annual Vacation"
+                              : isDropped
+                              ? `Dropped Seq #${seq.sequenceNumber}`
+                              : isPickup
+                              ? `Pickup Seq #${seq.sequenceNumber}`
+                              : isOt
+                              ? `Overtime Seq #${seq.sequenceNumber}`
+                              : `Sequence ${seq.sequenceNumber}`}
                           </span>
-                          <span className="px-2 py-0.5 bg-sky-100 border border-sky-300 text-sky-900 font-mono text-[10px] font-bold rounded-lg">
+                          <span className="px-2 py-0.5 bg-sky-600 text-white font-mono text-[10px] font-black rounded-lg shadow-2xs">
                             {seq.base}
                           </span>
                         </div>
@@ -1578,7 +1686,7 @@ export default function CalendarView() {
                           return (
                             <p className="text-xs text-slate-700 mt-0.5 flex items-center gap-2 font-medium flex-wrap">
                               <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                              <span>Day credit: {Math.floor(dayCreditMins / 60)}h {dayCreditMins % 60}m</span>
+                              <span>Day credit: <strong className="text-emerald-700 font-black">{Math.floor(dayCreditMins / 60)}h {dayCreditMins % 60}m</strong></span>
                               {seq.dutyPeriods && seq.dutyPeriods.length > 1 && (
                                 <span className="text-[10px] text-slate-400 font-mono font-semibold">(Trip Total: {Math.floor(seq.totalCreditMinutes / 60)}h {seq.totalCreditMinutes % 60}m)</span>
                               )}

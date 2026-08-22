@@ -22,6 +22,7 @@ import { isPilotRole } from "../../lib/pilotBiddingDates";
 import { OpenTimeEngine } from "../../lib/openTimeEngine";
 
 import { formatAviationHours } from "../../lib/parser";
+import { typeMacroOnDecsScreen } from "../../lib/keyboardSimEngine";
 
 interface DayDetailModalProps {
   isOpen: boolean;
@@ -371,6 +372,8 @@ export default function DayDetailModal({
                             const command = `HSS/${seat}/${seq.sequenceNumber}/${datePart}${monthLetters}^`;
                             if (typeof window !== "undefined" && (window as any).AndroidPortal?.executeHss) {
                               (window as any).AndroidPortal.executeHss(command);
+                            } else {
+                              await typeMacroOnDecsScreen(command);
                             }
                           }}
                           className="px-2 py-1 rounded-lg text-[10px] font-black bg-amber-400 hover:bg-amber-500 active:scale-95 text-slate-950 border border-amber-500 shadow-2xs transition flex items-center gap-1 cursor-pointer"

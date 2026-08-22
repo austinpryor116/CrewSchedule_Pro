@@ -171,15 +171,18 @@ export default function BriefingView() {
       if (!seq.dutyPeriods) return;
       seq.dutyPeriods.forEach((dp, dpIdx) => {
         if (!dp.legs) return;
-        const baseDate = new Date(seq.startDate);
-        baseDate.setDate(baseDate.getDate() + (dp.dayIndex !== undefined ? dp.dayIndex : dpIdx));
-        const dateStr = baseDate.toISOString().split("T")[0];
+        const [y, m, d] = (seq.startDate || "").split("-").map(Number);
+        const dayOffset = dp.dayIndex !== undefined ? dp.dayIndex : dpIdx;
+        const baseDate = new Date(y, (m || 1) - 1, (d || 1) + dayOffset);
+        const dateStr = `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, "0")}-${String(baseDate.getDate()).padStart(2, "0")}`;
 
         dp.legs.forEach((leg, lIdx) => {
-          const depH = leg.depTime.slice(0, 2);
-          const depM = leg.depTime.slice(2, 4);
-          const arrH = leg.arrTime.slice(0, 2);
-          const arrM = leg.arrTime.slice(2, 4);
+          const rawDep = (leg.depTime || "0000").replace(":", "");
+          const rawArr = (leg.arrTime || "0000").replace(":", "");
+          const depH = rawDep.slice(0, 2).padStart(2, "0");
+          const depM = rawDep.slice(2, 4).padStart(2, "0");
+          const arrH = rawArr.slice(0, 2).padStart(2, "0");
+          const arrM = rawArr.slice(2, 4).padStart(2, "0");
 
           const blockH = Math.floor(leg.blockMinutes / 60);
           const blockM = leg.blockMinutes % 60;
@@ -211,6 +214,7 @@ export default function BriefingView() {
 
     const now = new Date();
     const nowMs = now.getTime();
+    const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
     const sorted = [...activeLegs].sort((a, b) => {
       const tA = new Date(`${a.date}T${a.time}:00`).getTime();
@@ -218,27 +222,26 @@ export default function BriefingView() {
       return tA - tB;
     });
 
-    // 1. In-Progress Airborne Check
+    // 1. In-Progress Airborne Check (Flight currently underway or boarding)
     const inProgressFlight = sorted.find((l) => {
       const depT = new Date(`${l.date}T${l.time}:00`).getTime();
       const arrT = new Date(`${l.date}T${l.arrTime}:00`).getTime();
-      return nowMs >= depT && nowMs <= arrT;
+      return nowMs >= (depT - 15 * 60 * 1000) && nowMs <= arrT;
     });
     if (inProgressFlight) return { leg: inProgressFlight, status: "IN_PROGRESS" };
 
-    // 2. Next Upcoming Flight in the Future
+    // 2. Next Upcoming Flight in the Future (closest upcoming leg)
     const nextFlight = sorted.find((l) => {
       const depT = new Date(`${l.date}T${l.time}:00`).getTime();
       return depT >= nowMs;
     });
     if (nextFlight) return { leg: nextFlight, status: "NEXT_UPCOMING" };
 
-    // 3. Today's Date match
-    const todayDateStr = now.toISOString().split("T")[0];
+    // 3. Today's flights
     const todayFlight = sorted.find((l) => l.date === todayDateStr);
     if (todayFlight) return { leg: todayFlight, status: "NEXT_UPCOMING" };
 
-    // 4. Closest Upcoming Leg
+    // 4. Closest Scheduled Leg
     let closestLeg = sorted[0];
     let minDiff = Infinity;
     for (const l of sorted) {
@@ -468,18 +471,18 @@ export default function BriefingView() {
         fetchLiveBulkAirportCategories(Object.keys(ALL_MAJOR_AIRPORTS), forceRefresh),
       ]);
 
-      setDepWeather(depRes.metar);
-      setDepTaf(depRes.taf);
-      setArrWeather(arrRes.metar);
-      setArrTaf(arrRes.taf);
-      setLiveHazards(hazards);
-      setLiveLightning(lightning);
-      setLiveTurbulence(turb);
-      setLiveAirportConditions(bulkAirports);
+      setDepWeather(depRes?.metar || null);
+      setDepTaf(depRes?.taf || null);
+      setArrWeather(arrRes?.metar || null);
+      setArrTaf(arrRes?.taf || null);
+      setLiveHazards(hazards || []);
+      setLiveLightning(lightning || []);
+      setLiveTurbulence(turb || []);
+      setLiveAirportConditions(bulkAirports || {});
       setLastUpdated(new Date());
 
-      if (selectedAirportCode === depCode) setSelectedAirportData(depRes.metar);
-      if (selectedAirportCode === arrCode) setSelectedAirportData(arrRes.metar);
+      if (selectedAirportCode === depCode) setSelectedAirportData(depRes?.metar || null);
+      if (selectedAirportCode === arrCode) setSelectedAirportData(arrRes?.metar || null);
     } catch (e) {
       console.error("Failed to load live weather:", e);
     } finally {
@@ -1788,20 +1791,39 @@ export default function BriefingView() {
                 </div>
 
                 {/* D-ATIS Text Box */}
-                <div className="bg-sky-50 border border-sky-200 rounded-xl p-2.5 text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sky-900 flex items-center gap-1 text-[11px]">
-                      <Radio className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
-                      Digital ATIS Broadcast
-                    </span>
-                    <span className="font-mono font-bold text-sky-900 text-[10px]">
-                      INFO {selectedAirportData?.atisData?.letter || "FOXTROT"}
-                    </span>
+                {selectedAirportData?.atisData?.datisText || selectedAirportData?.datisText ? (
+                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-2.5 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sky-900 flex items-center gap-1 text-[11px]">
+                        <Radio className="w-3.5 h-3.5 text-sky-600 animate-pulse" />
+                        Digital ATIS Broadcast
+                      </span>
+                      {selectedAirportData?.atisData?.letter && (
+                        <span className="font-mono font-bold text-sky-900 text-[10px]">
+                          INFO {selectedAirportData.atisData.letter}
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-mono text-[10px] text-slate-900 bg-white p-2 rounded-lg border border-sky-200 leading-relaxed max-h-20 overflow-y-auto font-medium">
+                      {selectedAirportData.atisData?.datisText || selectedAirportData.datisText}
+                    </p>
                   </div>
-                  <p className="font-mono text-[10px] text-slate-900 bg-white p-2 rounded-lg border border-sky-200 leading-relaxed max-h-20 overflow-y-auto font-medium">
-                    {selectedAirportData?.atisData?.datisText || selectedAirportData?.datisText || `${selectedAirportCode} ATIS INFO FOXTROT 1750Z. WINDS 240 AT 12. VIS 10. FEW040. TEMP 22 DEWPOINT 12. ALTIMETER 29.92. ILS RUNWAY 28L IN USE. READBACK ALL HOLD SHORT INSTRUCTIONS.`}
-                  </p>
-                </div>
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-600 flex items-center gap-1 text-[11px]">
+                        <Radio className="w-3.5 h-3.5 text-slate-400" />
+                        Digital ATIS Broadcast
+                      </span>
+                      <span className="font-mono font-bold text-slate-500 text-[10px]">
+                        UNAVAILABLE
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white border border-slate-200 text-slate-500 font-mono text-[10px] text-center italic">
+                      No reporting ATIS available for {selectedAirportCode}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

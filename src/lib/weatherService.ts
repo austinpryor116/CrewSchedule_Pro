@@ -24,7 +24,19 @@ export async function fetchJson<T = any>(url: string): Promise<T | null> {
         readTimeout: 10000,
       });
       if (resp.status >= 200 && resp.status < 300) {
-        return typeof resp.data === "string" ? JSON.parse(resp.data) : (resp.data as T);
+        if (!resp.data) return null;
+        if (typeof resp.data === "string") {
+          const trimmed = resp.data.trim();
+          if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) {
+            return null;
+          }
+          try {
+            return JSON.parse(trimmed) as T;
+          } catch {
+            return null;
+          }
+        }
+        return resp.data as T;
       }
     } catch (e) {
       console.warn(`[CapacitorHttp] Failed for ${url}:`, e);
@@ -1300,7 +1312,6 @@ export function decodeMetarData(metar: any, datisText?: string, atisLetter?: str
   } else if (metar.cover) {
     clouds = `${metar.cover} clouds`;
   }
-
   const temp = metar.temp !== undefined ? Math.round(metar.temp) : 20;
   const dewp = metar.dewp !== undefined ? Math.round(metar.dewp) : 12;
   const tempDewpoint = `${temp}°C / ${dewp}°C (${Math.round((temp * 9) / 5 + 32)}°F)`;
@@ -1315,37 +1326,24 @@ export function decodeMetarData(metar: any, datisText?: string, atisLetter?: str
   const reportDate = metar.reportTime ? new Date(metar.reportTime) : new Date();
   const obsTime = reportDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-  // Compute ATIS Broadcast Letter and ASOS details
-  const atisLetters = ["ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF", "HOTEL", "INDIA", "JULIET", "KILO", "LIMA", "MIKE", "NOVEMBER", "OSCAR", "PAPA", "QUEBEC", "ROMEO", "SIERRA", "TANGO", "UNIFORM", "VICTOR", "WHISKEY", "XRAY", "YANKEE", "ZULU"];
-  const stationHash = icao.split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
-  const letterIdx = (reportDate.getUTCHours() + Math.floor(reportDate.getUTCMinutes() / 30) + stationHash) % 26;
-  const utcTimeStr = `${String(reportDate.getUTCHours()).padStart(2, "0")}${String(reportDate.getUTCMinutes()).padStart(2, "0")}Z`;
-
-  const chosenLetter = atisLetter ? atisLetter.toUpperCase() : atisLetters[letterIdx];
-  let atisCodeStr = `D-ATIS Info ${chosenLetter} (${utcTimeStr})`;
-
+  // Extract real ATIS details ONLY if live broadcast text is actually present
+  const rawDatisText = (atisRawObj?.datisText || atisRawObj?.datis || datisText || "").trim();
+  let atisCodeStr: string | undefined = undefined;
   let atisDataObj: AtisDetails | undefined = undefined;
-  if (atisRawObj) {
-    const parsed = parseDatisDetails(atisRawObj.datisText || datisText || "");
+
+  if (rawDatisText && rawDatisText.length > 0) {
+    const parsed = parseDatisDetails(rawDatisText);
+    const letter = (atisRawObj?.letter || atisLetter || atisRawObj?.code || "").toUpperCase();
+    const utcTimeStr = atisRawObj?.time || `${String(reportDate.getUTCHours()).padStart(2, "0")}${String(reportDate.getUTCMinutes()).padStart(2, "0")}Z`;
     atisDataObj = {
-      code: atisRawObj.code || chosenLetter.substring(0, 1),
-      letter: atisRawObj.letter || chosenLetter,
-      type: atisRawObj.type || "combined",
-      datisText: atisRawObj.datisText || datisText || "",
-      time: atisRawObj.time || utcTimeStr,
-      ...parsed,
-    };
-    atisCodeStr = `D-ATIS Info ${atisDataObj.letter} (${atisDataObj.time}Z)`;
-  } else if (datisText) {
-    const parsed = parseDatisDetails(datisText);
-    atisDataObj = {
-      code: chosenLetter.substring(0, 1),
-      letter: chosenLetter,
-      type: "combined",
-      datisText: datisText,
+      code: atisRawObj?.code || (letter ? letter.substring(0, 1) : ""),
+      letter: letter || undefined,
+      type: atisRawObj?.type || "combined",
+      datisText: rawDatisText,
       time: utcTimeStr,
       ...parsed,
     };
+    atisCodeStr = atisDataObj.letter ? `D-ATIS Info ${atisDataObj.letter} (${atisDataObj.time})` : `D-ATIS (${atisDataObj.time})`;
   }
 
   const weatherPhenomena = decodeWeatherPhenomena(rawOb, metar.wxString || metar.presentWeather);
@@ -1386,7 +1384,7 @@ export function decodeMetarData(metar: any, datisText?: string, atisLetter?: str
     stationType,
     remarks,
     densityAltitudeFt,
-    datisText,
+    datisText: atisDataObj?.datisText,
     atisData: atisDataObj,
   };
 }
@@ -1448,6 +1446,7 @@ export function decodeTafData(taf: any, flightTime?: string): DecodedTaf {
     targetForecastSummary,
   };
 }
+
 // 5-Minute In-Memory Weather Cache
 export const WEATHER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -2027,7 +2026,7 @@ function getFallbackMetar(icao: string): DecodedMetar {
     tempDewpoint: "25°C / 15°C (77°F)",
     altimeter: "30.02 inHg",
     decodedSummary: `VFR conditions at ${icao}. Winds 240° @ 9kt, Vis >10SM, Scattered clouds at 4,500ft.`,
-    atisCode: `D-ATIS Info BRAVO (${new Date().getUTCHours()}00Z)`,
+    atisCode: undefined,
     stationType: "ASOS (AO2 Automated Station w/ Precip Discriminator)",
     remarks: "RMK AO2 SLP165 T02500150 403170139",
     densityAltitudeFt: 1240,

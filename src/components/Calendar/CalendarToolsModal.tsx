@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useCrewStore } from "../../store/useCrewStore";
-import { X, Calendar as CalendarIcon, SlidersHorizontal, Eye, EyeOff, ShoppingBag, Palmtree, Clock, Check, Plus, Rss, ShieldCheck, FileSpreadsheet, Trash2, Link, Loader2, Share2, Globe, Copy, Smartphone, Download, Info } from "lucide-react";
+import { X, Calendar as CalendarIcon, SlidersHorizontal, Eye, EyeOff, ShoppingBag, Palmtree, Clock, Check, Plus, Rss, ShieldCheck, FileSpreadsheet, Trash2, Link, Loader2, Share2, Globe, Copy, Smartphone, Download, Info, RotateCcw } from "lucide-react";
 import { fetchRemoteIcsFeed, parseIcsText, downloadRosterIcsFile } from "../../lib/icalExporter";
 import { PersonalCalendarEvent } from "../../types";
 import { isPilotRole } from "../../lib/pilotBiddingDates";
@@ -31,6 +31,7 @@ export default function CalendarToolsModal({
   const openTimeFilter = useCrewStore((state) => state.openTimeFilter);
   const setOpenTimeFilter = (filter: string) => useCrewStore.setState({ openTimeFilter: filter });
   const openTimePresets = useCrewStore((state) => state.openTimePresets);
+  const resetScheduleToDefaults = useCrewStore((state) => state.resetScheduleToDefaults);
 
   const showDtsDropped = useCrewStore((state) => state.showDtsDropped);
   const toggleShowDtsDropped = useCrewStore((state) => state.toggleShowDtsDropped);
@@ -695,6 +696,31 @@ export default function CalendarToolsModal({
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download .ICS</span>
+                </button>
+              </div>
+
+              {/* Reset to Clean Defaults */}
+              <div className="flex items-center justify-between p-3.5 bg-rose-50/80 border border-rose-200 rounded-2xl">
+                <div className="flex items-center gap-2.5">
+                  <RotateCcw className="w-5 h-5 text-rose-600" />
+                  <div>
+                    <span className="text-xs font-extrabold text-rose-950 block">Reset Calendar & Clear Cache</span>
+                    <span className="text-[10px] text-rose-700 font-medium">Restore clean schedule defaults and clear test data</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("Reset calendar and restore clean live schedule defaults?")) {
+                      resetScheduleToDefaults();
+                      onClose();
+                    }
+                  }}
+                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs active-press"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
                 </button>
               </div>
             </div>

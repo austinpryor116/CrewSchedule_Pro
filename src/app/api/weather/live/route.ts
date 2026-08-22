@@ -110,10 +110,10 @@ export async function GET(request: NextRequest) {
       Y: "YANKEE", Z: "ZULU"
     };
 
-    let atisLetter = iata === "ORD" || icao === "KORD" ? "SIERRA" : "ALPHA";
+    let atisLetter: string | null = null;
     let atisData: any = null;
 
-    if (liveAtisObj && liveAtisObj.code) {
+    if (liveAtisObj && liveAtisObj.datis && liveAtisObj.code) {
       const codeUpper = String(liveAtisObj.code).toUpperCase().trim();
       const word = PHONETIC_MAP[codeUpper] || codeUpper;
       atisLetter = word;

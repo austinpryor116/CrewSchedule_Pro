@@ -178,8 +178,14 @@ export default function CalendarEventModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100003] bg-slate-950/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn font-sans">
-      <div className="bg-white text-slate-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] animate-slideUp">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[100003] bg-slate-950/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn font-sans cursor-pointer"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white text-slate-900 rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] animate-slideUp cursor-default"
+      >
         {/* Modal Top Bar */}
         <div className="bg-white border-b border-slate-200 p-4 sm:p-5 flex items-center justify-between shrink-0">
           <button

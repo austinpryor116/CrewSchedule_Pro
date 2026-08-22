@@ -21,3 +21,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
   - `MIA` -> `M` (`RF 200M HTL`)
   - `PHX` -> `P` (`RF 200P HTL`)
 
+# Mandatory Fresh Restart & Live Deployment Rule
+- **Every Code Change MUST Trigger a 100% Fresh Restart**:
+  - Whenever any code is modified or fixed, ALWAYS execute a clean deployment cycle:
+    1. Terminate any stale node processes / dev servers.
+    2. Start a fresh server instance with clean memory.
+    3. Re-verify ADB port forwarding (`adb reverse tcp:3000 tcp:3000`).
+    4. Force-stop `com.crewschedule.pro` on the phone.
+    5. Re-launch `com.crewschedule.pro` fresh so the phone runs 100% newly compiled code without stale cache or stale server state.
+
+
