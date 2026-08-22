@@ -1,6 +1,6 @@
 import { UserProfile } from "@/types";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { db, auth } from "./config";
+import { db, auth, cleanForFirestore } from "./config";
 
 /**
  * CrewSchedule Pro - Cloud / Firebase Profile Sync Service
@@ -48,7 +48,7 @@ export class ProfileSyncService {
       try {
         const userDocRef = doc(db, "users", uid);
         const writePromise = setDoc(userDocRef, {
-          profile: updated,
+          profile: cleanForFirestore(updated),
           updatedAt: serverTimestamp(),
         }, { merge: true });
         

@@ -40,3 +40,28 @@ try {
 }
 
 export const db = firestoreDb;
+
+/**
+ * Recursively removes all `undefined` values and serializes objects
+ * so Firestore setDoc/updateDoc never throws "Unsupported field value: undefined (invalid data)".
+ */
+export function cleanForFirestore<T>(input: T): T {
+  if (input === undefined) {
+    return null as any;
+  }
+  if (input === null || typeof input !== "object") {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input
+      .filter((item) => item !== undefined)
+      .map((item) => cleanForFirestore(item)) as any;
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(input as Record<string, any>)) {
+    if (value !== undefined) {
+      cleaned[key] = cleanForFirestore(value);
+    }
+  }
+  return cleaned as T;
+}

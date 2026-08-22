@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "./config";
+import { db, cleanForFirestore } from "./config";
 import { useCrewStore } from "../../store/useCrewStore";
 import { UserProfile, SequenceTrip, VacationPeriod, PersonalCalendarEvent, SubscribedCalendar, LogbookEntry, HssAuditRecord } from "../../types";
 
@@ -43,17 +43,20 @@ export class CloudSyncService {
         version: "2.1.0",
       };
 
-      // 1. Save main backup snapshot
+      // 1. Sanitize payload to strip any `undefined` values that Firestore rejects
+      const sanitized = cleanForFirestore(backupPayload);
+
+      // 2. Save main backup snapshot
       const userDocRef = doc(db, "users", uid);
       const writePromise = setDoc(userDocRef, {
-        ...backupPayload,
+        ...sanitized,
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
       // Fast race timeout so pilot gets snappy UI response while offline/background sync completes
       await Promise.race([
         writePromise,
-        new Promise((resolve) => setTimeout(resolve, 2000))
+        new Promise((resolve) => setTimeout(resolve, 2500))
       ]);
 
       // Update local storage last backup time

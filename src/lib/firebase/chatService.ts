@@ -13,7 +13,7 @@ import {
   deleteDoc,
   Unsubscribe,
 } from "firebase/firestore";
-import { db, auth } from "./config";
+import { db, auth, cleanForFirestore } from "./config";
 import { ChatMessage, ChatChannel, TradeOfferEmbed } from "@/types";
 
 /**
@@ -119,10 +119,10 @@ export class FirebaseChatService {
 
     try {
       const msgRef = doc(db, "chat_channels", channelId, "messages", message.id);
-      const payload: any = {
+      const payload: any = cleanForFirestore({
         ...message,
         serverTimestamp: serverTimestamp(),
-      };
+      });
 
       // Set message doc
       await setDoc(msgRef, payload, { merge: true });
@@ -131,7 +131,7 @@ export class FirebaseChatService {
       const channelRef = doc(db, "chat_channels", channelId);
       await setDoc(
         channelRef,
-        {
+        cleanForFirestore({
           id: channelId,
           lastMessage: {
             id: message.id,
@@ -140,7 +140,7 @@ export class FirebaseChatService {
             senderName: message.sender.name,
           },
           updatedAt: serverTimestamp(),
-        },
+        }),
         { merge: true }
       );
 
